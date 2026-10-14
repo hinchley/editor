@@ -33,6 +33,10 @@ typedef struct Canvas {
   // the screen column of the ruler within the text area, or -1 when it is not shown.
   i64 rulerX;
 
+  // the screen cell of the terminal cursor, or -1 when it is outside the view.
+  i32 cursorRow;
+  i32 cursorColumn;
+
   // the selected parts of the current line, and whether its line break is selected.
   Span *spans;
   u32 spanCount;
@@ -44,6 +48,17 @@ static void
 PutSymbol(i32 row, i32 column, const char *symbol, Style style)
 {
   ScreenPutCluster(row, column, symbol, strlen(symbol), 1, style);
+}
+
+// draws a faint symbol (whitespace or the ruler).
+// terminals draw the cursor in the colour of the cell under it, so the symbol under the
+// cursor uses the default colour, or the cursor would be as faint as the symbol.
+static void
+PutFaintSymbol(const Canvas *canvas, i32 row, i32 column, const char *symbol, Style style)
+{
+  bool underCursor = row == canvas->cursorRow && column == canvas->cursorColumn;
+  if (underCursor) style.foreground = colorDefault;
+  PutSymbol(row, column, symbol, style);
 }
 
 // a style with the selection background when selected.
@@ -114,7 +129,7 @@ DrawBlank(const Canvas *canvas, i32 row, const LayoutCluster *cluster, i64 x, bo
 
   const char *symbol = cluster->kind == LayoutKindSpace ? spaceSymbol : tabSymbol;
   enum ThemeGroup group = selected ? ThemeSelectionWhitespace : ThemeWhitespace;
-  PutSymbol(row, canvas->textColumn + (i32)x, symbol, ThemeStyle(group));
+  PutFaintSymbol(canvas, row, canvas->textColumn + (i32)x, symbol, ThemeStyle(group));
 }
 
 static void
@@ -234,7 +249,7 @@ DrawRuler(const Canvas *canvas)
   i32 column = canvas->textColumn + (i32)canvas->rulerX;
 
   for (i32 row = view->row; row < view->row + view->height; row++) {
-    PutSymbol(row, column, rulerSymbol, ThemeStyle(ThemeRuler));
+    PutFaintSymbol(canvas, row, column, rulerSymbol, ThemeStyle(ThemeRuler));
   }
 }
 
@@ -246,8 +261,12 @@ DrawView(View *view)
     .view = view,
     .textColumn = view->column + ViewGutterWidth(view),
     .textWidth = ViewTextWidth(view),
-    .rulerX = -1
+    .rulerX = -1,
+    .cursorRow = -1,
+    .cursorColumn = -1
   };
+
+  ViewCursorScreen(view, &canvas.cursorRow, &canvas.cursorColumn);
 
   // the ruler sits in the cell just after rulerColumn, drawn first so text covers it.
   if (options->ruler) {
