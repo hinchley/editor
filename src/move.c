@@ -100,6 +100,34 @@ WordLeft(View *view, Position at)
   return (Position){at.line, byte};
 }
 
+static bool
+IsWordAt(const StrBuf *line, u64 at)
+{
+  if (at >= line->length) return false;
+
+  u32 codepoint;
+  Utf8Decode(line->data + at, line->length - at, &codepoint);
+  return Utf8IsWord(codepoint);
+}
+
+bool
+MoveWordAround(const StrBuf *line, u64 at, u64 *start, u64 *end)
+{
+  *start = at;
+  *end = at;
+
+  while (*start > 0 && IsWordAt(line, Utf8PreviousStart(line->data, *start))) {
+    *start = Utf8PreviousStart(line->data, *start);
+  }
+
+  while (IsWordAt(line, *end)) {
+    u32 codepoint;
+    *end += Utf8Decode(line->data + *end, line->length - *end, &codepoint);
+  }
+
+  return *end > *start;
+}
+
 static Position
 LineStart(View *view, Position at)
 {

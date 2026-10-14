@@ -35,6 +35,18 @@ CursorSetCopy(CursorSet *target, const CursorSet *source)
 }
 
 void
+CursorSetAdd(CursorSet *set, Cursor cursor)
+{
+  if (set->count == set->capacity) {
+    set->capacity = set->capacity ? set->capacity * 2 : 4;
+    set->cursors = MemoryResize(set->cursors, set->capacity, sizeof(Cursor));
+  }
+
+  set->primary = set->count;
+  set->cursors[set->count++] = cursor;
+}
+
+void
 CursorSetCollapse(CursorSet *set)
 {
   set->cursors[0] = set->cursors[set->primary];

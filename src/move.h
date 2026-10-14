@@ -29,6 +29,11 @@ MoveCursors(View *view, enum Move move, bool extend);
 Position
 MovePosition(View *view, const Cursor *cursor, enum Move move);
 
+// finds the word (a run of word characters) at or just before byte at in a line.
+// returns false when there is none.
+bool
+MoveWordAround(const StrBuf *line, u64 at, u64 *start, u64 *end);
+
 // collapses to the primary cursor and gives it a new anchor and head, scrolling to it.
 void
 MoveSelect(View *view, Position anchor, Position head);

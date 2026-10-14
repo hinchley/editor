@@ -149,6 +149,18 @@ AppendNormalised(StrBuf *output, const char *text, u64 length)
   }
 }
 
+// the number of lines in text, not counting the empty one after the final line break of
+// line wise text.
+static u32
+CountPieces(const char *text, u64 length, bool lineWise)
+{
+  u64 count = 1;
+
+  for (u64 index = 0; index < length; index++) count += text[index] == '\n';
+  if (lineWise && length && text[length - 1] == '\n') count--;
+  return count > UINT32_MAX ? UINT32_MAX : (u32)count;
+}
+
 void
 EditPaste(const EditContext *edit, const char *text, u64 length, bool lineWise)
 {
@@ -157,19 +169,35 @@ EditPaste(const EditContext *edit, const char *text, u64 length, bool lineWise)
   const char *data = normal.data ? normal.data : "";
 
   CursorSet *set = &edit->view->cursors;
+  CursorSetMerge(set);
+  u32 pieceCount = set->count > 1 ? CountPieces(data, normal.length, lineWise) : 0;
+  bool distribute = pieceCount == set->count;
+  const char *piece = data;
   Begin(edit, UndoKindOther);
 
   for (u32 index = 0; index < set->count; index++) {
     Cursor *cursor = &set->cursors[index];
+    const char *pieceText = data;
+    u64 pieceLength = normal.length;
+
+    // one line per cursor, in order, keeping a line wise piece's line break.
+    if (distribute) {
+      const char *end = data + normal.length;
+      const char *lineBreak = memchr(piece, '\n', (u64)(end - piece));
+      const char *pieceEnd = lineBreak ? lineBreak : end;
+      pieceText = piece;
+      pieceLength = (u64)(pieceEnd - piece) + (lineWise && lineBreak);
+      piece = lineBreak ? lineBreak + 1 : end;
+    }
 
     // whole lines go in above, and the cursor moves down with its own line.
     if (lineWise && !CursorHasSelection(cursor)) {
       Range lineStart = {{cursor->head.line, 0}, {cursor->head.line, 0}};
-      BufferReplace(edit->view->buffer, lineStart, data, normal.length);
+      BufferReplace(edit->view->buffer, lineStart, pieceText, pieceLength);
       continue;
     }
 
-    ReplaceAt(edit, index, CursorRange(cursor), data, normal.length);
+    ReplaceAt(edit, index, CursorRange(cursor), pieceText, pieceLength);
   }
 
   End(edit);

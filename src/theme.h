@@ -37,6 +37,7 @@ enum ThemeGroup {
   ThemeMatch,
   ThemeMatchSelected,
   ThemeMisspelt,
+  ThemeCursor,
   ThemeGroupCount
 };
 

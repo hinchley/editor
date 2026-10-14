@@ -10,6 +10,7 @@
 #include "keymap.h"
 #include "memory.h"
 #include "move.h"
+#include "multicursor.h"
 #include "picker.h"
 #include "prompt.h"
 #include "render.h"
@@ -442,6 +443,9 @@ RunCommand(const Binding *binding)
   case CommandSelectBrackets: Report(MoveSelectBrackets(view), "no brackets around"); break;
   case CommandJumpBracket: Report(MoveToMatchingBracket(view), "no matching bracket"); break;
   case CommandCancel: Cancel(); break;
+  case CommandAddCursorWord: MultiCursorAddNext(view, &message); break;
+  case CommandAddCursorAbove: Report(MultiCursorAddRow(view, true), "no line above"); break;
+  case CommandAddCursorBelow: Report(MultiCursorAddRow(view, false), "no line below"); break;
   case CommandReload: AskToReload(); break;
   case CommandToggleLineEndings: ToggleLineEndings(); break;
   case CommandGoToLine: PromptAsk("go to line: ", "", GoToAnswered, nullptr); break;

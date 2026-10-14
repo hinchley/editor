@@ -243,35 +243,6 @@ SearchStep(bool backward)
   else if (around) StrBufAppendString(message, wrappedTo);
 }
 
-static bool
-IsWordAt(const StrBuf *line, u64 at)
-{
-  if (at >= line->length) return false;
-
-  u32 codepoint;
-  Utf8Decode(line->data + at, line->length - at, &codepoint);
-  return Utf8IsWord(codepoint);
-}
-
-// the word at or just before the cursor.
-static bool
-WordAround(const StrBuf *line, u64 at, u64 *start, u64 *end)
-{
-  *start = at;
-  *end = at;
-
-  while (*start > 0 && IsWordAt(line, Utf8PreviousStart(line->data, *start))) {
-    *start = Utf8PreviousStart(line->data, *start);
-  }
-
-  while (IsWordAt(line, *end)) {
-    u32 codepoint;
-    *end += Utf8Decode(line->data + *end, line->length - *end, &codepoint);
-  }
-
-  return *end > *start;
-}
-
 void
 SearchWord(void)
 {
@@ -283,7 +254,7 @@ SearchWord(void)
   u64 start;
   u64 end;
 
-  if (!WordAround(line, head.byte, &start, &end)) {
+  if (!MoveWordAround(line, head.byte, &start, &end)) {
     StrBufAppendString(message, "no word under the cursor");
     return;
   }

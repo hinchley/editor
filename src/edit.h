@@ -24,6 +24,7 @@ EditInsert(const EditContext *edit, const char *text, u64 length);
 // pastes text at each cursor, with "\r\n" turned into "\n".
 // line wise text (whole lines copied without a selection) goes above the cursor's line,
 // unless the cursor has a selection, which the text replaces.
+// with several cursors and as many lines of text, each cursor gets one line, in order.
 void
 EditPaste(const EditContext *edit, const char *text, u64 length, bool lineWise);
 

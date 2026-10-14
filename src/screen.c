@@ -235,6 +235,18 @@ ScreenFill(i32 row, i32 column, i32 count, Style style)
 }
 
 void
+ScreenSetStyle(i32 row, i32 column, Style style)
+{
+  if (row < 0 || row >= screenHeight || column < 0 || column >= screenWidth) return;
+
+  Cell *cell = CellAt(&back, row, column);
+  if (cell->width == 0 && column > 0) cell = CellAt(&back, row, --column);
+
+  cell->style = style;
+  if (cell->width == 2 && column + 1 < screenWidth) CellAt(&back, row, column + 1)->style = style;
+}
+
+void
 ScreenSetCursor(i32 row, i32 column)
 {
   cursorRow = row;

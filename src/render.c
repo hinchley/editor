@@ -352,6 +352,23 @@ DrawView(View *view, const MatchSet *marks)
   free(canvas.matched.spans);
 }
 
+// with several cursors the terminal cursor stays hidden and each one is drawn as a block,
+// over whatever colours its cell has.
+static void
+DrawCursorBlocks(View *view)
+{
+  CursorSet *set = &view->cursors;
+  Style style = ThemeStyle(ThemeCursor);
+
+  for (u32 index = 0; index < set->count; index++) {
+    i32 row;
+    i32 column;
+    if (ViewScreenOf(view, set->cursors[index].head, &row, &column)) {
+      ScreenSetStyle(row, column, style);
+    }
+  }
+}
+
 static void
 AppendField(StrBuf *status, const char *field)
 {
@@ -365,6 +382,10 @@ DescribePosition(View *view, const StatusInfo *info, bool full, StrBuf *right)
   Position head = CursorSetPrimary(&view->cursors)->head;
   const StrBuf *line = BufferLine(view->buffer, head.line);
   u64 column = LayoutColumn(line->data, line->length, head.byte);
+
+  if (full && view->cursors.count > 1) {
+    StrBufAppendFormat(right, "%u cursors", view->cursors.count);
+  }
 
   if (full) {
     AppendField(right, view->options->softWrap ? "wrap" : "nowrap");
@@ -438,6 +459,11 @@ RenderFrame(const Frame *frame)
   const StrBuf *message = frame->message;
   Style style = ThemeStyle(ThemeMessage);
   ScreenPutText(frame->height - 1, 0, message->data, message->length, style);
+
+  if (view->cursors.count > 1) {
+    DrawCursorBlocks(view);
+    return;
+  }
 
   i32 row;
   i32 column;

@@ -77,6 +77,16 @@ PatternSet(Pattern *pattern, const char *source, u64 length, PatternOptions opti
 }
 
 void
+PatternEscape(const char *text, u64 length, StrBuf *source)
+{
+  for (u64 at = 0; at < length; at++) {
+    bool anchor = (at == 0 && text[at] == '^') || (at + 1 == length && text[at] == '$');
+    if (anchor || text[at] == '\\') StrBufAppendByte(source, '\\');
+    StrBufAppendByte(source, text[at]);
+  }
+}
+
+void
 PatternFree(Pattern *pattern)
 {
   StrBufFree(&pattern->source);

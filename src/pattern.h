@@ -58,6 +58,11 @@ PatternFind(
   PatternMatch *match
 );
 
+// appends the source of a pattern that matches text literally, escaping backslashes and
+// the anchor characters where they would act as anchors.
+void
+PatternEscape(const char *text, u64 length, StrBuf *source);
+
 // appends source with its escapes replaced, for replacement text.
 // \n becomes a line break here.
 void

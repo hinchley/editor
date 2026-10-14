@@ -56,6 +56,10 @@ ScreenPutString(i32 row, i32 column, const char *string, Style style);
 void
 ScreenFill(i32 row, i32 column, i32 count, Style style);
 
+// changes the style of the cell at row and column, both halves of a wide character.
+void
+ScreenSetStyle(i32 row, i32 column, Style style);
+
 // shows the terminal cursor at row and column for this frame.
 void
 ScreenSetCursor(i32 row, i32 column);

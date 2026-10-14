@@ -101,6 +101,11 @@ ViewScrollToCursor(View *view);
 bool
 ViewScroll(View *view, i64 count);
 
+// where a position is on screen.
+// returns false when it is outside the view.
+bool
+ViewScreenOf(View *view, Position position, i32 *row, i32 *column);
+
 // where the primary cursor is on screen.
 // returns false when it is outside the view.
 bool

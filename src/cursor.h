@@ -33,6 +33,10 @@ CursorSetFree(CursorSet *set);
 void
 CursorSetCopy(CursorSet *target, const CursorSet *source);
 
+// adds a cursor and makes it the primary one.
+void
+CursorSetAdd(CursorSet *set, Cursor cursor);
+
 // keeps only the primary cursor.
 void
 CursorSetCollapse(CursorSet *set);

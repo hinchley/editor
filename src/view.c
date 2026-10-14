@@ -324,14 +324,18 @@ ViewScroll(View *view, i64 count)
 }
 
 bool
-ViewCursorScreen(View *view, i32 *row, i32 *column)
+ViewScreenOf(View *view, Position position, i32 *row, i32 *column)
 {
-  Position head = CursorSetPrimary(&view->cursors)->head;
-  ViewRow cursor = ViewRowOf(view, head);
+  // a line before the first shown, or further below it than the view is high, is off
+  // screen without measuring how far.
+  u64 top = view->top.line;
+  if (position.line < top || position.line - top >= (u64)view->height) return false;
+
+  ViewRow cursor = ViewRowOf(view, position);
   i64 distance = Distance(view, view->top, cursor, (u64)view->height);
   if (distance < 0 || distance >= view->height) return false;
 
-  u64 rowColumn = ViewRowColumn(view, head);
+  u64 rowColumn = ViewRowColumn(view, position);
   if (rowColumn < view->leftColumn) return false;
 
   u64 x = rowColumn - view->leftColumn;
@@ -340,4 +344,10 @@ ViewCursorScreen(View *view, i32 *row, i32 *column)
   *row = view->row + (i32)distance;
   *column = view->column + ViewGutterWidth(view) + (i32)x;
   return true;
+}
+
+bool
+ViewCursorScreen(View *view, i32 *row, i32 *column)
+{
+  return ViewScreenOf(view, CursorSetPrimary(&view->cursors)->head, row, column);
 }

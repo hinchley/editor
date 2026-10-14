@@ -55,6 +55,7 @@ This document describes how the editor is put together. It grows with each miles
 | `view` | A window onto a buffer: screen area, gutter, cursors, scroll position, stepping over visual rows and keeping the cursor in sight. |
 | `move` | Cursor movement and selection commands, written once against visual rows. |
 | `bracket` | Finding the bracket that matches another, and the closest pair around a range. |
+| `multicursor` | Adding cursors: at the next occurrence of the selection (Ctrl-E) and on the row above or below (Ctrl-Alt-Up/Down). |
 | `edit` | Editing commands: typing, line breaks, indentation, deletion, line commands, copy, cut and paste. Each edits at every cursor as one undo step. |
 | `prompt` | Questions asked in the message bar: a line of text, or a choice of letters. |
 | `clipboard` | Copy and paste through `wl-copy` and `wl-paste`, with an in-process fallback. |
@@ -133,9 +134,11 @@ Ctrl-Up and Ctrl-Down move `top` by one row and leave the cursor alone. They ref
 
 `RenderFrame` gives the view every row except the bottom two (the status bar and the message bar), scrolls it to its cursor and draws it. The gutter is the line number right aligned with a space either side, at least three digits wide. Only the first row of a wrapped line is numbered. With whitespace display on, a space is drawn as `·` and a tab as `→` in its first cell, in the `whitespace` colour. The ruler is drawn as `│` in the cell just after `rulerColumn` before the text, so text covers it, and spaces and tabs let it show through. A cluster cut by the left or right edge of the text area shows as blank cells.
 
+With more than one cursor, the terminal cursor is hidden and every cursor (the primary one too) is drawn by switching its cell to the `cursor` style (reverse video on the default colours) after the text is drawn, so it reads as a block whatever the cell held. A cursor at the end of a line covers the empty cell after it. Cursors outside the view are skipped by their line number before anything is measured.
+
 A selection is drawn with the `selection` background behind the text's own colours. When a selection continues onto the next line, one selected cell after the end of the line shows that the line break is included.
 
-The status bar shows the name (shortened in the middle to fit) with `[+]` and `[RO]` on the left, and the wrap state, file type, line ending, `line:column`, line count and `open:loaded` buffer counts on the right. When the window is too narrow it keeps only `line:column`, and then nothing, on the right. Below `minWindowWidth` by `minWindowHeight` the editor shows only "terminal too small".
+The status bar shows the name (shortened in the middle to fit) with `[+]` and `[RO]` on the left, and the cursor count (with more than one), the wrap state, file type, line ending, `line:column`, line count and `open:loaded` buffer counts on the right. When the window is too narrow it keeps only `line:column`, and then nothing, on the right. Below `minWindowWidth` by `minWindowHeight` the editor shows only "terminal too small".
 
 ## Editing
 
@@ -143,7 +146,17 @@ The status bar shows the name (shortened in the middle to fit) with `[+]` and `[
 
 A view listens to its buffer. After every `BufferReplace` it moves each cursor with `BufferAdjust`: a position before the change stays, one inside the replaced text moves to its start, and one at or after its end moves with the text that follows. The view's first visible line shifts the same way. So a command edits at one cursor and the others (and later, the other view of a split) stay on their text without the command knowing about them.
 
-An edit command loops over the cursors, replaces each one's range, and puts that cursor after its new text. When the loop ends, cursors that now overlap are merged and every desired column is reset. Line commands (indent, dedent) rewrite each run of touched lines with one replace, which would pull cursors inside it to its start, so they put the cursors back on the same text themselves. Ctrl-D, Ctrl-K and Ctrl-Shift-Up/Down first collapse to the primary cursor.
+An edit command loops over the cursors, replaces each one's range, and puts that cursor after its new text. When the loop ends, cursors that now overlap are merged and every desired column is reset. Line commands (indent, dedent) rewrite each run of touched lines with one replace, which would pull cursors inside it to its start, so they put the cursors back on the same text themselves. Ctrl-D, Ctrl-K and Ctrl-Shift-Up/Down first collapse to the primary cursor, and so do the commands that place one cursor (Ctrl-L, Ctrl-M, Alt-M and the search commands).
+
+### Multiple cursors
+
+The primary cursor is the one most recently added. The view scrolls to it, Esc collapses to it, and the status bar reports its position. Merging finds it again by value after sorting, so it survives the cursors around it being joined.
+
+Ctrl-E with no selection at the primary cursor selects the word at every cursor that sits on or just after one. With a selection on one line, it escapes the selected text into a case matching pattern (whole word when the selection is exactly one word) and searches forward from the selection's end with `MatchFind`. Matches that overlap any cursor are passed over, and the search stops once it has gone round the end and come back to the primary selection, so pressing it again after the last occurrence reports "no other occurrence" instead of looping. Ctrl-Alt-Up and Ctrl-Alt-Down step one visual row from the first or last cursor and keep its desired column, so a column of cursors goes down a ragged block of lines at one column.
+
+A paste with as many lines as there are cursors (not counting the empty line after the last line break of a line wise copy) gives the cursors one line each, in buffer order. Otherwise each cursor gets the whole text.
+
+The cost of an edit grows with the square of the cursor count, because each cursor's replace adjusts every other cursor. With 10,000 cursors, typing a character takes about 0.2 seconds.
 
 Enter copies the indentation before the cursor and adds one level after `{`, `[` or `(`. With the matching closer right after the cursor it puts the closer on its own line below. Blanks after the cursor are dropped, and a line that holds only blanks before the cursor is left empty rather than with trailing blanks. One level is `tabWidth` spaces, or a tab when expand tab is off (Alt-T).
 

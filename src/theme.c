@@ -41,7 +41,10 @@ static const ThemeEntry themeEntries[ThemeGroupCount] = {
   // search matches and unknown words, and the one that is selected.
   [ThemeMatch] = {"match", {235, 180, 0}},
   [ThemeMatchSelected] = {"matchselected", {235, 214, 0}},
-  [ThemeMisspelt] = {"misspelt", {colorDefault, 52, 0}}
+  [ThemeMisspelt] = {"misspelt", {colorDefault, 52, 0}},
+
+  // every cursor while there are several, as the terminal shows only one.
+  [ThemeCursor] = {"cursor", {colorDefault, colorDefault, StyleAttributeReverse}}
 };
 
 Style
