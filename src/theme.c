@@ -1,5 +1,7 @@
 #include "theme.h"
 
+#include <string.h>
+
 typedef struct ThemeEntry {
   const char *name;
   Style style;
@@ -26,6 +28,12 @@ static const ThemeEntry themeEntries[ThemeGroupCount] = {
   [ThemeEscape] = {"escape", {215, colorDefault, 0}},
   [ThemeLabel] = {"label", {204, colorDefault, 0}},
   [ThemeNamespace] = {"namespace", {180, colorDefault, 0}},
+  [ThemeTitle] = {"title", {75, colorDefault, StyleAttributeBold}},
+  [ThemeLiteral] = {"literal", {114, colorDefault, 0}},
+  [ThemeEmphasis] = {"emphasis", {colorDefault, colorDefault, StyleAttributeItalic}},
+  [ThemeStrong] = {"strong", {colorDefault, colorDefault, StyleAttributeBold}},
+  [ThemeUri] = {"uri", {75, colorDefault, StyleAttributeUnderline}},
+  [ThemeReference] = {"reference", {180, colorDefault, 0}},
   [ThemeGutter] = {"linenr", {240, colorDefault, 0}},
   [ThemeWhitespace] = {"whitespace", {238, colorDefault, 0}},
   [ThemeControl] = {"control", {204, colorDefault, 0}},
@@ -57,4 +65,29 @@ const char *
 ThemeName(enum ThemeGroup group)
 {
   return themeEntries[group].name;
+}
+
+bool
+ThemeOfCapture(const char *name, enum ThemeGroup *group)
+{
+  const char *last = strrchr(name, '.');
+
+  if (strcmp(last ? last + 1 : name, "builtin") == 0) {
+    *group = ThemeBuiltin;
+    return true;
+  }
+
+  if (strncmp(name, "text.", 5) == 0) name += 5;
+  u64 length = strcspn(name, ".");
+
+  for (u32 index = ThemeNone; index < ThemeGutter; index++) {
+    const char *candidate = themeEntries[index].name;
+
+    if (strlen(candidate) == length && strncmp(candidate, name, length) == 0) {
+      *group = (enum ThemeGroup)index;
+      return true;
+    }
+  }
+
+  return false;
 }

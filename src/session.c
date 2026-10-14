@@ -293,7 +293,8 @@ SessionSplit(bool fresh, i32 width)
   }
 
   if (width < minSplitWidth) {
-    StrBufAppendFormat(message, "a split needs a window at least %d columns wide", minSplitWidth);
+    const char *text = "a split needs a window at least %d columns wide";
+    StrBufAppendFormat(message, text, minSplitWidth);
     return;
   }
 

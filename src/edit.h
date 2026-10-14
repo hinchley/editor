@@ -42,6 +42,13 @@ EditIndent(const EditContext *edit);
 void
 EditDedent(const EditContext *edit);
 
+// comments out every line touched by a cursor, putting start (and end, unless it is
+// empty) around it, or removes the comments when every such line that is not blank has
+// one already.
+// blank lines are left alone, unless there are only blank lines.
+void
+EditToggleComment(const EditContext *edit, const char *start, const char *end);
+
 // deletes each selection, or the character before each cursor.
 // in leading spaces with expandTab, it deletes back to the previous tab stop.
 void

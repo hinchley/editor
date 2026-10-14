@@ -2,12 +2,32 @@
 
 #include "spell.h"
 
-bool
-MatchInLine(const MatchSet *set, const char *text, u64 length, u64 from, PatternMatch *match)
+// the first unknown word from from, passing over words spell check does not look at.
+static bool
+FindUnknown(const MatchSet *set, const StrBuf *text, u64 line, u64 from, PatternMatch *match)
 {
+  while (SpellFind(text->data, text->length, from, &match->start, &match->end)) {
+    if (!set->scope || HighlightSpellable(set->scope, line, match->start)) return true;
+    from = match->end;
+  }
+
+  return false;
+}
+
+bool
+MatchInLine(
+  const MatchSet *set,
+  const Buffer *buffer,
+  u64 line,
+  u64 from,
+  PatternMatch *match
+) {
+  const StrBuf *text = BufferLine(buffer, line);
+  const Pattern *pattern = set->pattern;
+
   switch (set->kind) {
-  case MatchKindSearch: return PatternFind(set->pattern, text, length, from, match);
-  case MatchKindSpell: return SpellFind(text, length, from, &match->start, &match->end);
+  case MatchKindSearch: return PatternFind(pattern, text->data, text->length, from, match);
+  case MatchKindSpell: return FindUnknown(set, text, line, from, match);
   case MatchKindNone: return false;
   }
 
@@ -18,9 +38,8 @@ MatchInLine(const MatchSet *set, const char *text, u64 length, u64 from, Pattern
 static bool
 FirstOnLine(const MatchSet *set, const Buffer *buffer, u64 line, u64 from, Range *found)
 {
-  const StrBuf *text = BufferLine(buffer, line);
   PatternMatch match;
-  if (!MatchInLine(set, text->data, text->length, from, &match)) return false;
+  if (!MatchInLine(set, buffer, line, from, &match)) return false;
 
   *found = (Range){{line, match.start}, {line, match.end}};
   return true;
@@ -30,12 +49,11 @@ FirstOnLine(const MatchSet *set, const Buffer *buffer, u64 line, u64 from, Range
 static bool
 LastOnLine(const MatchSet *set, const Buffer *buffer, u64 line, u64 before, Range *found)
 {
-  const StrBuf *text = BufferLine(buffer, line);
   PatternMatch match;
   bool any = false;
   u64 from = 0;
 
-  while (MatchInLine(set, text->data, text->length, from, &match) && match.start < before) {
+  while (MatchInLine(set, buffer, line, from, &match) && match.start < before) {
     *found = (Range){{line, match.start}, {line, match.end}};
     any = true;
     from = match.end;
@@ -110,10 +128,8 @@ MatchCount(const MatchSet *set, const Buffer *buffer)
   u64 count = 0;
 
   for (u64 line = 0; line < BufferLineCount(buffer); line++) {
-    const StrBuf *text = BufferLine(buffer, line);
     PatternMatch match = {};
-
-    while (MatchInLine(set, text->data, text->length, match.end, &match)) count++;
+    while (MatchInLine(set, buffer, line, match.end, &match)) count++;
   }
 
   return count;

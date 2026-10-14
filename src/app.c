@@ -64,7 +64,11 @@ static EditContext
 Editing(void)
 {
   Document *document = Current();
-  return (EditContext){.view = document->view, .undo = &document->undo, .expandTab = expandTab};
+  return (EditContext){
+    .view = document->view,
+    .undo = &document->undo,
+    .expandTab = expandTab
+  };
 }
 
 static void
@@ -273,6 +277,26 @@ Cancel(void)
   SearchClear();
 }
 
+// comments out the touched lines in the language of the file, or uncomments them.
+static void
+ToggleComment(void)
+{
+  const Lang *lang = Current()->lang;
+
+  if (!lang) {
+    StrBufAppendString(&message, "no comments for this file type");
+    return;
+  }
+
+  if (!lang->commentStart) {
+    StrBufAppendFormat(&message, "%s has no comments", lang->name);
+    return;
+  }
+
+  EditContext edit = Editing();
+  EditToggleComment(&edit, lang->commentStart, lang->commentEnd);
+}
+
 static bool
 MoveCommand(enum Command command)
 {
@@ -332,6 +356,7 @@ EditCommand(enum Command command)
   case CommandMoveLinesDown: EditMoveLines(&edit, false); break;
   case CommandDuplicateLine: EditDuplicateLines(&edit); break;
   case CommandDeleteLine: EditDeleteLines(&edit); break;
+  case CommandToggleComment: ToggleComment(); break;
   default: return false;
   }
 
@@ -545,6 +570,7 @@ WaitForInput(void)
 // what one side of the window shows.
 typedef struct Pane {
   StrBuf name;
+  StrBuf type;
   StatusInfo status;
   MatchSet marks;
 } Pane;
@@ -555,17 +581,28 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
   const Document *document = workspace.entries[index].document;
   WorkspaceName(&workspace, index, &pane->name);
 
+  // the language, noting when the buffer is too large or slow to colour.
+  if (document->lang) StrBufAppendString(&pane->type, document->lang->name);
+  if (HighlightDisabled(document->highlight)) StrBufAppendString(&pane->type, " (uncoloured)");
+
   pane->status = (StatusInfo){
     .name = &pane->name,
     .modified = DocumentModified(document),
     .readOnly = document->file.readOnly,
+    .fileType = pane->type.data,
     .lineEnding = FileLineEndingName(document->file.lineEnding),
     .openCount = workspace.openCount,
     .loadedCount = workspace.count
   };
 
   pane->marks = SearchMarks(document);
-  *framePane = (FramePane){.view = view, .marks = &pane->marks, .status = &pane->status};
+
+  *framePane = (FramePane){
+    .view = view,
+    .highlight = document->highlight,
+    .marks = &pane->marks,
+    .status = &pane->status
+  };
 }
 
 static void
@@ -595,8 +632,11 @@ Draw(void)
   }
 
   RenderFrame(&frame);
-  StrBufFree(&panes[0].name);
-  StrBufFree(&panes[1].name);
+
+  for (u32 index = 0; index < 2; index++) {
+    StrBufFree(&panes[index].name);
+    StrBufFree(&panes[index].type);
+  }
 
   // a picker covers the view and its status bar.
   i32 width = windowSize.width;

@@ -47,6 +47,10 @@ typedef struct Canvas {
   SpanList selected;
   bool lineBreakSelected;
 
+  // the syntax group of each byte of the current line, or nullptr when not highlighted.
+  Highlight *highlight;
+  const u8 *groups;
+
   // the matches on the current line, in order, the first one that may still hold the
   // cluster being drawn, and the group they draw with.
   const MatchSet *marks;
@@ -75,7 +79,7 @@ PutFaintSymbol(const Canvas *canvas, i32 row, i32 column, const char *symbol, St
 // a style drawn over by a selection or match group (or left alone with ThemeNone).
 // the group's background always wins, and its foreground when it has one.
 static Style
-Highlight(Style style, enum ThemeGroup group)
+Overlay(Style style, enum ThemeGroup group)
 {
   if (group == ThemeNone) return style;
 
@@ -115,15 +119,16 @@ FindSelection(Canvas *canvas, u64 line, u64 length)
 }
 
 static void
-FindMatches(Canvas *canvas, const StrBuf *text)
+FindMatches(Canvas *canvas, u64 line)
 {
   canvas->matched.count = 0;
   canvas->nextMatch = 0;
   if (canvas->marks->kind == MatchKindNone) return;
 
   PatternMatch match = {};
+  const Buffer *buffer = canvas->view->buffer;
 
-  while (MatchInLine(canvas->marks, text->data, text->length, match.end, &match)) {
+  while (MatchInLine(canvas->marks, buffer, line, match.end, &match)) {
     AddSpan(&canvas->matched, match.start, match.end);
   }
 }
@@ -187,7 +192,7 @@ DrawBlank(
   if (x < 0 || x >= canvas->textWidth || (x == canvas->rulerX && mark == ThemeNone)) return;
 
   const char *symbol = cluster->kind == LayoutKindSpace ? spaceSymbol : tabSymbol;
-  Style style = Highlight(ThemeStyle(ThemeWhitespace), mark);
+  Style style = Overlay(ThemeStyle(ThemeWhitespace), mark);
   if (mark == ThemeSelection) style = ThemeStyle(ThemeSelectionWhitespace);
   PutFaintSymbol(canvas, row, canvas->textColumn + (i32)x, symbol, style);
 }
@@ -212,15 +217,18 @@ DrawCluster(Canvas *canvas, i32 row, const LayoutCluster *cluster, i64 x)
 
   // a cluster cut by either edge of the text area shows as blank cells.
   if (x < 0 || x + cluster->width > canvas->textWidth) {
-    FillCells(canvas, row, x, cluster->width, Highlight(styleDefault, mark));
+    FillCells(canvas, row, x, cluster->width, Overlay(styleDefault, mark));
     return;
   }
 
   i32 column = canvas->textColumn + (i32)x;
   const char *bytes = canvas->text + cluster->start;
   u64 size = cluster->end - cluster->start;
-  Style text = Highlight(styleDefault, mark);
-  Style control = Highlight(ThemeStyle(ThemeControl), mark);
+  Style syntax = styleDefault;
+  if (canvas->groups) syntax = ThemeStyle(HighlightGroup(canvas->groups, cluster->start));
+
+  Style text = Overlay(syntax, mark);
+  Style control = Overlay(ThemeStyle(ThemeControl), mark);
 
   switch (cluster->kind) {
   case LayoutKindText:
@@ -262,7 +270,8 @@ DrawLine(Canvas *canvas, u64 line, u64 firstRow, i32 row)
   i32 bottom = view->row + view->height;
   canvas->text = text->data;
   FindSelection(canvas, line, text->length);
-  FindMatches(canvas, text);
+  FindMatches(canvas, line);
+  canvas->groups = HighlightLine(canvas->highlight, line);
 
   LayoutIterator iterator = LayoutBegin(text->data, text->length);
   LayoutCluster cluster;
@@ -315,11 +324,12 @@ DrawRuler(const Canvas *canvas)
 }
 
 static void
-DrawView(View *view, const MatchSet *marks)
+DrawView(View *view, Highlight *highlight, const MatchSet *marks)
 {
   const DisplayOptions *options = view->options;
   Canvas canvas = {
     .view = view,
+    .highlight = highlight,
     .marks = marks,
     .matchGroup = marks->kind == MatchKindSpell ? ThemeMisspelt : ThemeMatch,
     .textColumn = view->column + ViewGutterWidth(view),
@@ -446,7 +456,7 @@ DrawPane(const FramePane *pane, bool focused, i32 column, i32 width, i32 height)
   View *view = pane->view;
   ViewSetArea(view, 0, column, width, height);
   ViewScrollToCursor(view);
-  DrawView(view, pane->marks);
+  DrawView(view, pane->highlight, pane->marks);
   DrawStatus(view, pane->status, focused, height);
 }
 

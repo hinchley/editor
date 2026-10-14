@@ -76,7 +76,8 @@ TextOf(const StrBuf *text)
 MatchSet
 SearchMarks(const Document *document)
 {
-  return (MatchSet){document->marks, &last};
+  Highlight *scope = document->marks == MatchKindSpell ? document->highlight : nullptr;
+  return (MatchSet){document->marks, &last, scope};
 }
 
 static void
@@ -140,7 +141,7 @@ RestoreView(void)
 static void
 ShowFirst(void)
 {
-  MatchSet set = {MatchKindSearch, &last};
+  MatchSet set = {.kind = MatchKindSearch, .pattern = &last};
   found = MatchFind(&set, &Current()->buffer, origin, false, &current, &wrapped);
   if (found) Select(current);
   else RestoreView();
@@ -159,7 +160,7 @@ FindStep(bool backward)
 {
   if (!found) return;
 
-  MatchSet set = {MatchKindSearch, &last};
+  MatchSet set = {.kind = MatchKindSearch, .pattern = &last};
   Position from = backward ? current.start : current.end;
   MatchFind(&set, &Current()->buffer, from, backward, &current, &wrapped);
   Select(current);

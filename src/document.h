@@ -10,6 +10,8 @@
 // its buffer through pointers.
 #include "buffer.h"
 #include "file.h"
+#include "highlight.h"
+#include "lang.h"
 #include "match.h"
 #include "strbuf.h"
 #include "types.h"
@@ -31,6 +33,10 @@ typedef struct Document {
 
   // what the view highlights: search matches, unknown words or nothing.
   enum MatchKind marks;
+
+  // the language from the file's extension, and its highlighter (nullptr without either).
+  const Lang *lang;
+  Highlight *highlight;
 } Document;
 
 // opens path, or an unnamed empty document when path is nullptr.
@@ -54,6 +60,7 @@ bool
 DocumentModified(const Document *document);
 
 // saves to the document's path; see FileSave.
+// a save under a new name with another extension changes the language.
 enum FileStatus
 DocumentSave(Document *document, bool overwriteChanged, StrBuf *message);
 

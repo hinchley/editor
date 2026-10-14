@@ -243,7 +243,8 @@ ScreenSetStyle(i32 row, i32 column, Style style)
   if (cell->width == 0 && column > 0) cell = CellAt(&back, row, --column);
 
   cell->style = style;
-  if (cell->width == 2 && column + 1 < screenWidth) CellAt(&back, row, column + 1)->style = style;
+  bool wide = cell->width == 2 && column + 1 < screenWidth;
+  if (wide) CellAt(&back, row, column + 1)->style = style;
 }
 
 void

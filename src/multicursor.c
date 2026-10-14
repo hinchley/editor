@@ -13,7 +13,8 @@ SelectWords(View *view)
   Position head = CursorSetPrimary(set)->head;
   u64 start;
   u64 end;
-  if (!MoveWordAround(BufferLine(view->buffer, head.line), head.byte, &start, &end)) return false;
+  const StrBuf *primaryLine = BufferLine(view->buffer, head.line);
+  if (!MoveWordAround(primaryLine, head.byte, &start, &end)) return false;
 
   for (u32 index = 0; index < set->count; index++) {
     Cursor *cursor = &set->cursors[index];
@@ -83,7 +84,7 @@ MultiCursorAddNext(View *view, StrBuf *message)
   };
 
   PatternSet(&pattern, source.data, source.length, options);
-  MatchSet matches = {MatchKindSearch, &pattern};
+  MatchSet matches = {.kind = MatchKindSearch, .pattern = &pattern};
 
   // matches held by other cursors are passed over, until the search comes back round to
   // the primary selection.

@@ -52,6 +52,10 @@ static constexpr u64 binaryProbeSize = 4096;
 // syntax highlighting is skipped for buffers larger than this.
 static constexpr u64 maxHighlightSize = 16ull * 1024 * 1024;
 
+// a parse that takes longer than this many milliseconds turns highlighting off for the
+// buffer, rather than leave the editor waiting.
+static constexpr i64 maxParseTime = 1000;
+
 // a split view needs at least this many columns.
 static constexpr i32 minSplitWidth = 80;
 

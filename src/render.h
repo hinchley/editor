@@ -2,6 +2,7 @@
 
 // draws a frame into the screen grid: the views with their status bars, and the message
 // bar.
+#include "highlight.h"
 #include "match.h"
 #include "strbuf.h"
 #include "types.h"
@@ -22,9 +23,11 @@ typedef struct StatusInfo {
   u64 loadedCount;
 } StatusInfo;
 
-// one side of the window: a view, the matches to highlight in it and its status.
+// one side of the window: a view, its syntax highlighting (or nullptr), the matches to
+// highlight in it and its status.
 typedef struct FramePane {
   View *view;
+  Highlight *highlight;
   const MatchSet *marks;
   const StatusInfo *status;
 } FramePane;

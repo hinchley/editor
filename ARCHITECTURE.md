@@ -36,7 +36,7 @@ This document describes how the editor is put together. It grows with each miles
 | `buffer` | The text of one buffer as a flat array of lines, and `BufferReplace`, the single edit primitive, which notifies listeners. |
 | `file` | Loading a file into a buffer (size and binary checks, line ending detection) and saving it atomically. |
 | `undo` | The undo history of one buffer: groups of recorded changes with the cursors before and after each. |
-| `document` | A buffer with its file, undo history and a view for each side of a split, whether it differs from the file, and what it highlights (search matches, unknown words or nothing). |
+| `document` | A buffer with its file, undo history and a view for each side of a split, whether it differs from the file, what it highlights (search matches, unknown words or nothing), and its language and highlighter. |
 | `filter` | Path patterns from `.editor` files: names, folders, anchored paths and `*`. |
 | `loader` | Turns the paths from the command line (or Ctrl-O) into the list of files to load: walking folders, applying `.editor` files, following file links, removing duplicates and enforcing the file limit. |
 | `workspace` | The buffer list: loaded entries, which are open, the current one, and when each was last used. Opens an entry the first time it is used. Also the split: whether there are two views, what the other one shows and which side is which. |
@@ -49,23 +49,26 @@ This document describes how the editor is put together. It grows with each miles
 | `key` | The `Key` type (code plus modifiers) and key names such as `ctrl+shift+up`. |
 | `keymap` | The binding table: key, command and help text. The single source of truth for dispatch and the Alt-H list. |
 | `screen` | A grid of styled cells drawn in full each frame. Flushing writes only the cells that changed, inside a synchronized update. |
-| `theme` | Highlight groups (syntax and interface) and the style each one draws with. |
+| `theme` | Highlight groups (syntax, markup and interface), the style each one draws with, and which group a tree-sitter capture name uses. |
 | `layout` | How one line sits on screen: grapheme clusters with their display columns and widths (tabs expanded), and the visual rows it wraps into. |
 | `cursor` | The cursor set of a view: anchor, head and desired column per cursor, one of them primary. Following changes, and merging cursors that overlap. |
 | `view` | A window onto a buffer: screen area, gutter, cursors, scroll position, stepping over visual rows and keeping the cursor in sight. |
 | `move` | Cursor movement and selection commands, written once against visual rows. |
 | `bracket` | Finding the bracket that matches another, and the closest pair around a range. |
 | `multicursor` | Adding cursors: at the next occurrence of the selection (Ctrl-E) and on the row above or below (Ctrl-Alt-Up/Down). |
-| `edit` | Editing commands: typing, line breaks, indentation, deletion, line commands, copy, cut and paste. Each edits at every cursor as one undo step. |
+| `edit` | Editing commands: typing, line breaks, indentation, comments, deletion, line commands, copy, cut and paste. Each edits at every cursor as one undo step. |
 | `prompt` | Questions asked in the message bar: a line of text, or a choice of letters. |
 | `clipboard` | Copy and paste through `wl-copy` and `wl-paste`, with an in-process fallback. |
-| `render` | Draws a frame: one view or two side by side (gutter, text, selections, matches, whitespace symbols, ruler), a status bar under each, and the message bar. |
+| `render` | Draws a frame: one view or two side by side (gutter, syntax coloured text, selections, matches, whitespace symbols, ruler), a status bar under each, and the message bar. |
 | `pattern` | The literal search pattern shared by find, replace and the match commands: escapes, anchors, case folding, whole words, and finding a match in a line. |
 | `spell` | The word list compiled in from `data/words.txt`, and finding unknown words in a line. |
-| `match` | The match set a document highlights (a pattern's matches or unknown words): finding the matches on a line, the next or previous one in the buffer, and counting them. |
+| `match` | The match set a document highlights (a pattern's matches or unknown words, limited to the text spell check looks at): finding the matches on a line, the next or previous one in the buffer, and counting them. |
 | `search` | The search commands: Ctrl-F, Alt-N and Alt-P, Ctrl-W, Ctrl-R and Alt-S. |
+| `lang` | The languages by file extension: display name and comment markers. |
+| `query` | A compiled tree-sitter query with what the runtime leaves to its user: the text predicates (`#eq?`, `#match?`, `#any-of?` and their `#not-` forms) and the injection settings of `#set!`. Knows nothing about particular languages. |
+| `highlight` | The grammar table and the only place that knows grammars: parsing a buffer (again incrementally after edits), injected languages, and the syntax group of every byte of the lines around the one asked for. Also tells spell check which text it looks at. |
 
-Later milestones add `lang`, `highlight` and `project`.
+A later milestone adds `project`.
 
 ## Terminal
 
@@ -216,7 +219,7 @@ Ctrl-R runs from the start of the selection to the end of the buffer, then from 
 
 ### Spell check
 
-The word list is embedded with `#embed` and indexed (one offset per word) the first time it is used, then binary searched in byte order. A run of letters, digits, `_` and apostrophes is read whole: runs with digits or `_` are skipped, apostrophes at either end are trimmed, words in capitals only are taken for acronyms, and words inside a blank separated chunk holding `://`, `www.` or `@` are skipped as links. A word is known when it is in the list as written, or when it starts with a capital and its lowercase form is. Typographic apostrophes are looked up as `'`. Letters are those of the Latin, Greek and Cyrillic scripts; other scripts are not checked. Spell check covers the whole file for now; M9 limits code files to comments and strings and leaves out Markdown code.
+The word list is embedded with `#embed` and indexed (one offset per word) the first time it is used, then binary searched in byte order. A run of letters, digits, `_` and apostrophes is read whole: runs with digits or `_` are skipped, apostrophes at either end are trimmed, words in capitals only are taken for acronyms, and words inside a blank separated chunk holding `://`, `www.` or `@` are skipped as links. A word is known when it is in the list as written, or when it starts with a capital and its lowercase form is. Typographic apostrophes are looked up as `'`. Letters are those of the Latin, Greek and Cyrillic scripts; other scripts are not checked. In a highlighted buffer, the spell match set asks `HighlightSpellable` about each unknown word's first byte and passes over the ones outside the text it checks (see Highlighting). Other buffers are checked in full.
 
 ## Buffers
 
@@ -244,6 +247,40 @@ Ctrl-PgUp and Ctrl-PgDn step through open entries in load order, wrapping. Ctrl-
 
 `picker` takes a list of items (text, an optional note, an id) and shows it over every row above the message bar, with a bar naming the list and counting matches. The filter is a text prompt with a change handler, so it edits like any prompt. Up, Down, PageUp, PageDown, Home and End are taken by the picker first, and Enter with no matches does nothing. Each item keeps a case folded copy of its text, so filtering 100,000 paths is a byte search per item. A filter matches anywhere in the item, `^` at its start ties it to the start and `$` at its end to the end, and both ignore case. Long items are shortened in the middle. The Alt-H list is built from the binding table, sorted by description, and Enter runs the picked command.
 
+## Highlighting
+
+### Languages
+
+`lang` maps an extension (ignoring case) to a display name and comment markers. A document picks its language when it opens and again after each save, so saving under a new extension changes it. `highlight` looks its grammar up by that display name in `grammars[]`. Each row holds the injection id other grammars use to embed it, its `tree_sitter_<lang>()` entry point, its highlight query and optional injection query (`u8` arrays filled by `#embed`), and two flags: `prose` (spell checked outside code) and `freshParse` (see below). A grammar's queries are compiled the first time any buffer uses it and shared from then on. A query that fails to compile is reported in the message bar and leaves that language uncoloured. README.md lists the steps for adding a language.
+
+### Parsing
+
+A highlighter listens to its buffer. Each change becomes a `TSInputEdit` applied to the trees at once, and the parse itself waits until a line is asked for, so a burst of edits (many cursors, replace all) costs one reparse. Tree-sitter needs the byte offset of each change, so the highlighter keeps the offsets of line starts, extending them lazily and keeping only those up to the changed line. The parser reads the buffer through a `TSInput` callback, which hands over the rest of the line at the requested point and then its line break, so the text is never copied into one string.
+
+Parsing has a deadline of `maxParseTime` (one second): a parse that runs past it is stopped, and highlighting stays off for that buffer until it is reloaded. Buffers over `maxHighlightSize` (16 MB) are not parsed at all. In both cases the status bar shows the language as "(uncoloured)". A 20,000 line C file parses in about 0.1 seconds, and each keystroke after that reparses in under 2 ms.
+
+### Injections
+
+A grammar with an injection query embeds others: Markdown its inline grammar (for every paragraph and heading), fenced code blocks and HTML blocks; HTML its scripts and styles; inline Markdown its HTML tags. The injected language comes from `#set! injection.language` or from the text of an `@injection.language` capture, and is looked up first by injection id, then as a file extension through `lang`, so a fence can say `js`. Languages without a grammar (yaml, regex, jsdoc) are skipped. An injected language covers the ranges of its `@injection.content` node, less the node's named children, which belong to the outer language (the `> ` of a quoted code block). Anonymous children are only tokens of the outer grammar, so they stay in. `injection.combined` is not supported: each node is parsed on its own.
+
+Each injection is a layer: a grammar, its ranges and its tree. Layers are found again by grammar and first byte, and follow edits like the main tree, so an unchanged paragraph or code block is not parsed again. An edited layer is parsed incrementally, except for grammars marked `freshParse`: Markdown's inline grammar gives different trees when parsed incrementally (found by comparing random edits against fresh parses), and its layers are a paragraph each, so they are parsed from scratch. Layers nest up to four deep. Once there are more than 512, those not used by the last two windows are dropped.
+
+### Colouring lines
+
+`HighlightLine` gives a byte per text byte: the syntax group in the low six bits, plus two flags for spell check. It fills a window of lines (64 before the line asked for and 192 after) by running each layer's highlight query over just those rows. Captures that fail their predicates are dropped. The rest are sorted by start, enclosing nodes before the nodes inside them, and for the same node by pattern, then painted in that order, so an inner node beats the node around it and a later pattern beats an earlier one (the convention of the vendored queries, as in `(identifier) @variable` followed by more specific patterns). Injected layers are painted after the layer that holds them. Two windows are kept, one for each side of a split, and any edit invalidates both. Rendering asks for the groups of each line it draws and starts from that group's style, with selections and matches drawn over it.
+
+A capture name picks the group that shares its first component (`string.special` is `string`), except that any `*.builtin` is `builtin`, and Markdown's `text.*` captures use their second component: `title`, `literal`, `emphasis`, `strong`, `uri` and `reference`, which are markup groups in the theme. A capture with no group colours nothing, and `@none` (which Markdown puts on code block contents) clears the colour.
+
+Tree-sitter leaves text predicates to its user. `query` evaluates `#eq?`, `#match?` and `#any-of?` (and `#not-` forms) against the captured text. `#match?` uses POSIX extended regular expressions, with `\d`, `\w` and `\s` rewritten as bracket expressions first, since the queries are written for Rust's regular expressions. Other predicates (`#is-not? local`, `#offset!`) are ignored.
+
+### Spell check scope
+
+Painting `literal` or `uri` also sets a sticky literal flag that later paints do not clear, so the contents of a code block stay marked as code even though `@none` and the injected language recolour them. A `string.special` capture (a CSS colour, a regular expression, a JSON key) sets a special flag. Spell check passes over literal and special bytes, and otherwise looks at comments and strings in every language, and in prose languages also at uncoloured text and markup (headings, emphasis, link text).
+
+## Comments
+
+Ctrl-/ uses the comment markers from `lang`. It first decides for all the lines touched by every cursor: when each of them that is not blank is commented already, it uncomments, otherwise it comments. Commenting puts the start marker and a space at the smallest indentation of each block of touched lines (so the markers line up) and, for block comment languages, a space and the end marker at the end of the line. Blank lines are left alone unless every touched line is blank. Uncommenting removes the markers and one space next to each. It runs as line edits like indentation (one replace per line, in a second pass for end markers), so other views keep their cursors on the same text, and the whole toggle is one undo step.
+
 ## Conventions
 
 - Types are `PascalCase` and structs are typedef'd (`StrBuf`). Enum constants are `PascalCase` prefixed with their enum name (`CursorStyleLine`, `GraphemeBreakExtend`).
@@ -266,12 +303,6 @@ Ctrl-PgUp and Ctrl-PgDn step through open entries in load order, wrapping. Ctrl-
 | Markdown (block and inline) | github.com/tree-sitter-grammars/tree-sitter-markdown | v0.5.3 | 15 |
 
 Each vendored folder keeps its upstream `LICENSE`. The runtime's WebAssembly support (`wasm-stdlib`) is left out. `wasm_store.c` is kept because `lib.c` includes it, but it compiles to nothing without `TREE_SITTER_FEATURE_WASM`.
-
-Notes for the highlighting milestone:
-
-- The runtime does not evaluate text predicates (`#match?`, `#eq?`, `#any-of?`). For example, the C query captures `main` as `constant` until `#match? "^[A-Z]..."` is applied. `highlight.c` must filter matches itself.
-- The Markdown queries capture `text.title`, `text.literal`, `text.emphasis`, `text.strong`, `text.uri` and `text.reference`. With the first-component rule these would all share one colour, so the theme needs a way to tell them apart.
-- The Markdown block grammar injects the inline grammar under the id `markdown_inline`.
 
 ## Unicode tables
 

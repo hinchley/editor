@@ -1,5 +1,18 @@
 #include "document.h"
 
+// picks the language from the path and starts highlighting in it, when it changed.
+static void
+DetectLanguage(Document *document, StrBuf *message)
+{
+  const char *path = document->file.path.data;
+  const Lang *lang = path ? LangOfPath(path) : nullptr;
+  if (lang == document->lang && (document->highlight || !lang)) return;
+
+  HighlightFree(document->highlight);
+  document->lang = lang;
+  document->highlight = lang ? HighlightNew(&document->buffer, lang->name, message) : nullptr;
+}
+
 enum FileStatus
 DocumentOpen(
   Document *document,
@@ -22,12 +35,15 @@ DocumentOpen(
   }
 
   document->savedLineEnding = document->file.lineEnding;
+  bool read = status == FileStatusOk || status == FileStatusNew;
+  if (read) DetectLanguage(document, message);
   return status;
 }
 
 void
 DocumentFree(Document *document)
 {
+  HighlightFree(document->highlight);
   ViewFree(&document->views[0]);
   ViewFree(&document->views[1]);
   UndoFree(&document->undo);
@@ -51,6 +67,7 @@ DocumentSave(Document *document, bool overwriteChanged, StrBuf *message)
 
   UndoMarkSaved(&document->undo);
   document->savedLineEnding = file->lineEnding;
+  DetectLanguage(document, message);
   return status;
 }
 
@@ -77,6 +94,7 @@ DocumentReload(Document *document, StrBuf *message)
   document->file = loaded;
   document->savedLineEnding = loaded.lineEnding;
   UndoClear(&document->undo);
+  HighlightReset(document->highlight);
   ViewClamp(&document->views[0]);
   ViewClamp(&document->views[1]);
   return true;

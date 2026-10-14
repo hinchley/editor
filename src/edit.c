@@ -17,13 +17,21 @@ typedef struct LineEdit {
   u64 length;
 } LineEdit;
 
-typedef LineEdit (*LineEditor)(const EditContext *edit, const StrBuf *line);
-
 // a run of lines, first to last inclusive.
 typedef struct LineBlock {
   u64 first;
   u64 last;
 } LineBlock;
+
+// what a line editor works from besides the line: the command, the block of touched
+// lines the line is in, and the editor's own settings.
+typedef struct LineTask {
+  const EditContext *edit;
+  LineBlock block;
+  void *context;
+} LineTask;
+
+typedef LineEdit (*LineEditor)(const LineTask *task, const StrBuf *line);
 
 // gives the range a cursor's command acts on.
 typedef Range (*RangeOf)(const EditContext *edit, const Cursor *cursor);
@@ -319,12 +327,13 @@ MapByte(u64 byte, const LineEdit *lineEdit)
 // edits each line of a block with a replace of just the bytes that change, so every view
 // of the buffer keeps its cursors on the same text, and records each line's edit.
 static void
-RewriteBlock(const EditContext *edit, LineBlock block, LineEditor editor, LineEdit *edits)
+RewriteBlock(const LineTask *task, LineEditor editor, LineEdit *edits)
 {
-  Buffer *buffer = edit->view->buffer;
+  Buffer *buffer = task->edit->view->buffer;
+  LineBlock block = task->block;
 
   for (u64 line = block.first; line <= block.last; line++) {
-    LineEdit lineEdit = editor(edit, BufferLine(buffer, line));
+    LineEdit lineEdit = editor(task, BufferLine(buffer, line));
     edits[line - block.first] = lineEdit;
     if (!lineEdit.removed && !lineEdit.length) continue;
 
@@ -337,7 +346,7 @@ RewriteBlock(const EditContext *edit, LineBlock block, LineEditor editor, LineEd
 // the cursors are then put back as MapByte says, which keeps a cursor at the start of an
 // indented line before the new indentation.
 static void
-EditLines(const EditContext *edit, LineEditor editor)
+EditLines(const EditContext *edit, LineEditor editor, void *context)
 {
   CursorSet *set = &edit->view->cursors;
   CursorSetMerge(set);
@@ -351,7 +360,7 @@ EditLines(const EditContext *edit, LineEditor editor)
   for (u32 index = 0; index < blockCount; index++) {
     LineBlock block = blocks[index];
     LineEdit *edits = MemoryAllocate((block.last - block.first + 1) * sizeof(LineEdit));
-    RewriteBlock(edit, block, editor, edits);
+    RewriteBlock(&(LineTask){edit, block, context}, editor, edits);
 
     // line edits never add or remove lines, so cursor lines stay as they were.
     for (u32 cursor = 0; cursor < set->count; cursor++) {
@@ -378,17 +387,17 @@ EditLines(const EditContext *edit, LineEditor editor)
 }
 
 static LineEdit
-IndentLine(const EditContext *edit, const StrBuf *line)
+IndentLine(const LineTask *task, const StrBuf *line)
 {
   if (line->length == 0) return (LineEdit){};
 
   LineEdit lineEdit = {};
-  lineEdit.text = IndentUnit(edit, &lineEdit.length);
+  lineEdit.text = IndentUnit(task->edit, &lineEdit.length);
   return lineEdit;
 }
 
 static LineEdit
-DedentLine([[maybe_unused]] const EditContext *edit, const StrBuf *line)
+DedentLine([[maybe_unused]] const LineTask *task, const StrBuf *line)
 {
   if (line->length && line->data[0] == '\t') return (LineEdit){.removed = 1};
 
@@ -416,7 +425,7 @@ EditIndent(const EditContext *edit)
   CursorSet *set = &edit->view->cursors;
 
   if (AnySelection(set)) {
-    EditLines(edit, IndentLine);
+    EditLines(edit, IndentLine, nullptr);
     return;
   }
 
@@ -445,7 +454,179 @@ EditIndent(const EditContext *edit)
 void
 EditDedent(const EditContext *edit)
 {
-  EditLines(edit, DedentLine);
+  EditLines(edit, DedentLine, nullptr);
+}
+
+// how a comment toggle goes: the comment's text, what to do, and the indentation of the
+// block last measured.
+typedef struct Commenting {
+  const char *start;
+  u64 startLength;
+  const char *end;
+  u64 endLength;
+
+  // remove comments rather than add them, and with only blank lines, comment those too.
+  bool remove;
+  bool blankLines;
+
+  // the pass that puts or removes the end of a block comment.
+  bool closing;
+
+  LineBlock measured;
+  u64 indent;
+} Commenting;
+
+static bool
+IsBlankLine(const StrBuf *line)
+{
+  return IndentLength(line) == line->length;
+}
+
+// the length of a line without its trailing blanks.
+static u64
+TrimmedLength(const StrBuf *line)
+{
+  u64 length = line->length;
+  while (length > 0 && IsBlank(line->data[length - 1])) length--;
+  return length;
+}
+
+static bool
+HasAt(const StrBuf *line, u64 at, const char *text, u64 length)
+{
+  return at + length <= line->length && memcmp(line->data + at, text, length) == 0;
+}
+
+static bool
+IsCommented(const Commenting *comment, const StrBuf *line)
+{
+  u64 indent = IndentLength(line);
+  u64 trimmed = TrimmedLength(line);
+  if (!HasAt(line, indent, comment->start, comment->startLength)) return false;
+  if (!comment->endLength) return true;
+
+  u64 room = comment->startLength + comment->endLength;
+  if (trimmed < indent + room) return false;
+  return HasAt(line, trimmed - comment->endLength, comment->end, comment->endLength);
+}
+
+// the smallest indentation of the lines in a block that are not blank, so the comment
+// markers line up.
+static u64
+BlockIndent(const LineTask *task, Commenting *comment)
+{
+  LineBlock block = task->block;
+  bool known = comment->measured.first == block.first && comment->measured.last == block.last;
+  if (known) return comment->indent;
+
+  const Buffer *buffer = task->edit->view->buffer;
+  u64 indent = UINT64_MAX;
+
+  for (u64 line = block.first; line <= block.last; line++) {
+    const StrBuf *text = BufferLine(buffer, line);
+    u64 length = IndentLength(text);
+    if (length < text->length && length < indent) indent = length;
+  }
+
+  comment->measured = block;
+  comment->indent = indent;
+  return indent;
+}
+
+static LineEdit
+OpenComment(const LineTask *task, Commenting *comment, const StrBuf *line)
+{
+  if (comment->remove) {
+    u64 at = IndentLength(line);
+    u64 removed = comment->startLength;
+    if (HasAt(line, at + removed, " ", 1)) removed++;
+    return (LineEdit){.at = at, .removed = removed};
+  }
+
+  u64 at = BlockIndent(task, comment);
+  if (at > line->length) at = line->length;
+
+  // the text is the start and a space, which follows it in the comment string.
+  return (LineEdit){.at = at, .text = comment->start, .length = comment->startLength + 1};
+}
+
+static LineEdit
+CloseComment(Commenting *comment, const StrBuf *line)
+{
+  if (!comment->remove) {
+    // the text is a space and the end, which follow each other in the comment string.
+    const char *text = comment->end - 1;
+    return (LineEdit){.at = line->length, .text = text, .length = comment->endLength + 1};
+  }
+
+  u64 end = TrimmedLength(line);
+  u64 at = end - comment->endLength;
+  if (at > 0 && line->data[at - 1] == ' ') at--;
+  return (LineEdit){.at = at, .removed = end - at};
+}
+
+static LineEdit
+CommentLine(const LineTask *task, const StrBuf *line)
+{
+  Commenting *comment = task->context;
+  if (!comment->blankLines && IsBlankLine(line)) return (LineEdit){};
+  if (comment->closing) return CloseComment(comment, line);
+  return OpenComment(task, comment, line);
+}
+
+// decides whether a toggle removes comments: only when every line it touches that is
+// not blank has one.
+static void
+DecideComment(const EditContext *edit, Commenting *comment)
+{
+  CursorSet *set = &edit->view->cursors;
+  CursorSetMerge(set);
+  u32 blockCount;
+  LineBlock *blocks = TouchedBlocks(set, &blockCount);
+  bool anyText = false;
+  bool allCommented = true;
+
+  for (u32 index = 0; index < blockCount; index++) {
+    for (u64 line = blocks[index].first; line <= blocks[index].last; line++) {
+      const StrBuf *text = BufferLine(edit->view->buffer, line);
+      if (IsBlankLine(text)) continue;
+
+      anyText = true;
+      if (!IsCommented(comment, text)) allCommented = false;
+    }
+  }
+
+  free(blocks);
+  comment->remove = anyText && allCommented;
+  comment->blankLines = !anyText;
+}
+
+void
+EditToggleComment(const EditContext *edit, const char *start, const char *end)
+{
+  // the markers are put in with a space between them and the text.
+  StrBuf text = {};
+  StrBufAppendFormat(&text, "%s %s", start, end);
+
+  Commenting comment = {
+    .start = text.data,
+    .startLength = strlen(start),
+    .end = text.data + strlen(start) + 1,
+    .endLength = strlen(end),
+    .measured = {UINT64_MAX, UINT64_MAX}
+  };
+
+  DecideComment(edit, &comment);
+  Begin(edit, UndoKindOther);
+  EditLines(edit, CommentLine, &comment);
+
+  if (comment.endLength) {
+    comment.closing = true;
+    EditLines(edit, CommentLine, &comment);
+  }
+
+  End(edit);
+  StrBufFree(&text);
 }
 
 static bool
