@@ -6,11 +6,15 @@
 #include "memory.h"
 #include "prompt.h"
 #include "screen.h"
+#include "settings.h"
 #include "strbuf.h"
 #include "theme.h"
 #include "utf8.h"
 
 static constexpr u64 noNote = UINT64_MAX;
+
+// the line between the list and its preview.
+static constexpr char separatorSymbol[] = "\u2502";
 
 // an item's strings live in the shared buffers below, by offset.
 typedef struct Item {
@@ -39,6 +43,11 @@ static bool active;
 static StrBuf title;
 static PickerDone onDone;
 static void *doneContext;
+
+// the preview beside the list (or nullptr), and the widest item text in columns.
+static PickerPreview preview;
+static void *previewContext;
+static u64 widest;
 
 // the selected match, the first match shown, and how many rows the list had last drawn.
 static u64 selected;
@@ -171,11 +180,33 @@ PickerOpen(const char *newTitle, const char *label, PickerDone done, void *conte
   StrBufAppendString(&title, newTitle);
   onDone = done;
   doneContext = context;
+  preview = nullptr;
   active = true;
   Filter(nullptr, "", 0);
 
   PromptAsk(label, "", Answered, nullptr);
   PromptHandle(Filter, nullptr);
+}
+
+void
+PickerSelect(u64 position)
+{
+  if (position < matchCount) selected = position;
+}
+
+void
+PickerShowPreview(PickerPreview newPreview, void *context)
+{
+  preview = newPreview;
+  previewContext = context;
+  widest = 0;
+
+  for (u64 index = 0; index < itemCount; index++) {
+    const char *text = texts.data + items[index].text;
+    u64 length = items[index].length;
+    u64 width = LayoutColumn(text, length, length);
+    if (width > widest) widest = width;
+  }
 }
 
 bool
@@ -221,14 +252,14 @@ PickerKey(Key key)
 }
 
 static void
-DrawItem(const Item *item, i32 row, i32 width, bool isSelected)
+DrawItem(const Item *item, i32 row, i32 width, bool isSelected, bool notes)
 {
   Style style = isSelected ? ThemeStyle(ThemeSelection) : styleDefault;
   Style noteStyle = ThemeStyle(ThemeGutter);
   noteStyle.background = style.background;
   ScreenFill(row, 0, width, style);
 
-  const char *note = item->note == noNote ? nullptr : texts.data + item->note;
+  const char *note = item->note == noNote || !notes ? nullptr : texts.data + item->note;
   i32 noteWidth = note ? (i32)LayoutColumn(note, strlen(note), strlen(note)) + 1 : 0;
 
   // a space either side, and the note after the text.
@@ -248,10 +279,33 @@ PickerDraw(i32 width, i32 height)
   if (selected < top) top = selected;
   if (selected >= top + pageRows) top = selected - pageRows + 1;
 
+  // with a preview the list is as wide as its widest item, but takes at most half.
+  bool previewing = preview && width >= minSplitWidth;
+  i32 listWidth = width;
+
+  if (previewing) {
+    i32 half = (width - 1) / 2;
+    listWidth = widest + 2 < (u64)half ? (i32)widest + 2 : half;
+  }
+
   for (i32 row = 0; row < listRows; row++) {
     u64 index = top + (u64)row;
     ScreenFill(row, 0, width, styleDefault);
-    if (index < matchCount) DrawItem(&items[matches[index]], row, width, index == selected);
+    if (index >= matchCount) continue;
+
+    DrawItem(&items[matches[index]], row, listWidth, index == selected, !previewing);
+  }
+
+  if (previewing) {
+    Style separator = ThemeStyle(ThemeGutter);
+
+    for (i32 row = 0; row < listRows; row++) {
+      ScreenPutCluster(row, listWidth, separatorSymbol, strlen(separatorSymbol), 1, separator);
+    }
+
+    i32 column = listWidth + 1;
+    u64 id = matchCount ? items[matches[selected]].id : 0;
+    if (matchCount) preview(previewContext, id, column, width - column, listRows);
   }
 
   Style bar = ThemeStyle(ThemeStatus);

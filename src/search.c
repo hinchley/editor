@@ -9,7 +9,8 @@ enum SearchPrompt {
   SearchPromptNone,
   SearchPromptFind,
   SearchPromptPattern,
-  SearchPromptReplacement
+  SearchPromptReplacement,
+  SearchPromptProject
 };
 
 // what escape puts back after incremental find.
@@ -45,6 +46,7 @@ static bool caseSensitive;
 static StrBuf lastReplacement;
 
 static enum SearchPrompt prompt;
+static SearchProjectDone projectDone;
 static SearchSaved saved;
 static Replacing replacing;
 
@@ -502,6 +504,33 @@ SearchReplace(void)
   Label("replace");
 }
 
+static void
+ProjectAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
+{
+  prompt = SearchPromptNone;
+  if (!answer || !length) return;
+
+  SetPattern(answer, length);
+  projectDone(&last);
+}
+
+void
+SearchProject(SearchProjectDone done)
+{
+  projectDone = done;
+  prompt = SearchPromptProject;
+  PromptAsk("search files: ", "", ProjectAnswered, nullptr);
+  Label("search files");
+}
+
+void
+SearchShow(Document *document, const Pattern *pattern)
+{
+  const StrBuf *source = &pattern->source;
+  PatternSet(&last, TextOf(source), source->length, pattern->options);
+  document->marks = MatchKindSearch;
+}
+
 bool
 SearchActive(void)
 {
@@ -530,7 +559,7 @@ ToggleCase(void)
     return;
   }
 
-  Label("replace");
+  Label(prompt == SearchPromptProject ? "search files" : "replace");
 }
 
 void

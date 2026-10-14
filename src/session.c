@@ -8,6 +8,7 @@
 #include "loader.h"
 #include "memory.h"
 #include "picker.h"
+#include "project.h"
 #include "prompt.h"
 #include "save.h"
 #include "settings.h"
@@ -145,6 +146,7 @@ static void
 ReplaceAll(void)
 {
   u64 unreadable = pending.unreadable;
+  ProjectClear();
   WorkspaceFree(workspace);
   WorkspaceAddList(workspace, &pending);
   SwitchToFirst(false);

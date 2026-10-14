@@ -63,12 +63,11 @@ This document describes how the editor is put together. It grows with each miles
 | `pattern` | The literal search pattern shared by find, replace and the match commands: escapes, anchors, case folding, whole words, and finding a match in a line. |
 | `spell` | The word list compiled in from `data/words.txt`, and finding unknown words in a line. |
 | `match` | The match set a document highlights (a pattern's matches or unknown words, limited to the text spell check looks at): finding the matches on a line, the next or previous one in the buffer, and counting them. |
-| `search` | The search commands: Ctrl-F, Alt-N and Alt-P, Ctrl-W, Ctrl-R and Alt-S. |
+| `search` | The search commands: Ctrl-F, Alt-N and Alt-P, Ctrl-W, Ctrl-R and Alt-S, and the pattern prompt of project search. |
 | `lang` | The languages by file extension: display name and comment markers. |
 | `query` | A compiled tree-sitter query with what the runtime leaves to its user: the text predicates (`#eq?`, `#match?`, `#any-of?` and their `#not-` forms) and the injection settings of `#set!`. Knows nothing about particular languages. |
 | `highlight` | The grammar table and the only place that knows grammars: parsing a buffer (again incrementally after edits), injected languages, and the syntax group of every byte of the lines around the one asked for. Also tells spell check which text it looks at. |
-
-A later milestone adds `project`.
+| `project` | Project search (Alt-Shift-F, Alt-F): the scope, searching loaded files a slice at a time, the hit list and its preview. |
 
 ## Terminal
 
@@ -220,6 +219,14 @@ Ctrl-R runs from the start of the selection to the end of the buffer, then from 
 ### Spell check
 
 The word list is embedded with `#embed` and indexed (one offset per word) the first time it is used, then binary searched in byte order. A run of letters, digits, `_` and apostrophes is read whole: runs with digits or `_` are skipped, apostrophes at either end are trimmed, words in capitals only are taken for acronyms, and words inside a blank separated chunk holding `://`, `www.` or `@` are skipped as links. A word is known when it is in the list as written, or when it starts with a capital and its lowercase form is. Typographic apostrophes are looked up as `'`. Letters are those of the Latin, Greek and Cyrillic scripts; other scripts are not checked. In a highlighted buffer, the spell match set asks `HighlightSpellable` about each unknown word's first byte and passes over the ones outside the text it checks (see Highlighting). Other buffers are checked in full.
+
+### Project search
+
+Alt-Shift-F takes its pattern through the search prompt (so Ctrl-T and recall work as in Ctrl-F), and the pattern becomes the last search. The scope prompt then splits its answer at blanks into two `filter` lists, the patterns to pick and the `!` patterns to leave out, and tests each entry's display path (after any leading `./`) against both. An unnamed buffer has no path, so only a scope with nothing to pick takes it. Entries already refused as binary or too large are counted as skipped without being read.
+
+The search never blocks the main loop. `ProjectContinue` searches entries for about 20 ms, then returns so the loop can draw the progress and read keys (it polls with no timeout while a search runs). While it runs, every key except Esc is ignored. Open entries are searched from their buffer, the others are read into one reused buffer, checked for size and a nul byte as on load, and scanned line by line with `\r` before a line break left out, so line numbers match what opening the file gives. A case-sensitive search first checks the whole file with `memmem`. A matching line is recorded once, with its first match and up to 200 bytes of its text, and the search stops at `maxProjectHits` lines. Searching 100,000 small files from the page cache takes about half a second. Nothing is opened, so the open count stays the same.
+
+The hit list is a picker with a preview: `PickerShowPreview` gives the picker a function that draws beside the list when the window is at least 80 columns wide. Without a preview the picker shows each item's note, here the line's text. The preview reads an unopened file again (keeping the last one read) and draws the lines around the hit with their numbers, scrolled sideways when the match would be off screen, and every match highlighted. Opening a hit switches to its entry (opening it) and selects the match on the stored line, or the line's start when the text has changed. A folder opened with Ctrl-O clears the list, because entry indexes no longer mean the same files.
 
 ## Buffers
 

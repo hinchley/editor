@@ -12,6 +12,7 @@
 #include "move.h"
 #include "multicursor.h"
 #include "picker.h"
+#include "project.h"
 #include "prompt.h"
 #include "render.h"
 #include "save.h"
@@ -446,6 +447,8 @@ SearchCommand(enum Command command)
   case CommandJumpWord: SearchWord(); break;
   case CommandReplace: SearchReplace(); break;
   case CommandSpellCheck: SearchSpell(); break;
+  case CommandProjectSearch: SearchProject(ProjectAsk); break;
+  case CommandProjectResults: ProjectShow(); break;
   default: return false;
   }
 
@@ -492,6 +495,12 @@ RunCommand(const Binding *binding)
 static void
 HandleKey(Key key)
 {
+  // a running project search only listens for escape, and keeps its progress showing.
+  if (ProjectBusy()) {
+    ProjectKey(key);
+    return;
+  }
+
   StrBufClear(&message);
 
   // a picker reads its filter through a prompt, so it gets the keys first.
@@ -525,6 +534,8 @@ HandleKey(Key key)
 static void
 HandlePaste(const char *text, u64 length)
 {
+  if (ProjectBusy()) return;
+
   if (PromptActive()) {
     PromptPaste(text, length);
     return;
@@ -551,10 +562,15 @@ Resize(void)
   ScreenResize(windowSize.width, windowSize.height);
 }
 
+// waits for input, or while a project search runs only checks for it.
 static void
 WaitForInput(void)
 {
-  switch (TermWait(InputPending() ? escapeTimeout : -1)) {
+  bool pending = InputPending();
+  i32 timeout = pending ? escapeTimeout : -1;
+  if (ProjectBusy() && !pending) timeout = 0;
+
+  switch (TermWait(timeout)) {
   case TermWaitInput:
     TermReadInput();
     break;
@@ -562,7 +578,7 @@ WaitForInput(void)
     Resize();
     break;
   case TermWaitTimeout:
-    InputExpire();
+    if (pending) InputExpire();
     break;
   }
 }
@@ -653,6 +669,7 @@ AppRun(i32 argumentCount, char **arguments)
   // files are loaded before the terminal changes, so argument errors leave it untouched.
   WorkspaceInit(&workspace, &displayOptions);
   SearchInit(&workspace, &message);
+  ProjectInit(&workspace, &message);
   SessionStart(&workspace, &message, arguments + 1, (u64)argumentCount - 1);
 
   TermStart();
@@ -663,6 +680,8 @@ AppRun(i32 argumentCount, char **arguments)
     InputEvent event;
     while (running && InputNext(&event)) HandleEvent(&event);
 
+    // a project search runs a slice at a time, so its progress shows and escape stops it.
+    if (running && ProjectBusy()) ProjectContinue();
     if (running) Draw();
     if (running) WaitForInput();
   }

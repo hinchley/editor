@@ -49,6 +49,9 @@ static constexpr u64 maxFileSize = 100ull * 1024 * 1024;
 // a nul byte within this many leading bytes marks a file as binary.
 static constexpr u64 binaryProbeSize = 4096;
 
+// project search lists at most this many matching lines.
+static constexpr u64 maxProjectHits = 10'000;
+
 // syntax highlighting is skipped for buffers larger than this.
 static constexpr u64 maxHighlightSize = 16ull * 1024 * 1024;
 

@@ -10,6 +10,10 @@
 #include "key.h"
 #include "types.h"
 
+// draws a preview of the item with id in the area from row 0 and column, of width and
+// height cells.
+typedef void (*PickerPreview)(void *context, u64 id, i32 column, i32 width, i32 height);
+
 // receives the id of the picked item, or picked is false when the picker was cancelled.
 // the picker is closed before this runs, so it may open another.
 typedef void (*PickerDone)(void *context, bool picked, u64 id);
@@ -28,6 +32,16 @@ PickerAdd(const char *text, u64 length, const char *note, u64 id);
 // title names the list in the bar above the filter, and label starts the filter prompt.
 void
 PickerOpen(const char *title, const char *label, PickerDone done, void *context);
+
+// selects the item at position in the list just opened.
+void
+PickerSelect(u64 position);
+
+// shows a preview of the selected item beside the list just opened, when the window is
+// at least minSplitWidth columns wide.
+// the notes are left out while it shows.
+void
+PickerShowPreview(PickerPreview preview, void *context);
 
 bool
 PickerActive(void);
