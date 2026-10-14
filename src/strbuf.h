@@ -33,6 +33,10 @@ StrBufInsert(StrBuf *buffer, u64 at, const char *data, u64 length);
 void
 StrBufRemove(StrBuf *buffer, u64 at, u64 length);
 
+// shortens the string to length bytes, which must not be more than it has.
+void
+StrBufTruncate(StrBuf *buffer, u64 length);
+
 // empties the string but keeps its memory.
 void
 StrBufClear(StrBuf *buffer);

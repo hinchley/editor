@@ -13,6 +13,12 @@ enum LineEnding {
   LineEndingCrlf
 };
 
+// identifies a file on disk, to notice the same file reached by two paths.
+typedef struct FileId {
+  u64 device;
+  u64 inode;
+} FileId;
+
 // identifies one version of a file on disk, to notice changes made by other programs.
 typedef struct FileStamp {
   bool exists;

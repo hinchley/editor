@@ -7,7 +7,7 @@
 
 // what the status bar shows about the buffer behind a view.
 typedef struct StatusInfo {
-  // the display path, or empty for an unnamed buffer.
+  // the display path, or a name such as "[unnamed 1]".
   const StrBuf *name;
   bool modified;
   bool readOnly;

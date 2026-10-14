@@ -84,6 +84,13 @@ StrBufRemove(StrBuf *buffer, u64 at, u64 length)
 }
 
 void
+StrBufTruncate(StrBuf *buffer, u64 length)
+{
+  buffer->length = length;
+  if (buffer->data) buffer->data[length] = '\0';
+}
+
+void
 StrBufClear(StrBuf *buffer)
 {
   buffer->length = 0;

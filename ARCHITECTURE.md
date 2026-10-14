@@ -25,7 +25,7 @@ This document describes how the editor is put together. It grows with each miles
 | Module | Responsibility |
 |---|---|
 | `main` | Calls `AppRun`. Nothing else. |
-| `app` | Startup, the main loop, key dispatch, and the commands that ask questions (save, save as, quit, reload, go to line, ruler column). |
+| `app` | Startup, the main loop, key dispatch, the Alt-H list, and the commands on the current document that ask questions (reload, go to line, ruler column). |
 | `types.h` | Fixed width numeric aliases (`u8`..`u64`, `i8`..`i64`, `f32`, `f64`). The only numeric types used. |
 | `settings.h` | Built-in settings as named `constexpr` values. Values with a `Default` suffix only set the initial state of a runtime toggle. |
 | `fatal` | `Fatal` restores the terminal (through a registered cleanup hook), prints a message and exits. |
@@ -36,7 +36,14 @@ This document describes how the editor is put together. It grows with each miles
 | `buffer` | The text of one buffer as a flat array of lines, and `BufferReplace`, the single edit primitive, which notifies listeners. |
 | `file` | Loading a file into a buffer (size and binary checks, line ending detection) and saving it atomically. |
 | `undo` | The undo history of one buffer: groups of recorded changes with the cursors before and after each. |
-| `document` | A buffer with its file and undo history, and whether it differs from the file. |
+| `document` | A buffer with its file, undo history and view, and whether it differs from the file. |
+| `filter` | Path patterns from `.editor` files: names, folders, anchored paths and `*`. |
+| `loader` | Turns the paths from the command line (or Ctrl-O) into the list of files to load: walking folders, applying `.editor` files, following file links, removing duplicates and enforcing the file limit. |
+| `workspace` | The buffer list: loaded entries, which are open, the current one, and when each was last used. Opens an entry the first time it is used. |
+| `session` | Commands that change which buffers are loaded or current: startup loading, Ctrl-N, Ctrl-O, Ctrl-PgUp/PgDn, Ctrl-Tab, the buffer pickers, and the unsaved changes question before quitting or replacing the buffers. |
+| `save` | Saving one document or every modified one, with the questions on the way (save as, overwrite, changed on disk). |
+| `picker` | The filterable full window list used for buffers and shortcuts. |
+| `complete` | Tab completion of paths in the Ctrl-O prompt. |
 | `term` | The terminal session: raw mode, startup handshake, alternate screen, keyboard protocol, bracketed paste, cursor shape, window size, waiting for input or a resize, and restoring the terminal on every exit path. |
 | `input` | Decodes the bytes read from the terminal into events: keys, pastes, cursor position reports and keyboard protocol reports. Pure parsing, no I/O. |
 | `key` | The `Key` type (code plus modifiers) and key names such as `ctrl+shift+up`. |
@@ -53,7 +60,7 @@ This document describes how the editor is put together. It grows with each miles
 | `clipboard` | Copy and paste through `wl-copy` and `wl-paste`, with an in-process fallback. |
 | `render` | Draws a frame: the view (gutter, text, selections, whitespace symbols, ruler), the status bar and the message bar. |
 
-Later milestones add `picker`, `loader`, `filter`, `search`, `spell`, `lang`, `highlight` and `project`.
+Later milestones add `search`, `spell`, `lang`, `highlight` and `project`.
 
 ## Terminal
 
@@ -146,7 +153,11 @@ The history keeps a save point: the number of applied groups when the text match
 
 ### Prompts
 
-The message bar doubles as the prompt. `PromptAsk` edits one line of text (Left, Right, Home, End, Backspace, Ctrl-Backspace, Delete, paste up to the first line break), and `PromptChoose` waits for one of a few letters. Escape cancels either. The answer goes to a callback, and the prompt is closed before the callback runs, so a callback can open the next prompt. That is how the save flow chains: save as, then "overwrite?" when the name exists, or "changed on disk; overwrite?" when `FileSave` reports a change. The quit prompt saves through the same flow and quits from its completion callback. A save that fails after save as leaves the buffer unnamed again.
+The message bar doubles as the prompt. `PromptAsk` edits one line of text (Left, Right, Home, End, Backspace, Ctrl-Backspace, Delete, paste up to the first line break), and `PromptChoose` waits for one of a few letters. Escape cancels either. The answer goes to a callback, and the prompt is closed before the callback runs, so a callback can open the next prompt. `PromptHandle` adds two optional handlers to a text prompt: one told about every change to the text (the picker filters with it), and one asked to complete the text on Tab (Ctrl-O uses it).
+
+### Save flow
+
+`save` runs a queue of documents: the current one for Ctrl-S, every modified one for Ctrl-Shift-S and for "save all" when quitting or replacing the buffers. Each document is trimmed (when `trimTrailingWhitespace` is set), then written, and the next one starts from the completion of the last. A document without a name asks for one first, and during save all it is made current so the user can see what they are naming. A name that exists asks "overwrite?", and `FileStatusChanged` asks "changed on disk; overwrite?". Any error, refusal or cancel stops the queue, and the callback waiting for the end of the run (quit, replace) never runs. A save that fails after save as leaves the buffer unnamed again.
 
 ### Clipboard
 
@@ -159,6 +170,32 @@ A paste, from Ctrl-V or a bracketed terminal paste, has `\r\n` turned into `\n` 
 ### Saving and reloading
 
 `document` keeps the file's line ending from its last load or save. Saving runs trailing whitespace trimming first when `trimTrailingWhitespace` is set (one undo step, so the screen matches the file), then `FileSave`, then marks the save point. Reload reads the file into a separate buffer and swaps the text in only when that worked, then clamps the view's cursors and scroll position into the new text.
+
+## Buffers
+
+### Loading
+
+`loader` turns paths into a `LoaderList` of display paths and file ids (device and inode). A path that does not exist is a new file, unless it ends in `/`, which is an error. A folder is walked depth first with `openat` and `fdopendir`, and each listing is sorted by name. Entry types come from `d_type`, so a regular file costs no `stat`: its id is the folder's device and the entry's inode. A link is followed with `fstatat` and kept only when it leads to a regular file, so links to folders are skipped (and folders are opened with `O_NOFOLLOW` to be sure). Other kinds (pipes, sockets, devices, broken links) and `.git` folders are skipped. A folder that cannot be read is counted and reported in the message bar.
+
+Files are de-duplicated by id in a hash set, so a file named twice, inside a named folder, or reached through a link appears once, under the first path that reached it. New files are de-duplicated by path. The walk stops as soon as it would pass the limit. At startup that ends the program with a message before the terminal changes; at runtime the operation is refused. Nothing but folder listings and `.editor` files is read, so a 100,000 file tree loads in well under a second.
+
+### .editor files
+
+Each folder in a walk is probed for `.editor`. When there is one, its patterns replace the ones from above for that folder and everything below, and paths are matched relative to it. Patterns come one per line; `#` at the start of a line or after a blank starts a comment. `filter` knows four forms: a name (`foo.txt`, `*.c`), a folder name (`bar/`), and either one tied to a path when it starts with `/` or has a `/` inside (`/foo/foo.txt`, `/*.c`, `/bar/`). `*` matches within one name and is the only wildcard. A folder is tested before it is entered, so a matched folder is never read, and a file also matches a folder pattern that matches any folder above it (which project search scopes will rely on). The folder that holds an `.editor` file is judged by the patterns above it, not its own. Files named on the command line are always loaded, and `.editor` files are only read when loading (startup and Ctrl-O on a folder).
+
+### The buffer list
+
+`workspace` holds one entry per loaded file or unnamed buffer: the path (until opened), the file id, the document once opened, a refusal reason, a number for unnamed buffers, and a "last used" tick. The document is allocated when the entry is first used, and its path moves into the document. A file over the size limit or with a nul byte in its first 4 KB is refused, remembered as such and never read again, and the current buffer stays. Other errors (permissions) are tried again next time. The status bar's `open:loaded` counts open documents and entries.
+
+Each document owns a `View`, which keeps its cursors and scroll position while another buffer is shown, and keeps following edits because it stays a buffer listener. App never keeps a document or view pointer across commands, since opening a folder frees every document.
+
+At startup with several paths or any folder, the first entry that opens is made current and the buffer picker opens over it, so Escape leaves you in it. With none openable, or none at all, an unnamed buffer is used. Ctrl-O on a file adds it (or finds it among the loaded entries) and switches to it. On a folder it first loads the new list, refusing an empty or oversized one, then asks about unsaved changes, then frees everything and loads the new list as at startup.
+
+Ctrl-PgUp and Ctrl-PgDn step through open entries in load order, wrapping. Ctrl-Tab goes to the most recently used entry other than the current one. The buffer pickers list entries most recently used first, then named ones by path, then unnamed ones, with a note for unsaved changes or a refusal.
+
+### Pickers
+
+`picker` takes a list of items (text, an optional note, an id) and shows it over every row above the message bar, with a bar naming the list and counting matches. The filter is a text prompt with a change handler, so it edits like any prompt. Up, Down, PageUp, PageDown, Home and End are taken by the picker first, and Enter with no matches does nothing. Each item keeps a case folded copy of its text, so filtering 100,000 paths is a byte search per item. A filter matches anywhere in the item, `^` at its start ties it to the start and `$` at its end to the end, and both ignore case. Long items are shortened in the middle. The Alt-H list is built from the binding table, sorted by description, and Enter runs the picked command.
 
 ## Conventions
 

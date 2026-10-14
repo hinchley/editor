@@ -4,7 +4,7 @@ A personal terminal text editor for Linux, written in C23.
 
 It targets Wayland and the foot, alacritty and ghostty terminals, and requires the Kitty Keyboard Protocol. There is no fallback for legacy terminals.
 
-> Status: early development (milestone M4, editing, undo, prompts and clipboard). The editor edits one file (or an unnamed buffer) with undo, the clipboard, saving and reloading. Only one file argument is accepted for now; buffer lists, search, multiple cursors, split view and highlighting come in later milestones.
+> Status: early development (milestone M5, multiple buffers, loading and pickers). The editor loads files and folders, switches between buffers, edits with undo and the clipboard, and saves. Search, multiple cursors, split view and highlighting come in later milestones.
 
 ## Build
 
@@ -24,9 +24,25 @@ editor                       # new empty buffer
 editor file                  # open file (created on first save if it does not exist)
 editor file1 path/to/file2   # load both and pick one
 editor folder                # load every file under folder and pick one
+editor file1 folder1 ...     # any mix of files and folders
 ```
 
-Files over 100 MB, files with a nul byte in their first 4 KB, and anything that is not a regular file are not opened. A file is saved with the line ending it was loaded with (LF or CRLF); a file that mixes both is normalised to the more common one. Saving is atomic, follows symbolic links and keeps the file's permissions. If the file changed on disk since it was opened, the editor asks before overwriting it.
+Folders are walked at any depth. `.git` folders and links to folders are skipped, and links to files are followed. A file reached twice (named again, inside a named folder, or through a link) is loaded once. Loaded files are only read when first used. More than 100,000 files is refused before the editor starts.
+
+A `.editor` file in a folder leaves files out of that folder and everything below it, until a deeper `.editor` file replaces it. One pattern per line, and `#` starts a comment:
+
+```
+foo.txt       # files with this name at any depth
+*.c           # files ending in .c at any depth
+bar/          # folders with this name (and everything in them) at any depth
+/foo/foo.txt  # this path, relative to the .editor file
+/*.c          # .c files next to the .editor file
+/bar/         # this folder, relative to the .editor file
+```
+
+`*` is the only wildcard and stays within one name. Files named on the command line are always loaded. `.editor` files are read when loading (at startup and when Ctrl-O opens a folder), not when they change.
+
+Files over 100 MB, files with a nul byte in their first 4 KB, and anything that is not a regular file are not opened. They stay in the buffer list, marked in the pickers. A file is saved with the line ending it was loaded with (LF or CRLF); a file that mixes both is normalised to the more common one. Saving is atomic, follows symbolic links and keeps the file's permissions. If the file changed on disk since it was opened, the editor asks before overwriting it.
 
 Working so far:
 
@@ -36,6 +52,8 @@ Working so far:
 - Clipboard: Ctrl-C, Ctrl-X and Ctrl-V use `wl-copy` and `wl-paste`, and fall back to an in-editor clipboard without a Wayland session. With no selection, copy and cut take the whole line, and pasting that text again inserts it as a line above the cursor. Pasted `\r\n` becomes `\n`.
 - Files: Ctrl-S saves (asking for a name when the buffer has none, and before overwriting an existing file or one changed on disk), Alt-R reloads from disk (asking first if there are unsaved changes), Alt-E switches between LF and CRLF, and Ctrl-Q quits (offering to save unsaved changes).
 - Display: Alt-W (soft wrap), Alt-L (line numbers), Alt-. (whitespace), Alt-G (ruler), Ctrl-G (ruler column), Alt-T (spaces or tabs for indentation).
+- Buffers: Ctrl-N (new unnamed buffer), Ctrl-O (open a file, or a folder, which replaces every buffer after offering to save; Tab completes the path, and again steps through the choices), Ctrl-PgDn and Ctrl-PgUp (next and previous open buffer), Ctrl-Tab (the buffer used before this one), Ctrl-P (pick any buffer), Ctrl-U (pick a buffer with unsaved changes), Ctrl-Shift-S (save every buffer with unsaved changes, asking for names for unnamed ones). Ctrl-Q offers to save every unsaved buffer, and does not quit if a save fails.
+- Pickers and Alt-H: type to filter (any part of the text, ignoring case; `^` at the start and `$` at the end tie it to the start or end, as in `^src/` or `.c$`), Up, Down, PgUp, PgDn, Home and End to move, Enter to pick, Esc to cancel. Buffers are listed most recently used first. Alt-H lists every binding and runs the one picked.
 
 The other bindings report that they are not available yet.
 

@@ -19,12 +19,17 @@ static StrBuf label;
 static StrBuf text;
 static StrBuf choices;
 static PromptDone onDone;
+static PromptChanged onChange;
+static PromptComplete onComplete;
 static void *doneContext;
 
 // the byte offset of the cursor in text, and the first column shown when text is too
 // wide for the row.
 static u64 cursor;
 static u64 scroll;
+
+// the last key or paste changed the text.
+static bool edited;
 
 static void
 Open(enum PromptKind newKind, const char *newLabel, PromptDone done, void *context)
@@ -36,6 +41,8 @@ Open(enum PromptKind newKind, const char *newLabel, PromptDone done, void *conte
   cursor = 0;
   scroll = 0;
   onDone = done;
+  onChange = nullptr;
+  onComplete = nullptr;
   doneContext = context;
 }
 
@@ -45,6 +52,13 @@ PromptAsk(const char *newLabel, const char *initial, PromptDone done, void *cont
   Open(PromptKindText, newLabel, done, context);
   StrBufAppendString(&text, initial);
   cursor = text.length;
+}
+
+void
+PromptHandle(PromptChanged changed, PromptComplete complete)
+{
+  onChange = changed;
+  onComplete = complete;
 }
 
 void
@@ -85,6 +99,7 @@ Insert(const char *data, u64 length)
 
     StrBufInsert(&text, cursor, &data[index], 1);
     cursor++;
+    edited = true;
   }
 }
 
@@ -100,11 +115,29 @@ static void
 DeleteTo(u64 at)
 {
   StrBufRemove(&text, at, cursor - at);
+  edited |= at != cursor;
   cursor = at;
 }
 
 static void
-TextKey(Key key)
+DeleteNext(u64 next)
+{
+  StrBufRemove(&text, cursor, next - cursor);
+  edited |= next != cursor;
+}
+
+static void
+Complete(void)
+{
+  if (!onComplete) return;
+
+  onComplete(doneContext, &text);
+  cursor = text.length;
+  edited = true;
+}
+
+static void
+Edit(Key key)
 {
   u64 previous = cursor ? Utf8PreviousBoundary(text.data, text.length, cursor) : 0;
   u64 next = cursor < text.length ? Utf8NextBoundary(text.data, text.length, cursor) : cursor;
@@ -126,9 +159,21 @@ TextKey(Key key)
   case KeyHome: cursor = 0; break;
   case KeyEnd: cursor = text.length; break;
   case KeyBackspace: DeleteTo(control ? WordStart(cursor) : previous); break;
-  case KeyDelete: StrBufRemove(&text, cursor, next - cursor); break;
+  case KeyDelete: DeleteNext(next); break;
+  case KeyTab: Complete(); break;
   default: break;
   }
+}
+
+// edits the text and reports a change.
+// a key that closes the prompt changes nothing, so a prompt opened by its callback is
+// never told about a change it did not see.
+static void
+TextKey(Key key)
+{
+  edited = false;
+  Edit(key);
+  if (edited && onChange) onChange(doneContext, text.data ? text.data : "", text.length);
 }
 
 static void
@@ -160,7 +205,9 @@ PromptPaste(const char *data, u64 length)
 
   const char *newline = memchr(data, '\n', length);
   if (newline) length = (u64)(newline - data);
+  edited = false;
   Insert(data, length);
+  if (edited && onChange) onChange(doneContext, text.data, text.length);
 }
 
 void

@@ -1,31 +1,33 @@
 #include "app.h"
 
 #include <stdlib.h>
-#include <sys/stat.h>
+#include <string.h>
 
 #include "clipboard.h"
 #include "document.h"
 #include "edit.h"
-#include "fatal.h"
 #include "input.h"
 #include "keymap.h"
+#include "memory.h"
 #include "move.h"
+#include "picker.h"
 #include "prompt.h"
 #include "render.h"
+#include "save.h"
 #include "screen.h"
+#include "session.h"
 #include "settings.h"
 #include "term.h"
 #include "utf8.h"
 #include "view.h"
+#include "workspace.h"
 
 // how long an incomplete escape sequence may wait for the rest of its bytes.
 static constexpr i32 escapeTimeout = 50;
 
 static TermSize windowSize;
 
-// until buffer lists arrive in M5 the editor holds a single document.
-static Document document;
-static View view;
+static Workspace workspace;
 
 static DisplayOptions displayOptions = {
   .softWrap = softWrapDefault,
@@ -42,17 +44,26 @@ static StrBuf message;
 
 static bool running = true;
 
-// runs once a save started by SaveDocument succeeds.
-typedef void (*SaveFinished)(void);
-static SaveFinished afterSave;
+// the current document and its view.
+// fetched afresh by every command, since opening a folder frees every document.
+static Document *
+Current(void)
+{
+  return WorkspaceDocument(&workspace);
+}
 
-// the document had no name before the save as prompt gave it one.
-static bool namedForSave;
+static View *
+CurrentView(void)
+{
+  return &Current()->view;
+}
 
 static EditContext
 Editing(void)
 {
-  return (EditContext){.view = &view, .undo = &document.undo, .expandTab = expandTab};
+  Document *document = Current();
+  View *view = &document->view;
+  return (EditContext){.view = view, .undo = &document->undo, .expandTab = expandTab};
 }
 
 static void
@@ -65,92 +76,7 @@ Toggle(bool *setting, const char *name)
 static void
 Scroll(i64 count)
 {
-  if (!ViewScroll(&view, count)) StrBufAppendString(&message, "cannot scroll further");
-}
-
-// a save that fails after the save as prompt leaves the document unnamed again.
-static void
-ForgetNewName(void)
-{
-  if (namedForSave) StrBufClear(&document.file.path);
-  namedForSave = false;
-}
-
-static void WriteDocument(bool overwriteChanged);
-
-static void
-OverwriteAnswered(
-  [[maybe_unused]] void *context,
-  const char *answer,
-  [[maybe_unused]] u64 length
-) {
-  if (answer && *answer == 'y') {
-    WriteDocument(true);
-    return;
-  }
-
-  ForgetNewName();
-  StrBufAppendString(&message, "not saved");
-}
-
-static void
-WriteDocument(bool overwriteChanged)
-{
-  enum FileStatus status = DocumentSave(&document, overwriteChanged, &message);
-
-  if (status == FileStatusChanged) {
-    StrBufClear(&message);
-    const char *question = "the file changed on disk; overwrite it? (y/n)";
-    PromptChoose(question, "yn", OverwriteAnswered, nullptr);
-    return;
-  }
-
-  if (status != FileStatusOk) {
-    ForgetNewName();
-    return;
-  }
-
-  namedForSave = false;
-  StrBufAppendFormat(&message, "saved %lu lines", BufferLineCount(&document.buffer));
-  if (afterSave) afterSave();
-}
-
-static void
-SaveAsAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
-{
-  if (!answer || !length) {
-    StrBufAppendString(&message, "not saved");
-    return;
-  }
-
-  StrBufAppend(&document.file.path, answer, length);
-  namedForSave = true;
-
-  // an existing file is only replaced once confirmed.
-  struct stat status;
-
-  if (lstat(document.file.path.data, &status) == 0) {
-    StrBufClear(&message);
-    PromptChoose("the file exists; overwrite it? (y/n)", "yn", OverwriteAnswered, nullptr);
-    return;
-  }
-
-  WriteDocument(false);
-}
-
-// saves the document, asking for a name first when it has none, then runs finished.
-static void
-SaveDocument(SaveFinished finished)
-{
-  afterSave = finished;
-
-  if (trimTrailingWhitespace) {
-    EditContext edit = Editing();
-    EditTrimTrailingWhitespace(&edit);
-  }
-
-  if (document.file.path.length) WriteDocument(false);
-  else PromptAsk("save as: ", "", SaveAsAnswered, nullptr);
+  if (!ViewScroll(CurrentView(), count)) StrBufAppendString(&message, "cannot scroll further");
 }
 
 static void
@@ -160,33 +86,12 @@ Quit(void)
 }
 
 static void
-QuitAnswered(
-  [[maybe_unused]] void *context,
-  const char *answer,
-  [[maybe_unused]] u64 length
-) {
-  if (answer && *answer == 's') SaveDocument(Quit);
-  else if (answer && *answer == 'd') Quit();
-}
-
-static void
-AskToQuit(void)
-{
-  if (!DocumentModified(&document)) {
-    Quit();
-    return;
-  }
-
-  PromptChoose("unsaved changes: (s)ave, (d)iscard, (c)ancel", "sdc", QuitAnswered, nullptr);
-}
-
-static void
 Reload(void)
 {
-  if (!DocumentReload(&document, &message)) return;
+  Document *document = Current();
+  if (!DocumentReload(document, &message)) return;
 
-  ViewClamp(&view);
-  StrBufAppendFormat(&message, "reloaded %lu lines", BufferLineCount(&document.buffer));
+  StrBufAppendFormat(&message, "reloaded %lu lines", BufferLineCount(&document->buffer));
 }
 
 static void
@@ -201,12 +106,14 @@ ReloadAnswered(
 static void
 AskToReload(void)
 {
-  if (!document.file.path.length) {
+  Document *document = Current();
+
+  if (!document->file.path.length) {
     StrBufAppendString(&message, "the buffer has no file to reload");
     return;
   }
 
-  if (!DocumentModified(&document)) {
+  if (!DocumentModified(document)) {
     Reload();
     return;
   }
@@ -255,7 +162,7 @@ GoToAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
     return;
   }
 
-  MoveGoTo(&view, line - 1, column - 1);
+  MoveGoTo(CurrentView(), line - 1, column - 1);
 }
 
 static void
@@ -289,7 +196,7 @@ AskRulerColumn(void)
 static void
 ToggleLineEndings(void)
 {
-  File *file = &document.file;
+  File *file = &Current()->file;
   file->lineEnding = file->lineEnding == LineEndingLf ? LineEndingCrlf : LineEndingLf;
   StrBufAppendFormat(&message, "line endings %s", FileLineEndingName(file->lineEnding));
 }
@@ -320,7 +227,7 @@ Copy(bool cut)
 {
   EditContext edit = Editing();
   StrBuf text = {};
-  bool lineWise = cut ? EditCut(&edit, &text) : EditCopy(&view, &text);
+  bool lineWise = cut ? EditCut(&edit, &text) : EditCopy(edit.view, &text);
   bool system = ClipboardSet(text.data ? text.data : "", text.length, lineWise);
   DescribeCopy(cut ? "cut" : "copied", &text, lineWise, system);
   StrBufFree(&text);
@@ -347,7 +254,7 @@ Paste(void)
 static void
 Cancel(void)
 {
-  CursorSet *set = &view.cursors;
+  CursorSet *set = &CurrentView()->cursors;
 
   if (set->count > 1) {
     CursorSetCollapse(set);
@@ -378,12 +285,12 @@ MoveCommand(enum Command command)
   };
 
   if (command <= CommandMoveFileEnd) {
-    MoveCursors(&view, moves[command - CommandMoveUp], false);
+    MoveCursors(CurrentView(), moves[command - CommandMoveUp], false);
     return true;
   }
 
   if (command >= CommandSelectUp && command <= CommandSelectFileEnd) {
-    MoveCursors(&view, moves[command - CommandSelectUp], true);
+    MoveCursors(CurrentView(), moves[command - CommandSelectUp], true);
     return true;
   }
 
@@ -423,23 +330,92 @@ EditCommand(enum Command command)
   return true;
 }
 
+static void RunCommand(const Binding *binding);
+
+static void
+HelpPicked([[maybe_unused]] void *context, bool picked, u64 id)
+{
+  if (picked) RunCommand(&keymapBindings[id]);
+}
+
+static i32
+CompareHelp(const void *a, const void *b)
+{
+  const Binding *first = &keymapBindings[*(const u32 *)a];
+  const Binding *second = &keymapBindings[*(const u32 *)b];
+  return strcmp(first->help, second->help);
+}
+
+// lists every binding by what it does, and runs the one picked.
+static void
+ShowHelp(void)
+{
+  u32 *order = MemoryAllocate(keymapBindingCount * sizeof(u32));
+  u64 keyWidth = 0;
+  StrBuf line = {};
+
+  for (u32 index = 0; index < keymapBindingCount; index++) {
+    order[index] = index;
+    StrBufClear(&line);
+    KeyName(keymapBindings[index].key, &line);
+    if (line.length > keyWidth) keyWidth = line.length;
+  }
+
+  qsort(order, keymapBindingCount, sizeof(u32), CompareHelp);
+  PickerBegin();
+
+  for (u32 index = 0; index < keymapBindingCount; index++) {
+    const Binding *binding = &keymapBindings[order[index]];
+    StrBufClear(&line);
+    KeyName(binding->key, &line);
+    while (line.length < keyWidth + 2) StrBufAppendByte(&line, ' ');
+    StrBufAppendString(&line, binding->help);
+    PickerAdd(line.data, line.length, nullptr, order[index]);
+  }
+
+  StrBufFree(&line);
+  free(order);
+  PickerOpen("shortcuts", "shortcut: ", HelpPicked, nullptr);
+}
+
+static bool
+BufferCommand(enum Command command)
+{
+  switch (command) {
+  case CommandNewBuffer: SessionNew(); break;
+  case CommandOpen: SessionOpen(); break;
+  case CommandNextBuffer: SessionCycle(1); break;
+  case CommandPreviousBuffer: SessionCycle(-1); break;
+  case CommandLastBuffer: SessionLastUsed(); break;
+  case CommandPickBuffer: SessionPick(false); break;
+  case CommandPickUnsaved: SessionPick(true); break;
+  case CommandSave: SaveCurrent(&workspace, &message, nullptr); break;
+  case CommandSaveAll: SaveAll(&workspace, &message, nullptr); break;
+  case CommandQuit: SessionQuit(Quit); break;
+  default: return false;
+  }
+
+  return true;
+}
+
 static void
 RunCommand(const Binding *binding)
 {
   enum Command command = binding->command;
+  View *view = CurrentView();
 
   // only consecutive backspaces or deletes join one undo step.
   bool deleting = command == CommandDeleteBackward || command == CommandDeleteForward;
-  if (!deleting) UndoBreak(&document.undo);
+  if (!deleting) UndoBreak(&Current()->undo);
 
-  if (MoveCommand(command) || EditCommand(command)) return;
+  if (MoveCommand(command) || EditCommand(command) || BufferCommand(command)) return;
 
   switch (command) {
   case CommandScrollUp: Scroll(-1); break;
   case CommandScrollDown: Scroll(1); break;
-  case CommandSelectAll: MoveSelectAll(&view); break;
-  case CommandSelectBrackets: Report(MoveSelectBrackets(&view), "no brackets around"); break;
-  case CommandJumpBracket: Report(MoveToMatchingBracket(&view), "no matching bracket"); break;
+  case CommandSelectAll: MoveSelectAll(view); break;
+  case CommandSelectBrackets: Report(MoveSelectBrackets(view), "no brackets around"); break;
+  case CommandJumpBracket: Report(MoveToMatchingBracket(view), "no matching bracket"); break;
   case CommandCancel: Cancel(); break;
   case CommandReload: AskToReload(); break;
   case CommandToggleLineEndings: ToggleLineEndings(); break;
@@ -450,8 +426,7 @@ RunCommand(const Binding *binding)
   case CommandToggleWhitespace: Toggle(&displayOptions.showWhitespace, "whitespace"); break;
   case CommandToggleRuler: Toggle(&displayOptions.ruler, "ruler"); break;
   case CommandSetRulerColumn: AskRulerColumn(); break;
-  case CommandSave: SaveDocument(nullptr); break;
-  case CommandQuit: AskToQuit(); break;
+  case CommandHelp: ShowHelp(); break;
   default: StrBufAppendFormat(&message, "not available yet: %s", binding->help); break;
   }
 }
@@ -460,6 +435,12 @@ static void
 HandleKey(Key key)
 {
   StrBufClear(&message);
+
+  // a picker reads its filter through a prompt, so it gets the keys first.
+  if (PickerActive()) {
+    PickerKey(key);
+    return;
+  }
 
   if (PromptActive()) {
     PromptKey(key);
@@ -487,7 +468,7 @@ HandlePaste(const char *text, u64 length)
 
   // a terminal paste is one undo step and is never indented.
   StrBufClear(&message);
-  UndoBreak(&document.undo);
+  UndoBreak(&Current()->undo);
   EditContext edit = Editing();
   EditPaste(&edit, text, length, false);
 }
@@ -525,38 +506,45 @@ WaitForInput(void)
 static void
 Draw(void)
 {
+  Document *document = Current();
+  StrBuf name = {};
+  WorkspaceName(&workspace, workspace.current, &name);
+
   StatusInfo status = {
-    .name = &document.file.path,
-    .modified = DocumentModified(&document),
-    .readOnly = document.file.readOnly,
-    .lineEnding = FileLineEndingName(document.file.lineEnding),
-    .openCount = 1,
-    .loadedCount = 1
+    .name = &name,
+    .modified = DocumentModified(document),
+    .readOnly = document->file.readOnly,
+    .lineEnding = FileLineEndingName(document->file.lineEnding),
+    .openCount = workspace.openCount,
+    .loadedCount = workspace.count
   };
 
   Frame frame = {
     .width = windowSize.width,
     .height = windowSize.height,
-    .view = &view,
+    .view = &document->view,
     .status = &status,
     .message = &message
   };
 
   RenderFrame(&frame);
-  bool roomy = windowSize.width >= minWindowWidth && windowSize.height >= minWindowHeight;
-  if (roomy && PromptActive()) PromptDraw(windowSize.height - 1, windowSize.width);
+  StrBufFree(&name);
+
+  // a picker covers the view and its status bar.
+  i32 width = windowSize.width;
+  i32 height = windowSize.height;
+  bool roomy = width >= minWindowWidth && height >= minWindowHeight;
+  if (roomy && PickerActive()) PickerDraw(width, height);
+  if (roomy && PromptActive()) PromptDraw(height - 1, width);
   ScreenFlush();
 }
 
 i32
 AppRun(i32 argumentCount, char **arguments)
 {
-  // several files and folders arrive with buffer lists in M5.
-  if (argumentCount > 2) Fatal("only one file can be opened for now");
-
-  // files are read before the terminal changes, so argument errors leave it untouched.
-  DocumentOpen(&document, argumentCount > 1 ? arguments[1] : nullptr, &message);
-  ViewInit(&view, &document.buffer, &displayOptions);
+  // files are loaded before the terminal changes, so argument errors leave it untouched.
+  WorkspaceInit(&workspace, &displayOptions);
+  SessionStart(&workspace, &message, arguments + 1, (u64)argumentCount - 1);
 
   TermStart();
   Resize();

@@ -1,27 +1,32 @@
 #include "document.h"
 
-void
-DocumentOpen(Document *document, const char *path, StrBuf *message)
-{
+enum FileStatus
+DocumentOpen(
+  Document *document,
+  const char *path,
+  const DisplayOptions *options,
+  StrBuf *message
+) {
   *document = (Document){};
   BufferInit(&document->buffer);
   UndoInit(&document->undo, &document->buffer);
+  ViewInit(&document->view, &document->buffer, options);
+  enum FileStatus status = FileStatusOk;
 
   if (path) {
     StrBufAppendString(&document->file.path, path);
-    enum FileStatus status = FileLoad(&document->file, &document->buffer, message);
-
-    // the reason is in the message, and the document stays unnamed.
-    if (status != FileStatusOk && status != FileStatusNew) FileFree(&document->file);
-    if (status == FileStatusNew) StrBufAppendString(message, "new file");
+    status = FileLoad(&document->file, &document->buffer, message);
+    if (status == FileStatusNew) StrBufAppendFormat(message, "%s: new file", path);
   }
 
   document->savedLineEnding = document->file.lineEnding;
+  return status;
 }
 
 void
 DocumentFree(Document *document)
 {
+  ViewFree(&document->view);
   UndoFree(&document->undo);
   BufferFree(&document->buffer);
   FileFree(&document->file);
@@ -69,5 +74,6 @@ DocumentReload(Document *document, StrBuf *message)
   document->file = loaded;
   document->savedLineEnding = loaded.lineEnding;
   UndoClear(&document->undo);
+  ViewClamp(&document->view);
   return true;
 }

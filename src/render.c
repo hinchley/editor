@@ -342,8 +342,7 @@ DrawStatus(View *view, const StatusInfo *info, i32 row)
   StrBuf left = {};
   StrBufAppendByte(&left, ' ');
   const StrBuf *name = info->name;
-  if (name->length) LayoutShorten(name->data, name->length, nameWidth, &left);
-  else StrBufAppendString(&left, "[unnamed]");
+  LayoutShorten(name->data, name->length, nameWidth, &left);
   StrBufAppend(&left, flags.data, flags.length);
 
   ScreenPutText(row, view->column, left.data, left.length, style);
