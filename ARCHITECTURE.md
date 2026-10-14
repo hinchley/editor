@@ -32,8 +32,38 @@ This document describes how the editor is put together. It grows with each miles
 | `memory` | Checked allocation. Every allocation either succeeds or ends in `Fatal`, so callers never test for null. Memory is released with `free`. |
 | `strbuf` | Growable byte string. A zeroed `StrBuf` is empty and valid. Allocated data is always nul terminated. |
 | `unicodedata` | Generated Unicode tables: display width, grapheme break property, Extended_Pictographic and simple case folding. |
+| `utf8` | UTF-8 decode and encode, and code point display width from the Unicode tables. |
+| `term` | The terminal session: raw mode, startup handshake, alternate screen, keyboard protocol, bracketed paste, cursor shape, window size, waiting for input or a resize, and restoring the terminal on every exit path. |
+| `input` | Decodes the bytes read from the terminal into events: keys, pastes, cursor position reports and keyboard protocol reports. Pure parsing, no I/O. |
+| `key` | The `Key` type (code plus modifiers) and key names such as `ctrl+shift+up`. |
+| `keymap` | The binding table: key, command and help text. The single source of truth for dispatch and the Alt-H list. |
+| `screen` | A grid of styled cells drawn in full each frame. Flushing writes only the cells that changed, inside a synchronized update. |
+| `keycheck` | Temporary (M1 to M3). A screen that names every key and tracks which bindings have been seen, used to verify input in each terminal. |
 
-Later milestones add `term`, `input`, `keymap`, `screen`, `render`, `utf8`, `buffer`, `file`, `undo`, `cursor`, `layout`, `view`, `edit`, `move`, `prompt`, `picker`, `loader`, `filter`, `search`, `spell`, `clipboard`, `lang`, `highlight`, `theme` and `project`.
+Later milestones add `render`, `buffer`, `file`, `undo`, `cursor`, `layout`, `view`, `edit`, `move`, `prompt`, `picker`, `loader`, `filter`, `search`, `spell`, `clipboard`, `lang`, `highlight`, `theme` and `project`.
+
+## Terminal
+
+Startup (`TermStart`):
+
+1. Check that standard input and output are a terminal, save the terminal mode, install signal handlers and register `TermStop` as the `Fatal` cleanup.
+2. Enter raw mode with `cfmakeraw`.
+3. Handshake: send the keyboard protocol query (`CSI ? u`) followed by a cursor position request (`CSI 6 n`). Every terminal answers the second, so a cursor report with no keyboard report before it means the kitty keyboard protocol is missing, and the editor exits with an error. No answer within a second is also an error. This happens before the alternate screen is entered, so a failure leaves nothing on screen.
+4. Enter the alternate screen, push keyboard protocol flags (disambiguate only), enable bracketed paste and set the cursor shape.
+
+`TermStop` undoes these in reverse order. The keyboard protocol keeps a separate flag stack per screen, so the flags are popped before leaving the alternate screen. `TermStop` only uses `write` and `tcsetattr`, so it is safe in a signal handler. It runs on normal exit, through `Fatal`, and from handlers for SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGSEGV, SIGBUS, SIGFPE, SIGILL and SIGABRT. Those handlers then re-raise the signal with its default action.
+
+SIGWINCH writes a byte to a self-pipe. The main loop `poll`s standard input and the pipe, so a resize wakes it like input does.
+
+### Input
+
+With only the disambiguate flag, plain text (including shifted characters) still arrives as UTF-8, and unmodified Enter, Tab and Backspace still send their legacy bytes. Every key with Ctrl or Alt, and Escape, arrives as `CSI code ; modifiers u`. Terminals still use the legacy forms for some keys under the protocol (`CSI 1;5A`, `CSI 5~`, `CSI H`), so the decoder accepts both. Key codes are always the unshifted key, so Ctrl-Shift-S is `{'s', ctrl|shift}`. Lock modifiers are ignored.
+
+Escape is a sequence under the protocol, so a lone escape byte only appears when a sequence is split across reads. The main loop waits up to 50 ms for the rest, then treats it as the Escape key. A bracketed paste is one event however many reads it spans, and its text is passed on unchanged.
+
+### Screen
+
+Each frame clears the back grid, draws everything, and `ScreenFlush` compares it with the previous frame. A cell holds a whole grapheme cluster (its bytes live in a per-frame text buffer) and a style. A wide character uses two cells, the second with width 0. After writing any non-ASCII cell the writer moves the cursor explicitly before the next cell, so a terminal that disagrees about a character's width cannot shift the rest of the row. A resize clears the terminal and redraws everything.
 
 ## Conventions
 
