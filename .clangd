@@ -1,0 +1,17 @@
+CompileFlags:
+  Compiler: gcc
+  Add:
+    - -std=c23
+    - -D_DEFAULT_SOURCE
+    - -Wall
+    - -Wextra
+    - -Wpedantic
+    - -Wshadow
+    - -Wconversion
+    - -I../vendor/tree-sitter/include
+---
+# vendored sources are compiled without warnings and are not edited.
+If:
+  PathMatch: vendor/.*
+Diagnostics:
+  Suppress: "*"
