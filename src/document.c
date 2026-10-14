@@ -10,7 +10,9 @@ DocumentOpen(
   *document = (Document){};
   BufferInit(&document->buffer);
   UndoInit(&document->undo, &document->buffer);
-  ViewInit(&document->view, &document->buffer, options);
+  ViewInit(&document->views[0], &document->buffer, options);
+  ViewInit(&document->views[1], &document->buffer, options);
+  document->view = &document->views[0];
   enum FileStatus status = FileStatusOk;
 
   if (path) {
@@ -26,7 +28,8 @@ DocumentOpen(
 void
 DocumentFree(Document *document)
 {
-  ViewFree(&document->view);
+  ViewFree(&document->views[0]);
+  ViewFree(&document->views[1]);
   UndoFree(&document->undo);
   BufferFree(&document->buffer);
   FileFree(&document->file);
@@ -74,6 +77,21 @@ DocumentReload(Document *document, StrBuf *message)
   document->file = loaded;
   document->savedLineEnding = loaded.lineEnding;
   UndoClear(&document->undo);
-  ViewClamp(&document->view);
+  ViewClamp(&document->views[0]);
+  ViewClamp(&document->views[1]);
   return true;
+}
+
+void
+DocumentShow(Document *document, u32 slot)
+{
+  View *view = &document->views[slot];
+  if (view != document->view) ViewCopy(view, document->view);
+  document->view = view;
+}
+
+void
+DocumentFocus(Document *document, u32 slot)
+{
+  document->view = &document->views[slot];
 }

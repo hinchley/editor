@@ -46,7 +46,7 @@ static StrBuf message;
 
 static bool running = true;
 
-// the current document and its view.
+// the current document and its focused view.
 // fetched afresh by every command, since opening a folder frees every document.
 static Document *
 Current(void)
@@ -57,15 +57,14 @@ Current(void)
 static View *
 CurrentView(void)
 {
-  return &Current()->view;
+  return Current()->view;
 }
 
 static EditContext
 Editing(void)
 {
   Document *document = Current();
-  View *view = &document->view;
-  return (EditContext){.view = view, .undo = &document->undo, .expandTab = expandTab};
+  return (EditContext){.view = document->view, .undo = &document->undo, .expandTab = expandTab};
 }
 
 static void
@@ -401,6 +400,11 @@ BufferCommand(enum Command command)
   case CommandSave: SaveCurrent(&workspace, &message, nullptr); break;
   case CommandSaveAll: SaveAll(&workspace, &message, nullptr); break;
   case CommandQuit: SessionQuit(Quit); break;
+  case CommandSplitSame: SessionSplit(false, windowSize.width); break;
+  case CommandSplitNew: SessionSplit(true, windowSize.width); break;
+  case CommandFocusOtherView: SessionFocusOther(); break;
+  case CommandSwapViews: SessionSwapViews(); break;
+  case CommandCloseView: SessionCloseView(); break;
   default: return false;
   }
 
@@ -538,15 +542,21 @@ WaitForInput(void)
   }
 }
 
-static void
-Draw(void)
-{
-  Document *document = Current();
-  StrBuf name = {};
-  WorkspaceName(&workspace, workspace.current, &name);
+// what one side of the window shows.
+typedef struct Pane {
+  StrBuf name;
+  StatusInfo status;
+  MatchSet marks;
+} Pane;
 
-  StatusInfo status = {
-    .name = &name,
+static void
+DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
+{
+  const Document *document = workspace.entries[index].document;
+  WorkspaceName(&workspace, index, &pane->name);
+
+  pane->status = (StatusInfo){
+    .name = &pane->name,
     .modified = DocumentModified(document),
     .readOnly = document->file.readOnly,
     .lineEnding = FileLineEndingName(document->file.lineEnding),
@@ -554,19 +564,39 @@ Draw(void)
     .loadedCount = workspace.count
   };
 
-  MatchSet marks = SearchMarks(document);
+  pane->marks = SearchMarks(document);
+  *framePane = (FramePane){.view = view, .marks = &pane->marks, .status = &pane->status};
+}
 
+static void
+Draw(void)
+{
   Frame frame = {
     .width = windowSize.width,
     .height = windowSize.height,
-    .view = &document->view,
-    .marks = &marks,
-    .status = &status,
+    .paneCount = 1,
     .message = &message
   };
 
+  Pane panes[2] = {};
+  DescribePane(&panes[0], workspace.current, CurrentView(), &frame.panes[0]);
+
+  if (workspace.split) {
+    DescribePane(&panes[1], workspace.other, WorkspaceOtherView(&workspace), &frame.panes[1]);
+    frame.paneCount = 2;
+
+    // panes are given left to right.
+    if (workspace.slot != workspace.left) {
+      FramePane focused = frame.panes[0];
+      frame.panes[0] = frame.panes[1];
+      frame.panes[1] = focused;
+      frame.focused = 1;
+    }
+  }
+
   RenderFrame(&frame);
-  StrBufFree(&name);
+  StrBufFree(&panes[0].name);
+  StrBufFree(&panes[1].name);
 
   // a picker covers the view and its status bar.
   i32 width = windowSize.width;

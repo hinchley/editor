@@ -175,7 +175,7 @@ Next(void)
 
   // trimming is one undo step, so the screen matches what is written.
   if (trimTrailingWhitespace) {
-    EditContext edit = {.view = &document->view, .undo = &document->undo};
+    EditContext edit = {.view = document->view, .undo = &document->undo};
     EditTrimTrailingWhitespace(&edit);
   }
 

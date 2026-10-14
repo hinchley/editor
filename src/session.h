@@ -2,7 +2,7 @@
 
 // the commands that change which buffers are loaded or current: loading the command line,
 // new buffers, opening files and folders, switching between buffers, the buffer pickers,
-// and quitting.
+// the split view, and quitting.
 // every command reports in the message bar, and the ones that need an answer ask in a
 // prompt or picker.
 #include "strbuf.h"
@@ -42,6 +42,24 @@ SessionLastUsed(void);
 // buffers are listed most recently used first, then by path.
 void
 SessionPick(bool unsavedOnly);
+
+// splits a window of width columns, showing the current buffer (or, with fresh, a new
+// unnamed one) in a new view on the right that takes focus.
+// refused when the window is already split or narrower than minSplitWidth.
+void
+SessionSplit(bool fresh, i32 width);
+
+// moves focus to the other view of the split.
+void
+SessionFocusOther(void);
+
+// swaps the two sides of the split.
+void
+SessionSwapViews(void);
+
+// closes the focused view of the split; its buffer stays loaded.
+void
+SessionCloseView(void);
 
 // runs quit, first offering to save unsaved changes.
 // quit only runs if every save succeeds.

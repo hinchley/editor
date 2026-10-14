@@ -88,7 +88,7 @@ SetPattern(const char *source, u64 length)
 static void
 Select(Range range)
 {
-  MoveSelect(&Current()->view, range.start, range.end);
+  MoveSelect(Current()->view, range.start, range.end);
 }
 
 static void
@@ -130,7 +130,7 @@ Label(const char *verb)
 static void
 RestoreView(void)
 {
-  View *view = &Current()->view;
+  View *view = Current()->view;
   CursorSetCopy(&view->cursors, &saved.cursors);
   view->top = saved.top;
   view->leftColumn = saved.leftColumn;
@@ -187,7 +187,7 @@ void
 SearchFind(void)
 {
   Document *document = Current();
-  View *view = &document->view;
+  View *view = document->view;
   CursorSetCopy(&saved.cursors, &view->cursors);
   saved.top = view->top;
   saved.leftColumn = view->leftColumn;
@@ -221,7 +221,7 @@ SearchStep(bool backward)
 
   if (document->marks != MatchKindSpell) document->marks = MatchKindSearch;
 
-  View *view = &document->view;
+  View *view = document->view;
   CursorSetCollapse(&view->cursors);
   Range selection = CursorRange(CursorSetPrimary(&view->cursors));
   Position from = backward ? selection.start : selection.end;
@@ -247,7 +247,7 @@ void
 SearchWord(void)
 {
   Document *document = Current();
-  View *view = &document->view;
+  View *view = document->view;
   CursorSetCollapse(&view->cursors);
   Position head = CursorSetPrimary(&view->cursors)->head;
   const StrBuf *line = BufferLine(&document->buffer, head.line);
@@ -289,7 +289,7 @@ SearchSpell(void)
     return;
   }
 
-  View *view = &document->view;
+  View *view = document->view;
   CursorSetCollapse(&view->cursors);
   Position from = CursorSetPrimary(&view->cursors)->head;
   Range match;
@@ -384,7 +384,7 @@ static void
 FinishReplace(void)
 {
   Document *document = Current();
-  UndoEnd(&document->undo, &document->view.cursors);
+  UndoEnd(&document->undo, &document->view->cursors);
 
   if (!replacing.asked) {
     MatchSet set = SearchMarks(document);
@@ -456,7 +456,7 @@ ReplacementAnswered([[maybe_unused]] void *context, const char *answer, u64 leng
 
   // every replacement until the run ends is one undo step.
   Document *document = Current();
-  View *view = &document->view;
+  View *view = document->view;
   UndoBreak(&document->undo);
   UndoBegin(&document->undo, UndoKindOther, &view->cursors);
 
@@ -495,7 +495,7 @@ PatternAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
 void
 SearchReplace(void)
 {
-  CursorSetCollapse(&Current()->view.cursors);
+  CursorSetCollapse(&Current()->view->cursors);
   prompt = SearchPromptPattern;
   PromptAsk("replace: ", "", PatternAnswered, nullptr);
   Label("replace");

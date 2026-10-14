@@ -400,10 +400,11 @@ DescribePosition(View *view, const StatusInfo *info, bool full, StrBuf *right)
   StrBufAppendByte(right, ' ');
 }
 
+// the unfocused view of a split shows only its name and flags, dimmed.
 static void
-DrawStatus(View *view, const StatusInfo *info, i32 row)
+DrawStatus(View *view, const StatusInfo *info, bool focused, i32 row)
 {
-  Style style = ThemeStyle(ThemeStatus);
+  Style style = ThemeStyle(focused ? ThemeStatus : ThemeStatusDim);
   ScreenFill(row, view->column, view->width, style);
 
   // the flags after the name always show; the name is shortened to fit what is left.
@@ -416,7 +417,7 @@ DrawStatus(View *view, const StatusInfo *info, i32 row)
   i32 rightWidth = 0;
   i32 nameWidth = 0;
 
-  for (i32 attempt = 0; attempt < 3; attempt++) {
+  for (i32 attempt = focused ? 0 : 2; attempt < 3; attempt++) {
     StrBufClear(&right);
     if (attempt < 2) DescribePosition(view, info, attempt == 0, &right);
     rightWidth = (i32)right.length;
@@ -439,6 +440,16 @@ DrawStatus(View *view, const StatusInfo *info, i32 row)
   StrBufFree(&right);
 }
 
+static void
+DrawPane(const FramePane *pane, bool focused, i32 column, i32 width, i32 height)
+{
+  View *view = pane->view;
+  ViewSetArea(view, 0, column, width, height);
+  ViewScrollToCursor(view);
+  DrawView(view, pane->marks);
+  DrawStatus(view, pane->status, focused, height);
+}
+
 void
 RenderFrame(const Frame *frame)
 {
@@ -449,16 +460,30 @@ RenderFrame(const Frame *frame)
     return;
   }
 
-  // the bottom two rows hold the status bar and the message bar.
-  View *view = frame->view;
-  ViewSetArea(view, 0, 0, frame->width, frame->height - 2);
-  ViewScrollToCursor(view);
-  DrawView(view, frame->marks);
-  DrawStatus(view, frame->status, frame->height - 2);
+  // the bottom two rows hold the status bars and the message bar.
+  const FramePane *focused = &frame->panes[frame->focused];
+  i32 height = frame->height - 2;
+
+  if (frame->paneCount == 2 && frame->width >= minSplitWidth) {
+    // the panes share the width either side of a one column separator.
+    i32 leftWidth = (frame->width - 1) / 2;
+    i32 rightColumn = leftWidth + 1;
+    i32 rightWidth = frame->width - rightColumn;
+    DrawPane(&frame->panes[0], frame->focused == 0, 0, leftWidth, height);
+    DrawPane(&frame->panes[1], frame->focused == 1, rightColumn, rightWidth, height);
+
+    Style separator = ThemeStyle(ThemeGutter);
+    for (i32 row = 0; row <= height; row++) PutSymbol(row, leftWidth, rulerSymbol, separator);
+  } else {
+    DrawPane(focused, true, 0, frame->width, height);
+  }
 
   const StrBuf *message = frame->message;
   Style style = ThemeStyle(ThemeMessage);
   ScreenPutText(frame->height - 1, 0, message->data, message->length, style);
+
+  // only the focused view shows its cursors.
+  View *view = focused->view;
 
   if (view->cursors.count > 1) {
     DrawCursorBlocks(view);

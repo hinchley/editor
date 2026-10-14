@@ -147,14 +147,57 @@ WorkspaceOpen(Workspace *workspace, u64 index, StrBuf *message)
   return true;
 }
 
+// makes an open entry current, in the focused view.
+static void
+MakeCurrent(Workspace *workspace, u64 index)
+{
+  workspace->current = index;
+  workspace->entries[index].used = ++workspace->clock;
+}
+
 bool
 WorkspaceSwitch(Workspace *workspace, u64 index, StrBuf *message)
 {
   if (!WorkspaceOpen(workspace, index, message)) return false;
 
-  workspace->current = index;
-  workspace->entries[index].used = ++workspace->clock;
+  MakeCurrent(workspace, index);
+  DocumentShow(workspace->entries[index].document, workspace->slot);
   return true;
+}
+
+bool
+WorkspaceSplit(Workspace *workspace, u64 index, StrBuf *message)
+{
+  if (!WorkspaceOpen(workspace, index, message)) return false;
+
+  workspace->split = true;
+  workspace->other = workspace->current;
+  workspace->left = workspace->slot;
+  workspace->slot ^= 1;
+  return WorkspaceSwitch(workspace, index, message);
+}
+
+void
+WorkspaceFocusOther(Workspace *workspace)
+{
+  u64 index = workspace->other;
+  workspace->other = workspace->current;
+  workspace->slot ^= 1;
+  MakeCurrent(workspace, index);
+  DocumentFocus(workspace->entries[index].document, workspace->slot);
+}
+
+void
+WorkspaceCloseView(Workspace *workspace)
+{
+  WorkspaceFocusOther(workspace);
+  workspace->split = false;
+}
+
+View *
+WorkspaceOtherView(const Workspace *workspace)
+{
+  return &workspace->entries[workspace->other].document->views[workspace->slot ^ 1];
 }
 
 Document *

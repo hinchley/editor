@@ -56,6 +56,10 @@ ViewFree(View *view);
 void
 ViewClamp(View *view);
 
+// gives target the cursors and scroll position of source, a view of the same buffer.
+void
+ViewCopy(View *target, const View *source);
+
 void
 ViewSetArea(View *view, i32 row, i32 column, i32 width, i32 height);
 

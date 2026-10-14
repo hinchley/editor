@@ -316,35 +316,26 @@ MapByte(u64 byte, const LineEdit *lineEdit)
   return byte - lineEdit->removed + lineEdit->length;
 }
 
-// rewrites one block of lines with a single replace, and records each line's edit.
+// edits each line of a block with a replace of just the bytes that change, so every view
+// of the buffer keeps its cursors on the same text, and records each line's edit.
 static void
 RewriteBlock(const EditContext *edit, LineBlock block, LineEditor editor, LineEdit *edits)
 {
   Buffer *buffer = edit->view->buffer;
-  StrBuf text = {};
-  bool changed = false;
 
   for (u64 line = block.first; line <= block.last; line++) {
-    const StrBuf *original = BufferLine(buffer, line);
-    LineEdit lineEdit = editor(edit, original);
+    LineEdit lineEdit = editor(edit, BufferLine(buffer, line));
     edits[line - block.first] = lineEdit;
-    changed = changed || lineEdit.removed || lineEdit.length;
+    if (!lineEdit.removed && !lineEdit.length) continue;
 
-    u64 tail = lineEdit.at + lineEdit.removed;
-    StrBufAppend(&text, original->data, lineEdit.at);
-    StrBufAppend(&text, lineEdit.text, lineEdit.length);
-    StrBufAppend(&text, original->data + tail, original->length - tail);
-    if (line < block.last) StrBufAppendByte(&text, '\n');
+    Range range = {{line, lineEdit.at}, {line, lineEdit.at + lineEdit.removed}};
+    BufferReplace(buffer, range, lineEdit.text ? lineEdit.text : "", lineEdit.length);
   }
-
-  Position end = {block.last, BufferLine(buffer, block.last)->length};
-  Range range = {{block.first, 0}, end};
-  if (changed) BufferReplace(buffer, range, text.data, text.length);
-  StrBufFree(&text);
 }
 
-// applies editor to every line touched by a cursor, as one replace per run of lines.
-// the cursors are then put back on the same text, which the replaces alone would not do.
+// applies editor to every line touched by a cursor.
+// the cursors are then put back as MapByte says, which keeps a cursor at the start of an
+// indented line before the new indentation.
 static void
 EditLines(const EditContext *edit, LineEditor editor)
 {
@@ -560,13 +551,14 @@ EditDuplicateLines(const EditContext *edit)
   Cursor original = *cursor;
   LineBlock block = TouchedLines(cursor);
 
+  // the copy goes above, so cursors in any view move down with the lines they were on.
   StrBuf text = {};
-  StrBufAppendByte(&text, '\n');
   AppendLines(view->buffer, block, &text);
-  Position end = {block.last, BufferLine(view->buffer, block.last)->length};
+  StrBufAppendByte(&text, '\n');
+  Position start = {block.first, 0};
 
   Begin(edit, UndoKindOther);
-  BufferReplace(view->buffer, (Range){end, end}, text.data, text.length);
+  BufferReplace(view->buffer, (Range){start, start}, text.data, text.length);
   ShiftCursor(view->buffer, cursor, &original, (i64)(block.last - block.first + 1));
   End(edit);
   StrBufFree(&text);
@@ -611,26 +603,28 @@ EditMoveLines(const EditContext *edit, bool up)
   if (up && block.first == 0) return false;
   if (!up && block.last + 1 >= BufferLineCount(buffer)) return false;
 
-  // the lines swap places with their neighbour in one replace.
+  // the neighbour line is taken out and put back on the other side, so the moved lines
+  // are never replaced and cursors on them in any view go with them.
   u64 neighbour = up ? block.first - 1 : block.last + 1;
-  LineBlock both = {up ? neighbour : block.first, up ? block.last : neighbour};
   StrBuf text = {};
+  AppendLines(buffer, (LineBlock){neighbour, neighbour}, &text);
+  Cursor original = *cursor;
+  Begin(edit, UndoKindOther);
 
   if (up) {
-    AppendLines(buffer, block, &text);
-    StrBufAppendByte(&text, '\n');
-    AppendLines(buffer, (LineBlock){neighbour, neighbour}, &text);
+    BufferReplace(buffer, (Range){{neighbour, 0}, {neighbour + 1, 0}}, "", 0);
+    StrBufInsert(&text, 0, "\n", 1);
+    Position end = {block.last - 1, BufferLine(buffer, block.last - 1)->length};
+    BufferReplace(buffer, (Range){end, end}, text.data, text.length);
   } else {
-    AppendLines(buffer, (LineBlock){neighbour, neighbour}, &text);
+    Position end = {block.last, BufferLine(buffer, block.last)->length};
+    Position neighbourEnd = {neighbour, BufferLine(buffer, neighbour)->length};
+    BufferReplace(buffer, (Range){end, neighbourEnd}, "", 0);
     StrBufAppendByte(&text, '\n');
-    AppendLines(buffer, block, &text);
+    Position start = {block.first, 0};
+    BufferReplace(buffer, (Range){start, start}, text.data, text.length);
   }
 
-  Cursor original = *cursor;
-  Position end = {both.last, BufferLine(buffer, both.last)->length};
-
-  Begin(edit, UndoKindOther);
-  BufferReplace(buffer, (Range){{both.first, 0}, end}, text.data, text.length);
   ShiftCursor(buffer, cursor, &original, up ? -1 : 1);
   End(edit);
   StrBufFree(&text);

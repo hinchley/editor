@@ -1,6 +1,7 @@
 #pragma once
 
-// draws a frame into the screen grid: the view, the status bar and the message bar.
+// draws a frame into the screen grid: the views with their status bars, and the message
+// bar.
 #include "match.h"
 #include "strbuf.h"
 #include "types.h"
@@ -21,17 +22,25 @@ typedef struct StatusInfo {
   u64 loadedCount;
 } StatusInfo;
 
+// one side of the window: a view, the matches to highlight in it and its status.
+typedef struct FramePane {
+  View *view;
+  const MatchSet *marks;
+  const StatusInfo *status;
+} FramePane;
+
 typedef struct Frame {
   i32 width;
   i32 height;
-  View *view;
 
-  // the matches to highlight in the view.
-  const MatchSet *marks;
-  const StatusInfo *status;
+  // the panes from left to right (two when split), and which one has focus.
+  FramePane panes[2];
+  u32 paneCount;
+  u32 focused;
   const StrBuf *message;
 } Frame;
 
-// sizes the view to the window, scrolls it to its cursor, and draws everything.
+// sizes the views to the window, scrolls them to their cursors, and draws everything.
+// a split narrower than minSplitWidth shows only the focused pane.
 void
 RenderFrame(const Frame *frame);

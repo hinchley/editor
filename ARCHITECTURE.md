@@ -36,11 +36,11 @@ This document describes how the editor is put together. It grows with each miles
 | `buffer` | The text of one buffer as a flat array of lines, and `BufferReplace`, the single edit primitive, which notifies listeners. |
 | `file` | Loading a file into a buffer (size and binary checks, line ending detection) and saving it atomically. |
 | `undo` | The undo history of one buffer: groups of recorded changes with the cursors before and after each. |
-| `document` | A buffer with its file, undo history and view, whether it differs from the file, and what it highlights (search matches, unknown words or nothing). |
+| `document` | A buffer with its file, undo history and a view for each side of a split, whether it differs from the file, and what it highlights (search matches, unknown words or nothing). |
 | `filter` | Path patterns from `.editor` files: names, folders, anchored paths and `*`. |
 | `loader` | Turns the paths from the command line (or Ctrl-O) into the list of files to load: walking folders, applying `.editor` files, following file links, removing duplicates and enforcing the file limit. |
-| `workspace` | The buffer list: loaded entries, which are open, the current one, and when each was last used. Opens an entry the first time it is used. |
-| `session` | Commands that change which buffers are loaded or current: startup loading, Ctrl-N, Ctrl-O, Ctrl-PgUp/PgDn, Ctrl-Tab, the buffer pickers, and the unsaved changes question before quitting or replacing the buffers. |
+| `workspace` | The buffer list: loaded entries, which are open, the current one, and when each was last used. Opens an entry the first time it is used. Also the split: whether there are two views, what the other one shows and which side is which. |
+| `session` | Commands that change which buffers are loaded or current: startup loading, Ctrl-N, Ctrl-O, Ctrl-PgUp/PgDn, Ctrl-Tab, the buffer pickers, the split view commands, and the unsaved changes question before quitting or replacing the buffers. |
 | `save` | Saving one document or every modified one, with the questions on the way (save as, overwrite, changed on disk). |
 | `picker` | The filterable full window list used for buffers and shortcuts. |
 | `complete` | Tab completion of paths in the Ctrl-O and save as prompts, and expanding a leading `~`. |
@@ -59,7 +59,7 @@ This document describes how the editor is put together. It grows with each miles
 | `edit` | Editing commands: typing, line breaks, indentation, deletion, line commands, copy, cut and paste. Each edits at every cursor as one undo step. |
 | `prompt` | Questions asked in the message bar: a line of text, or a choice of letters. |
 | `clipboard` | Copy and paste through `wl-copy` and `wl-paste`, with an in-process fallback. |
-| `render` | Draws a frame: the view (gutter, text, selections, matches, whitespace symbols, ruler), the status bar and the message bar. |
+| `render` | Draws a frame: one view or two side by side (gutter, text, selections, matches, whitespace symbols, ruler), a status bar under each, and the message bar. |
 | `pattern` | The literal search pattern shared by find, replace and the match commands: escapes, anchors, case folding, whole words, and finding a match in a line. |
 | `spell` | The word list compiled in from `data/words.txt`, and finding unknown words in a line. |
 | `match` | The match set a document highlights (a pattern's matches or unknown words): finding the matches on a line, the next or previous one in the buffer, and counting them. |
@@ -132,7 +132,7 @@ Ctrl-Up and Ctrl-Down move `top` by one row and leave the cursor alone. They ref
 
 ### Rendering
 
-`RenderFrame` gives the view every row except the bottom two (the status bar and the message bar), scrolls it to its cursor and draws it. The gutter is the line number right aligned with a space either side, at least three digits wide. Only the first row of a wrapped line is numbered. With whitespace display on, a space is drawn as `·` and a tab as `→` in its first cell, in the `whitespace` colour. The ruler is drawn as `│` in the cell just after `rulerColumn` before the text, so text covers it, and spaces and tabs let it show through. A cluster cut by the left or right edge of the text area shows as blank cells.
+`RenderFrame` gives the view every row except the bottom two (the status bar and the message bar), scrolls it to its cursor and draws it. With a split it draws two panes, left to right, either side of a one column separator, each with its own status bar. The gutter is the line number right aligned with a space either side, at least three digits wide. Only the first row of a wrapped line is numbered. With whitespace display on, a space is drawn as `·` and a tab as `→` in its first cell, in the `whitespace` colour. The ruler is drawn as `│` in the cell just after `rulerColumn` before the text, so text covers it, and spaces and tabs let it show through. A cluster cut by the left or right edge of the text area shows as blank cells.
 
 With more than one cursor, the terminal cursor is hidden and every cursor (the primary one too) is drawn by switching its cell to the `cursor` style (reverse video on the default colours) after the text is drawn, so it reads as a block whatever the cell held. A cursor at the end of a line covers the empty cell after it. Cursors outside the view are skipped by their line number before anything is measured.
 
@@ -146,7 +146,7 @@ The status bar shows the name (shortened in the middle to fit) with `[+]` and `[
 
 A view listens to its buffer. After every `BufferReplace` it moves each cursor with `BufferAdjust`: a position before the change stays, one inside the replaced text moves to its start, and one at or after its end moves with the text that follows. The view's first visible line shifts the same way. So a command edits at one cursor and the others (and later, the other view of a split) stay on their text without the command knowing about them.
 
-An edit command loops over the cursors, replaces each one's range, and puts that cursor after its new text. When the loop ends, cursors that now overlap are merged and every desired column is reset. Line commands (indent, dedent) rewrite each run of touched lines with one replace, which would pull cursors inside it to its start, so they put the cursors back on the same text themselves. Ctrl-D, Ctrl-K and Ctrl-Shift-Up/Down first collapse to the primary cursor, and so do the commands that place one cursor (Ctrl-L, Ctrl-M, Alt-M and the search commands).
+An edit command loops over the cursors, replaces each one's range, and puts that cursor after its new text. When the loop ends, cursors that now overlap are merged and every desired column is reset. Commands that rewrite lines replace only the bytes that change, so every view of the buffer, not just the one editing, keeps its cursors on the same text: indent and dedent make one replace per changed line, Ctrl-D inserts the copy above the lines, and moving lines takes the neighbouring line out and puts it back on the other side (so the moved lines are never replaced; cursors on the neighbour in another view move to the end of the moved lines). Indent and dedent then put the editing view's cursors back themselves, so a cursor at the start of a line stays before the new indentation. Ctrl-D, Ctrl-K and Ctrl-Shift-Up/Down first collapse to the primary cursor, and so do the commands that place one cursor (Ctrl-L, Ctrl-M, Alt-M and the search commands).
 
 ### Multiple cursors
 
@@ -188,6 +188,14 @@ A paste, from Ctrl-V or a bracketed terminal paste, has `\r\n` turned into `\n` 
 
 `document` keeps the file's line ending from its last load or save. Saving runs trailing whitespace trimming first when `trimTrailingWhitespace` is set (one undo step, so the screen matches the file), then `FileSave`, then marks the save point. Reload reads the file into a separate buffer and swaps the text in only when that worked, then clamps the view's cursors and scroll position into the new text.
 
+### Split view
+
+Each document has two views, one per slot, and each side of the split uses its own slot of every document. The focused side's entry is the workspace's current entry, so every command works on the focused view without knowing about the split. The workspace also keeps the entry the other side shows and which slot is on the left, so Ctrl-T only flips that, and Ctrl-J swaps the current and other entries along with the focused slot. Ctrl-Alt-Right and Ctrl-B put the new view in the other slot, on the right.
+
+A document's `view` points to the view of the slot that last had focus on it, which is the one commands use. When a side shows a document whose `view` is the other slot's, it first copies that view's cursors and scroll position into its own, so a buffer opens where it was last seen rather than where this side last left it. A side that switches back to a buffer it was the last to use keeps its own position. Both views stay buffer listeners for the document's lifetime, so an edit through either one moves the other's cursors and scroll position as well. Undo restores the cursors only in the view that undoes.
+
+Below `minSplitWidth` (80) columns only the focused view is drawn, at full width, and nothing about the split changes, so widening the window brings both back. Only the focused view shows its cursors, and pickers and prompts span the whole window. Replacing the buffers with a folder resets the workspace, which ends the split.
+
 ## Search
 
 ### Patterns
@@ -226,7 +234,7 @@ Each folder in a walk is probed for `.editor`. When there is one, its patterns r
 
 `workspace` holds one entry per loaded file or unnamed buffer: the path (until opened), the file id, the document once opened, a refusal reason, a number for unnamed buffers, and a "last used" tick. The document is allocated when the entry is first used, and its path moves into the document. A file over the size limit or with a nul byte in its first 4 KB is refused, remembered as such and never read again, and the current buffer stays. Other errors (permissions) are tried again next time. The status bar's `open:loaded` counts open documents and entries.
 
-Each document owns a `View`, which keeps its cursors and scroll position while another buffer is shown, and keeps following edits because it stays a buffer listener. App never keeps a document or view pointer across commands, since opening a folder frees every document.
+Each document owns its views (one per side of a split), which keep their cursors and scroll position while another buffer is shown, and keep following edits because they stay buffer listeners. App never keeps a document or view pointer across commands, since opening a folder frees every document.
 
 At startup with several paths or any folder, the first entry that opens is made current and the buffer picker opens over it, so Escape leaves you in it. With none openable, or none at all, an unnamed buffer is used. Ctrl-O on a file adds it (or finds it among the loaded entries) and switches to it. On a folder it first loads the new list, refusing an empty or oversized one, then asks about unsaved changes, then frees everything and loads the new list as at startup.
 

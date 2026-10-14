@@ -1,10 +1,12 @@
 #pragma once
 
-// a buffer together with its file, undo history and view: everything the editor keeps
+// a buffer together with its file, undo history and views: everything the editor keeps
 // about one open file.
-// the view holds the cursors and scroll position, so switching away and back finds them
+// a view holds the cursors and scroll position, so switching away and back finds them
 // where they were.
-// a document must not move in memory once opened, because its history and view listen to
+// there is a view for each side of a split (its slot), so the same buffer can be shown
+// twice with its own cursors in each.
+// a document must not move in memory once opened, because its history and views listen to
 // its buffer through pointers.
 #include "buffer.h"
 #include "file.h"
@@ -18,7 +20,10 @@ typedef struct Document {
   Buffer buffer;
   File file;
   Undo undo;
-  View view;
+  View views[2];
+
+  // the view of the slot that last had focus on this document, which the commands use.
+  View *view;
 
   // the line ending the file had when last loaded or saved, so switching back to it
   // clears the modified state again.
@@ -57,3 +62,13 @@ DocumentSave(Document *document, bool overwriteChanged, StrBuf *message);
 // returns false, changing nothing, when the file cannot be read.
 bool
 DocumentReload(Document *document, StrBuf *message);
+
+// makes the view in slot the one the commands use.
+// unless it was already, it first takes the cursors and scroll position of the view used
+// until now, so the document shows where it was last seen.
+void
+DocumentShow(Document *document, u32 slot);
+
+// makes the view in slot the one the commands use, keeping its own cursors.
+void
+DocumentFocus(Document *document, u32 slot);

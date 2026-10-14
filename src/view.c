@@ -47,6 +47,14 @@ ViewClamp(View *view)
 }
 
 void
+ViewCopy(View *target, const View *source)
+{
+  CursorSetCopy(&target->cursors, &source->cursors);
+  target->top = source->top;
+  target->leftColumn = source->leftColumn;
+}
+
+void
 ViewSetArea(View *view, i32 row, i32 column, i32 width, i32 height)
 {
   view->row = row;

@@ -90,15 +90,20 @@ SessionStart(Workspace *newWorkspace, StrBuf *newMessage, char *const *paths, u6
   if (pick && !empty) SessionPick(false);
 }
 
+// true, with a message, when there is no room for another buffer.
+static bool
+Full(void)
+{
+  if (workspace->count < maxFileCount) return false;
+
+  StrBufAppendFormat(message, "cannot load more than %lu files", maxFileCount);
+  return true;
+}
+
 void
 SessionNew(void)
 {
-  if (workspace->count >= maxFileCount) {
-    StrBufAppendFormat(message, "cannot load more than %lu files", maxFileCount);
-    return;
-  }
-
-  Switch(WorkspaceAddUnnamed(workspace));
+  if (!Full()) Switch(WorkspaceAddUnnamed(workspace));
 }
 
 static void
@@ -152,11 +157,7 @@ OpenFile(LoaderFile *file)
 {
   u64 index = WorkspaceFind(workspace, file);
 
-  if (index == workspaceNone && workspace->count >= maxFileCount) {
-    StrBufAppendFormat(message, "cannot load more than %lu files", maxFileCount);
-    return;
-  }
-
+  if (index == workspaceNone && Full()) return;
   if (index == workspaceNone) index = WorkspaceAdd(workspace, file);
   Switch(index);
 }
@@ -281,6 +282,53 @@ SessionPick(bool unsavedOnly)
   StrBufFree(&name);
   free(order);
   PickerOpen(unsavedOnly ? "unsaved buffers" : "buffers", "buffer: ", Picked, nullptr);
+}
+
+void
+SessionSplit(bool fresh, i32 width)
+{
+  if (workspace->split) {
+    StrBufAppendString(message, "the window is already split");
+    return;
+  }
+
+  if (width < minSplitWidth) {
+    StrBufAppendFormat(message, "a split needs a window at least %d columns wide", minSplitWidth);
+    return;
+  }
+
+  if (fresh && Full()) return;
+
+  u64 index = fresh ? WorkspaceAddUnnamed(workspace) : workspace->current;
+  WorkspaceSplit(workspace, index, message);
+}
+
+// true, with a message, when the window is not split.
+static bool
+Unsplit(void)
+{
+  if (workspace->split) return false;
+
+  StrBufAppendString(message, "the window is not split");
+  return true;
+}
+
+void
+SessionFocusOther(void)
+{
+  if (!Unsplit()) WorkspaceFocusOther(workspace);
+}
+
+void
+SessionSwapViews(void)
+{
+  if (!Unsplit()) workspace->left ^= 1;
+}
+
+void
+SessionCloseView(void)
+{
+  if (!Unsplit()) WorkspaceCloseView(workspace);
 }
 
 void
