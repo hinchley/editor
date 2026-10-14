@@ -190,6 +190,30 @@ ScreenPutText(i32 row, i32 column, const char *text, u64 length, Style style)
   return column;
 }
 
+void
+ScreenPutCluster(i32 row, i32 column, const char *text, u64 length, u32 width, Style style)
+{
+  if (row < 0 || row >= screenHeight || column < 0 || column >= screenWidth) return;
+
+  if (column + (i32)width > screenWidth) {
+    BreakWide(row, column);
+    SetBlank(row, column, style);
+    return;
+  }
+
+  // a cell holds at most 255 bytes, so overlong clusters lose whole trailing code points.
+  u64 size = 0;
+
+  while (size < length) {
+    u32 codepoint;
+    u32 next = Utf8Decode(text + size, length - size, &codepoint);
+    if (size + next > 255) break;
+    size += next;
+  }
+
+  SetCell(row, column, text, (u32)size, width, style);
+}
+
 i32
 ScreenPutString(i32 row, i32 column, const char *string, Style style)
 {

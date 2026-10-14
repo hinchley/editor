@@ -1,0 +1,316 @@
+#include "view.h"
+
+#include "settings.h"
+
+// the line number gutter is never narrower than this many digits.
+static constexpr i32 minGutterDigits = 3;
+
+void
+ViewInit(View *view, Buffer *buffer, const DisplayOptions *options)
+{
+  *view = (View){.buffer = buffer, .options = options};
+  CursorSetInit(&view->cursors);
+}
+
+void
+ViewFree(View *view)
+{
+  CursorSetFree(&view->cursors);
+  LayoutRowsFree(&view->rows);
+}
+
+void
+ViewSetArea(View *view, i32 row, i32 column, i32 width, i32 height)
+{
+  view->row = row;
+  view->column = column;
+  view->width = width;
+  view->height = height;
+}
+
+i32
+ViewGutterWidth(const View *view)
+{
+  if (!view->options->lineNumbers) return 0;
+
+  i32 digits = 1;
+  for (u64 count = BufferLineCount(view->buffer); count >= 10; count /= 10) digits++;
+  if (digits < minGutterDigits) digits = minGutterDigits;
+
+  // a space either side of the number.
+  return digits + 2;
+}
+
+i32
+ViewTextWidth(const View *view)
+{
+  i32 width = view->width - ViewGutterWidth(view);
+  return width > 1 ? width : 1;
+}
+
+const LayoutRows *
+ViewLayoutLine(View *view, u64 line)
+{
+  const StrBuf *text = BufferLine(view->buffer, line);
+  i32 width = view->options->softWrap ? ViewTextWidth(view) : 0;
+  LayoutWrap(text->data, text->length, width, &view->rows);
+  return &view->rows;
+}
+
+static u64
+RowCount(View *view, u64 line)
+{
+  if (!view->options->softWrap) return 1;
+  return ViewLayoutLine(view, line)->count;
+}
+
+ViewRow
+ViewRowOf(View *view, Position position)
+{
+  if (!view->options->softWrap) return (ViewRow){position.line, 0};
+
+  const LayoutRows *rows = ViewLayoutLine(view, position.line);
+  return (ViewRow){position.line, LayoutRowOf(rows, position.byte)};
+}
+
+static i32
+RowCompare(ViewRow a, ViewRow b)
+{
+  if (a.line != b.line) return a.line < b.line ? -1 : 1;
+  if (a.row != b.row) return a.row < b.row ? -1 : 1;
+  return 0;
+}
+
+static ViewRow
+StepForward(View *view, ViewRow at, u64 count, u64 *moved)
+{
+  u64 lastLine = BufferLineCount(view->buffer) - 1;
+  *moved = 0;
+
+  while (count > 0) {
+    u64 rowCount = RowCount(view, at.line);
+    u64 available = rowCount - 1 - at.row;
+
+    if (count <= available) {
+      at.row += count;
+      *moved += count;
+      break;
+    }
+
+    if (at.line == lastLine) {
+      at.row = rowCount - 1;
+      *moved += available;
+      break;
+    }
+
+    *moved += available + 1;
+    count -= available + 1;
+    at = (ViewRow){at.line + 1, 0};
+  }
+
+  return at;
+}
+
+static ViewRow
+StepBackward(View *view, ViewRow at, u64 count, u64 *moved)
+{
+  *moved = 0;
+
+  while (count > 0) {
+    if (count <= at.row) {
+      at.row -= count;
+      *moved += count;
+      break;
+    }
+
+    if (at.line == 0) {
+      *moved += at.row;
+      at.row = 0;
+      break;
+    }
+
+    *moved += at.row + 1;
+    count -= at.row + 1;
+    at.line--;
+    at.row = RowCount(view, at.line) - 1;
+  }
+
+  return at;
+}
+
+ViewRow
+ViewStep(View *view, ViewRow from, i64 count, u64 *moved)
+{
+  u64 rowCount = RowCount(view, from.line);
+  if (from.row >= rowCount) from.row = rowCount - 1;
+
+  // without wrapping every line is one row, so long jumps need no per line work.
+  if (!view->options->softWrap) {
+    u64 lastLine = BufferLineCount(view->buffer) - 1;
+    u64 line = from.line;
+
+    if (count >= 0) line = (u64)count > lastLine - line ? lastLine : line + (u64)count;
+    else line = (u64)-count > line ? 0 : line - (u64)-count;
+
+    *moved = line > from.line ? line - from.line : from.line - line;
+    return (ViewRow){line, 0};
+  }
+
+  if (count >= 0) return StepForward(view, from, (u64)count, moved);
+  return StepBackward(view, from, (u64)-count, moved);
+}
+
+// rows from a to b (b may be before a), with the magnitude capped just past limit.
+static i64
+Distance(View *view, ViewRow a, ViewRow b, u64 limit)
+{
+  if (RowCompare(a, b) > 0) return -Distance(view, b, a, limit);
+  if (!view->options->softWrap) return (i64)(b.line - a.line);
+
+  u64 distance = 0;
+
+  while (a.line < b.line) {
+    distance += RowCount(view, a.line) - a.row;
+    if (distance > limit) return (i64)limit + 1;
+    a = (ViewRow){a.line + 1, 0};
+  }
+
+  return (i64)(distance + b.row - a.row);
+}
+
+u64
+ViewRowColumn(View *view, Position position)
+{
+  const StrBuf *text = BufferLine(view->buffer, position.line);
+  u64 column = LayoutColumn(text->data, text->length, position.byte);
+  if (!view->options->softWrap) return column;
+
+  const LayoutRows *rows = ViewLayoutLine(view, position.line);
+  u64 start = rows->starts[LayoutRowOf(rows, position.byte)];
+  return column - LayoutColumn(text->data, text->length, start);
+}
+
+Position
+ViewPositionAt(View *view, ViewRow row, u64 column)
+{
+  const StrBuf *text = BufferLine(view->buffer, row.line);
+  const LayoutRows *rows = ViewLayoutLine(view, row.line);
+  u64 index = row.row < rows->count ? row.row : rows->count - 1;
+  LayoutRow layoutRow = LayoutGetRow(rows, index, text->length);
+  return (Position){row.line, LayoutByteAt(text->data, text->length, layoutRow, column)};
+}
+
+static ViewRow
+LastRow(View *view)
+{
+  u64 line = BufferLineCount(view->buffer) - 1;
+  return (ViewRow){line, RowCount(view, line) - 1};
+}
+
+// the margins around the cursor row, which shrink near the ends of the buffer.
+typedef struct Margins {
+  u64 above;
+  u64 below;
+} Margins;
+
+static Margins
+MarginsAround(View *view, ViewRow cursor)
+{
+  i64 margin = scrollOffset < (view->height - 1) / 2 ? scrollOffset : (view->height - 1) / 2;
+  if (margin < 0) margin = 0;
+
+  Margins margins;
+  ViewStep(view, cursor, -margin, &margins.above);
+  ViewStep(view, cursor, margin, &margins.below);
+  return margins;
+}
+
+static void
+ScrollColumns(View *view)
+{
+  if (view->options->softWrap) {
+    view->leftColumn = 0;
+    return;
+  }
+
+  Cursor *cursor = CursorSetPrimary(&view->cursors);
+  const StrBuf *text = BufferLine(view->buffer, cursor->head.line);
+  u64 column = LayoutColumn(text->data, text->length, cursor->head.byte);
+  i32 width = ViewTextWidth(view);
+  u64 margin = (u64)(scrollOffset < (width - 1) / 2 ? scrollOffset : (width - 1) / 2);
+
+  if (column < view->leftColumn + margin) {
+    view->leftColumn = column > margin ? column - margin : 0;
+  } else if (column + margin >= view->leftColumn + (u64)width) {
+    view->leftColumn = column + margin + 1 - (u64)width;
+  }
+}
+
+void
+ViewScrollToCursor(View *view)
+{
+  if (view->height <= 0) return;
+
+  u64 moved;
+  u64 height = (u64)view->height;
+  ViewRow cursor = ViewRowOf(view, CursorSetPrimary(&view->cursors)->head);
+  Margins margins = MarginsAround(view, cursor);
+  view->top = ViewStep(view, view->top, 0, &moved);
+
+  i64 distance = Distance(view, view->top, cursor, height);
+  i64 lowest = (i64)(height - 1 - margins.below);
+
+  if (distance < (i64)margins.above) {
+    view->top = ViewStep(view, cursor, -(i64)margins.above, &moved);
+  } else if (distance > lowest) {
+    view->top = ViewStep(view, cursor, -lowest, &moved);
+  }
+
+  // never leave empty rows below the end of the buffer while there is text above.
+  ViewRow highest = ViewStep(view, LastRow(view), -(i64)(height - 1), &moved);
+  if (RowCompare(view->top, highest) > 0) view->top = highest;
+
+  ScrollColumns(view);
+}
+
+bool
+ViewScroll(View *view, i64 count)
+{
+  if (view->height <= 0) return false;
+
+  u64 moved;
+  u64 height = (u64)view->height;
+  ViewRow top = ViewStep(view, view->top, count, &moved);
+  if (moved == 0) return false;
+
+  ViewRow highest = ViewStep(view, LastRow(view), -(i64)(height - 1), &moved);
+  if (count > 0 && RowCompare(top, highest) > 0) return false;
+
+  ViewRow cursor = ViewRowOf(view, CursorSetPrimary(&view->cursors)->head);
+  Margins margins = MarginsAround(view, cursor);
+  i64 distance = Distance(view, top, cursor, height);
+  i64 lowest = (i64)(height - 1 - margins.below);
+  if (distance < (i64)margins.above || distance > lowest) return false;
+
+  view->top = top;
+  return true;
+}
+
+bool
+ViewCursorScreen(View *view, i32 *row, i32 *column)
+{
+  Position head = CursorSetPrimary(&view->cursors)->head;
+  ViewRow cursor = ViewRowOf(view, head);
+  i64 distance = Distance(view, view->top, cursor, (u64)view->height);
+  if (distance < 0 || distance >= view->height) return false;
+
+  u64 rowColumn = ViewRowColumn(view, head);
+  if (rowColumn < view->leftColumn) return false;
+
+  u64 x = rowColumn - view->leftColumn;
+  if (x >= (u64)ViewTextWidth(view)) return false;
+
+  *row = view->row + (i32)distance;
+  *column = view->column + ViewGutterWidth(view) + (i32)x;
+  return true;
+}

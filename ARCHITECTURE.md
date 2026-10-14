@@ -40,9 +40,14 @@ This document describes how the editor is put together. It grows with each miles
 | `key` | The `Key` type (code plus modifiers) and key names such as `ctrl+shift+up`. |
 | `keymap` | The binding table: key, command and help text. The single source of truth for dispatch and the Alt-H list. |
 | `screen` | A grid of styled cells drawn in full each frame. Flushing writes only the cells that changed, inside a synchronized update. |
-| `keycheck` | Temporary (M1 to M3). A screen that names every key and tracks which bindings have been seen, used to verify input in each terminal. |
+| `theme` | Highlight groups (syntax and interface) and the style each one draws with. |
+| `layout` | How one line sits on screen: grapheme clusters with their display columns and widths (tabs expanded), and the visual rows it wraps into. |
+| `cursor` | The cursor set of a view: anchor, head and desired column per cursor, one of them primary. |
+| `view` | A window onto a buffer: screen area, gutter, cursors, scroll position, stepping over visual rows and keeping the cursor in sight. |
+| `move` | Cursor movement commands, written once against visual rows. |
+| `render` | Draws a frame: the view (gutter, text, whitespace symbols, ruler), the status bar and the message bar. |
 
-Later milestones add `render`, `undo`, `cursor`, `layout`, `view`, `edit`, `move`, `prompt`, `picker`, `loader`, `filter`, `search`, `spell`, `clipboard`, `lang`, `highlight`, `theme` and `project`.
+Later milestones add `undo`, `edit`, `prompt`, `picker`, `loader`, `filter`, `search`, `spell`, `clipboard`, `lang`, `highlight` and `project`.
 
 ## Terminal
 
@@ -86,6 +91,32 @@ Bytes are stored exactly as read. An invalid byte is treated as one U+FFFD code 
 `FileSave` writes to a temporary file (`.<name>.editor-XXXXXX`) in the target's folder, sets its permissions, `fsync`s it and renames it over the target. Symbolic links are resolved first, so the link stays and its final target is replaced. A broken link is refused, because the rename would replace the link with a regular file. The permissions of an existing file are kept, and a new file gets `0666` less the umask. Ownership is not copied, and a hard linked file loses its link, because the rename gives it a new inode.
 
 Each `File` keeps a `FileStamp` (device, inode, size, modification time) from its last load or save. Before writing, the target is checked against it. If the file changed on disk, or appeared where there was none, the save returns `FileStatusChanged` and is only done when the caller asks again with `overwriteChanged`. A file deleted since loading is simply written again. An existing file without write permission is refused, even though the rename would succeed, because the folder is writable.
+
+## Views
+
+### Layout
+
+`layout` is the only place that turns bytes into columns. `LayoutNext` walks a line one grapheme cluster at a time and gives each cluster its display column (from the line start) and width. Printable ASCII followed by ASCII takes a fast path that skips the grapheme rules. A tab is as wide as the distance to the next multiple of `tabWidth`, measured from the start of the logical line even when the line is wrapped. An ASCII control character is drawn as `^X` in two columns. An invalid byte, a C1 control character, or a cluster with no width of its own (such as a lone U+200B) is drawn as U+FFFD in one column, so nothing on a line is invisible.
+
+`LayoutWrap` splits a line into visual rows. A row breaks after its last space or tab that fits, or else just before the cluster that does not fit. Wrapped rows have no continuation indent. When the last row is exactly full, an empty row follows it, so the cursor at the end of the line has a cell to sit in. Without soft wrap a line is one row.
+
+### Visual rows
+
+A `ViewRow` is a line plus the index of one of its rows. `ViewStep` moves forward or back by any number of visual rows and stops at the ends of the buffer. Vertical movement, paging, scrolling and the scroll margin are all written against `ViewStep`, so the same code serves wrapped and unwrapped views. Nothing holds a row index for the whole buffer. A wrapped line is laid out when it is reached, so the cost depends on the rows stepped over, not the buffer size. Without soft wrap every line is one row, and stepping is plain arithmetic on line numbers, so a jump across a million lines is instant.
+
+Each cursor keeps a desired column: its column within its visual row. Up, Down, PageUp and PageDown aim for it, and every other movement resets it. Home and End act on the logical line. Up on the first row goes to the start of the buffer, and Down on the last row to the end.
+
+### Scrolling
+
+The view keeps its first visible row (`top`) and, without soft wrap, its first visible column (`leftColumn`). `ViewScrollToCursor` runs before every frame, so movement, resizing and toggles all end with the primary cursor in sight. It keeps `scrollOffset` rows between the cursor and the top and bottom edges (capped at just under half the height). The margin shrinks to the rows that exist before or after the cursor, which is how it yields at the start and end of the buffer. The view never scrolls so far that empty rows show below the end of the buffer. Columns get the same margin, and it yields at the start of the line.
+
+Ctrl-Up and Ctrl-Down move `top` by one row and leave the cursor alone. They refuse (with a message) when the cursor would end up inside the margin, or the view would pass either end. PageUp and PageDown move both the cursor and `top` by the height less one row, so the cursor keeps its screen row.
+
+### Rendering
+
+`RenderFrame` gives the view every row except the bottom two (the status bar and the message bar), scrolls it to its cursor and draws it. The gutter is the line number right aligned with a space either side, at least three digits wide. Only the first row of a wrapped line is numbered. With whitespace display on, a space is drawn as `·` and a tab as `→` in its first cell, in the `whitespace` colour. The ruler is drawn as `│` in the cell just after `rulerColumn` before the text, so text covers it, and spaces and tabs let it show through. A cluster cut by the left or right edge of the text area shows as blank cells.
+
+The status bar shows the name (shortened in the middle to fit) with `[+]` and `[RO]` on the left, and the wrap state, file type, line ending, `line:column`, line count and `open:loaded` buffer counts on the right. When the window is too narrow it keeps only `line:column`, and then nothing, on the right. Below `minWindowWidth` by `minWindowHeight` the editor shows only "terminal too small".
 
 ## Conventions
 

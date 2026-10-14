@@ -4,7 +4,7 @@ A personal terminal text editor for Linux, written in C23.
 
 It targets Wayland and the foot, alacritty and ghostty terminals, and requires the Kitty Keyboard Protocol. There is no fallback for legacy terminals.
 
-> Status: early development (milestone M2, text core and files). Running `editor` still shows the temporary key check screen instead of an editor: it names each key as it arrives, lists the bindings not yet pressed, and logs pastes. With a file argument it loads the file and shows its line count and line ending above the typing line. Ctrl-S saves it (unchanged) to check the round trip, and asks for a second Ctrl-S if the file changed on disk. Only one file argument is accepted for now. Ctrl-Q quits, and Ctrl-Alt-Q forces a fatal error to check that the terminal is restored.
+> Status: early development (milestone M3, view, movement and rendering). The editor shows one file (or an empty buffer) with the line number gutter, whitespace symbols, the ruler, soft wrap, the status bar and the message bar. Every movement key works, but text cannot be edited yet. Ctrl-S saves the file unchanged, and Ctrl-Q quits. Only one file argument is accepted for now.
 
 ## Build
 
@@ -28,7 +28,9 @@ editor folder                # load every file under folder and pick one
 
 Files over 100 MB, files with a nul byte in their first 4 KB, and anything that is not a regular file are not opened. A file is saved with the line ending it was loaded with (LF or CRLF); a file that mixes both is normalised to the more common one. Saving is atomic, follows symbolic links and keeps the file's permissions. If the file changed on disk since it was opened, the editor asks before overwriting it.
 
-Key bindings will be documented here as features land. They follow the spec, with one change: project search is Alt-Shift-F rather than Ctrl-Shift-F, because alacritty and ghostty use Ctrl-Shift-F for their own search.
+Working so far: the arrows, Home (first non-blank, then line start), End, PageUp, PageDown, Ctrl-Left and Ctrl-Right (by word), Ctrl-Home and Ctrl-End, Ctrl-Up and Ctrl-Down (scroll without moving the cursor), Alt-W (soft wrap), Alt-L (line numbers), Alt-. (whitespace), Alt-G (ruler at column 100), Ctrl-S and Ctrl-Q. The other bindings report that they are not available yet.
+
+Key bindings will be documented here in full as features land. They follow the spec, with one change: project search is Alt-Shift-F rather than Ctrl-Shift-F, because alacritty and ghostty use Ctrl-Shift-F for their own search.
 
 ### Ghostty
 

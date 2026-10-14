@@ -40,6 +40,14 @@ ScreenBegin(void);
 i32
 ScreenPutText(i32 row, i32 column, const char *text, u64 length, Style style);
 
+// draws one grapheme cluster as a single cell of the given width (1 or 2), so a cluster
+// whose width differs from its first code point (a flag, an emoji with a presentation
+// selector) still lines up.
+// the caller ensures the bytes contain no control characters.
+// a cluster that does not fit before the right edge becomes a space.
+void
+ScreenPutCluster(i32 row, i32 column, const char *text, u64 length, u32 width, Style style);
+
 // same as ScreenPutText for a nul terminated string.
 i32
 ScreenPutString(i32 row, i32 column, const char *string, Style style);
