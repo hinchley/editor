@@ -1,6 +1,8 @@
 CompileFlags:
   Compiler: gcc
   Add:
+    # parse headers as c (clangd otherwise guesses objective-c++ for .h files).
+    - -xc
     - -std=c23
     - -D_DEFAULT_SOURCE
     - -Wall
