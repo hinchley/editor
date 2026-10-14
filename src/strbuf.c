@@ -13,9 +13,14 @@ StrBufReserve(StrBuf *buffer, u64 capacity)
 {
   if (buffer->data && capacity <= buffer->capacity) return;
 
-  // grow geometrically so repeated appends stay linear overall.
-  u64 grown = buffer->capacity ? buffer->capacity : 16;
-  while (grown < capacity) grown *= 2;
+  // the first allocation is exact, so text loaded once wastes nothing.
+  // after that, growth is geometric so repeated appends stay linear overall.
+  u64 grown = capacity > 16 ? capacity : 16;
+
+  if (buffer->capacity) {
+    grown = buffer->capacity;
+    while (grown < capacity) grown *= 2;
+  }
 
   buffer->data = MemoryResize(buffer->data, grown + 1, 1);
   buffer->capacity = grown;

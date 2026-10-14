@@ -32,7 +32,9 @@ This document describes how the editor is put together. It grows with each miles
 | `memory` | Checked allocation. Every allocation either succeeds or ends in `Fatal`, so callers never test for null. Memory is released with `free`. |
 | `strbuf` | Growable byte string. A zeroed `StrBuf` is empty and valid. Allocated data is always nul terminated. |
 | `unicodedata` | Generated Unicode tables: display width, grapheme break property, Extended_Pictographic and simple case folding. |
-| `utf8` | UTF-8 decode and encode, and code point display width from the Unicode tables. |
+| `utf8` | UTF-8 decode and encode, grapheme cluster boundaries, display width and simple case folding, from the Unicode tables. |
+| `buffer` | The text of one buffer as a flat array of lines, and `BufferReplace`, the single edit primitive, which notifies listeners. |
+| `file` | Loading a file into a buffer (size and binary checks, line ending detection) and saving it atomically. |
 | `term` | The terminal session: raw mode, startup handshake, alternate screen, keyboard protocol, bracketed paste, cursor shape, window size, waiting for input or a resize, and restoring the terminal on every exit path. |
 | `input` | Decodes the bytes read from the terminal into events: keys, pastes, cursor position reports and keyboard protocol reports. Pure parsing, no I/O. |
 | `key` | The `Key` type (code plus modifiers) and key names such as `ctrl+shift+up`. |
@@ -40,7 +42,7 @@ This document describes how the editor is put together. It grows with each miles
 | `screen` | A grid of styled cells drawn in full each frame. Flushing writes only the cells that changed, inside a synchronized update. |
 | `keycheck` | Temporary (M1 to M3). A screen that names every key and tracks which bindings have been seen, used to verify input in each terminal. |
 
-Later milestones add `render`, `buffer`, `file`, `undo`, `cursor`, `layout`, `view`, `edit`, `move`, `prompt`, `picker`, `loader`, `filter`, `search`, `spell`, `clipboard`, `lang`, `highlight`, `theme` and `project`.
+Later milestones add `render`, `undo`, `cursor`, `layout`, `view`, `edit`, `move`, `prompt`, `picker`, `loader`, `filter`, `search`, `spell`, `clipboard`, `lang`, `highlight`, `theme` and `project`.
 
 ## Terminal
 
@@ -64,6 +66,26 @@ Escape is a sequence under the protocol, so a lone escape byte only appears when
 ### Screen
 
 Each frame clears the back grid, draws everything, and `ScreenFlush` compares it with the previous frame. A cell holds a whole grapheme cluster (its bytes live in a per-frame text buffer) and a style. A wide character uses two cells, the second with width 0. After writing any non-ASCII cell the writer moves the cursor explicitly before the next cell, so a terminal that disagrees about a character's width cannot shift the rest of the row. A resize clears the terminal and redraws everything.
+
+## Text
+
+### Buffer
+
+A buffer is a flat array of lines. Each line is a `StrBuf` holding its bytes without the line break, so joining the lines with `\n` gives the text. There is always at least one line: an empty buffer is one empty line, and text ending in `\n` has a final empty line. A `Position` is a line index plus a byte offset in that line. Display columns are always derived from the bytes, never stored.
+
+Every change is `BufferReplace(range, text)`: insertion is an empty range, deletion is empty text. After each replace the buffer calls its listeners with a `BufferChange` (start, old end, new end, old text, new text). Cursors, views, highlighting and undo all follow edits through listeners, so there is one place where text changes. Undo and redo are inverse replaces. A listener must not change the buffer while it is being notified. Edits inside one line take a fast path that touches only that line. `BufferSetText` replaces everything without notifying, for loading.
+
+### Text and Unicode
+
+Bytes are stored exactly as read. An invalid byte is treated as one U+FFFD code point wherever text is decoded, so invalid UTF-8 survives editing and saving untouched. Cursor movement steps over grapheme clusters, using the extended grapheme cluster rules except the Indic conjunct rule (GB9c), which would need another table. `Utf8PreviousBoundary` works backwards from the cursor with only the context it needs (a run of regional indicators, or an emoji ZWJ sequence), so moving left on a very long line stays cheap. A cluster is as wide as its first code point, except that a regional indicator pair (a flag) and a pictographic character followed by U+FE0F are two columns.
+
+### Files
+
+`FileLoad` refuses anything that is not a regular file, files over `maxFileSize` (100 MB) and files with a nul byte in the first `binaryProbeSize` (4 KB) bytes. A missing file is not an error: it gives an empty buffer that the first save creates. The file is opened with `O_NONBLOCK` so a named pipe is refused instead of hanging. Line endings are normalised in one pass: every `\r\n` becomes `\n`, and the more common of the two endings (LF on a tie) is recorded and written back on save. A file with both endings is normalised to the more common one, with a message. A `\r` that is not before `\n` is ordinary content (shown as `^M`). So a file that uses one ending consistently round trips byte for byte.
+
+`FileSave` writes to a temporary file (`.<name>.editor-XXXXXX`) in the target's folder, sets its permissions, `fsync`s it and renames it over the target. Symbolic links are resolved first, so the link stays and its final target is replaced. A broken link is refused, because the rename would replace the link with a regular file. The permissions of an existing file are kept, and a new file gets `0666` less the umask. Ownership is not copied, and a hard linked file loses its link, because the rename gives it a new inode.
+
+Each `File` keeps a `FileStamp` (device, inode, size, modification time) from its last load or save. Before writing, the target is checked against it. If the file changed on disk, or appeared where there was none, the save returns `FileStatusChanged` and is only done when the caller asks again with `overwriteChanged`. A file deleted since loading is simply written again. An existing file without write permission is refused, even though the rename would succeed, because the folder is writable.
 
 ## Conventions
 

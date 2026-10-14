@@ -12,6 +12,10 @@
 bool
 KeyCheckHandle(const InputEvent *event);
 
+// sets the line shown above the typing line, used for buffer and file messages.
+void
+KeyCheckSetMessage(const char *text, u64 length);
+
 // records that the window was resized.
 void
 KeyCheckResized(void);

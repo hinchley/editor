@@ -4,7 +4,7 @@ A personal terminal text editor for Linux, written in C23.
 
 It targets Wayland and the foot, alacritty and ghostty terminals, and requires the Kitty Keyboard Protocol. There is no fallback for legacy terminals.
 
-> Status: early development (milestone M1, terminal and input). Running `editor` shows a temporary key check screen instead of an editor: it names each key as it arrives, lists the bindings not yet pressed, and logs pastes. Ctrl-Q quits, and Ctrl-Alt-Q forces a fatal error to check that the terminal is restored.
+> Status: early development (milestone M2, text core and files). Running `editor` still shows the temporary key check screen instead of an editor: it names each key as it arrives, lists the bindings not yet pressed, and logs pastes. With a file argument it loads the file and shows its line count and line ending above the typing line. Ctrl-S saves it (unchanged) to check the round trip, and asks for a second Ctrl-S if the file changed on disk. Only one file argument is accepted for now. Ctrl-Q quits, and Ctrl-Alt-Q forces a fatal error to check that the terminal is restored.
 
 ## Build
 
@@ -25,6 +25,8 @@ editor file                  # open file (created on first save if it does not e
 editor file1 path/to/file2   # load both and pick one
 editor folder                # load every file under folder and pick one
 ```
+
+Files over 100 MB, files with a nul byte in their first 4 KB, and anything that is not a regular file are not opened. A file is saved with the line ending it was loaded with (LF or CRLF); a file that mixes both is normalised to the more common one. Saving is atomic, follows symbolic links and keeps the file's permissions. If the file changed on disk since it was opened, the editor asks before overwriting it.
 
 Key bindings will be documented here as features land. They follow the spec, with one change: project search is Alt-Shift-F rather than Ctrl-Shift-F, because alacritty and ghostty use Ctrl-Shift-F for their own search.
 

@@ -28,6 +28,7 @@ static u32 logCount;
 static bool seen[128];
 static u32 resizeCount;
 static StrBuf typed;
+static StrBuf message;
 
 static LogLine *
 AddLogLine(void)
@@ -134,6 +135,13 @@ KeyCheckHandle(const InputEvent *event)
 }
 
 void
+KeyCheckSetMessage(const char *text, u64 length)
+{
+  StrBufClear(&message);
+  StrBufAppend(&message, text, length);
+}
+
+void
 KeyCheckResized(void)
 {
   resizeCount++;
@@ -198,7 +206,7 @@ KeyCheckDraw(i32 width, i32 height)
 
   // the unseen list takes at most a third of the screen, the log gets the rest.
   i32 logTop = DrawUnseen(width, height / 3) + 1;
-  i32 logBottom = height - 3;
+  i32 logBottom = height - 4;
   i32 row = logBottom;
 
   for (u32 index = logCount; index > 0 && row >= logTop; index--, row--) {
@@ -206,6 +214,8 @@ KeyCheckDraw(i32 width, i32 height)
     Style style = line->unbound ? unboundStyle : styleDefault;
     ScreenPutText(row, 0, line->text.data, line->text.length, style);
   }
+
+  ScreenPutText(height - 2, 0, message.data, message.length, labelStyle);
 
   i32 column = ScreenPutString(height - 1, 0, "type here: ", labelStyle);
   column = ScreenPutText(height - 1, column, typed.data, typed.length, styleDefault);
