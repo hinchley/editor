@@ -5,18 +5,45 @@
 // the line number gutter is never narrower than this many digits.
 static constexpr i32 minGutterDigits = 3;
 
+// keeps the cursors and the first visible line on the same text when the buffer changes.
+static void
+FollowChange(void *context, const BufferChange *change)
+{
+  View *view = context;
+  CursorSetAdjust(&view->cursors, change);
+
+  // a change wholly above the view shifts it; one reaching into it starts it at the change.
+  ViewRow *top = &view->top;
+
+  if (change->oldEnd.line < top->line) {
+    top->line = top->line - change->oldEnd.line + change->newEnd.line;
+  } else if (change->start.line < top->line) {
+    *top = (ViewRow){change->start.line, 0};
+  }
+}
+
 void
 ViewInit(View *view, Buffer *buffer, const DisplayOptions *options)
 {
   *view = (View){.buffer = buffer, .options = options};
   CursorSetInit(&view->cursors);
+  BufferListen(buffer, FollowChange, view);
 }
 
 void
 ViewFree(View *view)
 {
+  BufferUnlisten(view->buffer, FollowChange, view);
   CursorSetFree(&view->cursors);
   LayoutRowsFree(&view->rows);
+}
+
+void
+ViewClamp(View *view)
+{
+  CursorSetClamp(&view->cursors, view->buffer);
+  u64 lastLine = BufferLineCount(view->buffer) - 1;
+  if (view->top.line > lastLine) view->top = (ViewRow){lastLine, 0};
 }
 
 void

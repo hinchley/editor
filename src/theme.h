@@ -32,6 +32,8 @@ enum ThemeGroup {
   ThemeStatus,
   ThemeStatusDim,
   ThemeMessage,
+  ThemeSelection,
+  ThemeSelectionWhitespace,
   ThemeGroupCount
 };
 

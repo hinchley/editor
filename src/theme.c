@@ -32,7 +32,11 @@ static const ThemeEntry themeEntries[ThemeGroupCount] = {
   [ThemeRuler] = {"ruler", {238, colorDefault, 0}},
   [ThemeStatus] = {"status", {colorDefault, colorDefault, StyleAttributeReverse}},
   [ThemeStatusDim] = {"statusdim", {245, 236, 0}},
-  [ThemeMessage] = {"message", {colorDefault, colorDefault, 0}}
+  [ThemeMessage] = {"message", {colorDefault, colorDefault, 0}},
+
+  // selected text keeps its own colour on this background.
+  [ThemeSelection] = {"selection", {colorDefault, 238, 0}},
+  [ThemeSelectionWhitespace] = {"selectionwhitespace", {244, 238, 0}}
 };
 
 Style

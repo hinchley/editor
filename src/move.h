@@ -24,3 +24,29 @@ enum Move {
 // with extend the anchors stay put, growing the selections.
 void
 MoveCursors(View *view, enum Move move, bool extend);
+
+// where a movement would take a cursor's head.
+Position
+MovePosition(View *view, const Cursor *cursor, enum Move move);
+
+// selects the whole buffer with a single cursor.
+void
+MoveSelectAll(View *view);
+
+// collapses to the primary cursor and puts it on the bracket matching the one at (or just
+// before) it.
+// returns false, changing nothing, when there is no such bracket.
+bool
+MoveToMatchingBracket(View *view);
+
+// collapses to the primary cursor and selects the text inside the closest brackets around
+// its selection, or the brackets as well when that text is already selected.
+// returns false, changing nothing, when no brackets enclose the selection.
+bool
+MoveSelectBrackets(View *view);
+
+// collapses to the primary cursor at a line and display column (both from 0), clamped to
+// the buffer.
+// a column inside a tab or wide character lands on its start.
+void
+MoveGoTo(View *view, u64 line, u64 column);

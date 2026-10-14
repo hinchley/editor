@@ -25,7 +25,7 @@ This document describes how the editor is put together. It grows with each miles
 | Module | Responsibility |
 |---|---|
 | `main` | Calls `AppRun`. Nothing else. |
-| `app` | Startup and the main loop. |
+| `app` | Startup, the main loop, key dispatch, and the commands that ask questions (save, save as, quit, reload, go to line, ruler column). |
 | `types.h` | Fixed width numeric aliases (`u8`..`u64`, `i8`..`i64`, `f32`, `f64`). The only numeric types used. |
 | `settings.h` | Built-in settings as named `constexpr` values. Values with a `Default` suffix only set the initial state of a runtime toggle. |
 | `fatal` | `Fatal` restores the terminal (through a registered cleanup hook), prints a message and exits. |
@@ -35,6 +35,8 @@ This document describes how the editor is put together. It grows with each miles
 | `utf8` | UTF-8 decode and encode, grapheme cluster boundaries, display width and simple case folding, from the Unicode tables. |
 | `buffer` | The text of one buffer as a flat array of lines, and `BufferReplace`, the single edit primitive, which notifies listeners. |
 | `file` | Loading a file into a buffer (size and binary checks, line ending detection) and saving it atomically. |
+| `undo` | The undo history of one buffer: groups of recorded changes with the cursors before and after each. |
+| `document` | A buffer with its file and undo history, and whether it differs from the file. |
 | `term` | The terminal session: raw mode, startup handshake, alternate screen, keyboard protocol, bracketed paste, cursor shape, window size, waiting for input or a resize, and restoring the terminal on every exit path. |
 | `input` | Decodes the bytes read from the terminal into events: keys, pastes, cursor position reports and keyboard protocol reports. Pure parsing, no I/O. |
 | `key` | The `Key` type (code plus modifiers) and key names such as `ctrl+shift+up`. |
@@ -42,12 +44,16 @@ This document describes how the editor is put together. It grows with each miles
 | `screen` | A grid of styled cells drawn in full each frame. Flushing writes only the cells that changed, inside a synchronized update. |
 | `theme` | Highlight groups (syntax and interface) and the style each one draws with. |
 | `layout` | How one line sits on screen: grapheme clusters with their display columns and widths (tabs expanded), and the visual rows it wraps into. |
-| `cursor` | The cursor set of a view: anchor, head and desired column per cursor, one of them primary. |
+| `cursor` | The cursor set of a view: anchor, head and desired column per cursor, one of them primary. Following changes, and merging cursors that overlap. |
 | `view` | A window onto a buffer: screen area, gutter, cursors, scroll position, stepping over visual rows and keeping the cursor in sight. |
-| `move` | Cursor movement commands, written once against visual rows. |
-| `render` | Draws a frame: the view (gutter, text, whitespace symbols, ruler), the status bar and the message bar. |
+| `move` | Cursor movement and selection commands, written once against visual rows. |
+| `bracket` | Finding the bracket that matches another, and the closest pair around a range. |
+| `edit` | Editing commands: typing, line breaks, indentation, deletion, line commands, copy, cut and paste. Each edits at every cursor as one undo step. |
+| `prompt` | Questions asked in the message bar: a line of text, or a choice of letters. |
+| `clipboard` | Copy and paste through `wl-copy` and `wl-paste`, with an in-process fallback. |
+| `render` | Draws a frame: the view (gutter, text, selections, whitespace symbols, ruler), the status bar and the message bar. |
 
-Later milestones add `undo`, `edit`, `prompt`, `picker`, `loader`, `filter`, `search`, `spell`, `clipboard`, `lang`, `highlight` and `project`.
+Later milestones add `picker`, `loader`, `filter`, `search`, `spell`, `lang`, `highlight` and `project`.
 
 ## Terminal
 
@@ -116,7 +122,43 @@ Ctrl-Up and Ctrl-Down move `top` by one row and leave the cursor alone. They ref
 
 `RenderFrame` gives the view every row except the bottom two (the status bar and the message bar), scrolls it to its cursor and draws it. The gutter is the line number right aligned with a space either side, at least three digits wide. Only the first row of a wrapped line is numbered. With whitespace display on, a space is drawn as `·` and a tab as `→` in its first cell, in the `whitespace` colour. The ruler is drawn as `│` in the cell just after `rulerColumn` before the text, so text covers it, and spaces and tabs let it show through. A cluster cut by the left or right edge of the text area shows as blank cells.
 
+A selection is drawn with the `selection` background behind the text's own colours. When a selection continues onto the next line, one selected cell after the end of the line shows that the line break is included.
+
 The status bar shows the name (shortened in the middle to fit) with `[+]` and `[RO]` on the left, and the wrap state, file type, line ending, `line:column`, line count and `open:loaded` buffer counts on the right. When the window is too narrow it keeps only `line:column`, and then nothing, on the right. Below `minWindowWidth` by `minWindowHeight` the editor shows only "terminal too small".
+
+## Editing
+
+### Cursors follow changes
+
+A view listens to its buffer. After every `BufferReplace` it moves each cursor with `BufferAdjust`: a position before the change stays, one inside the replaced text moves to its start, and one at or after its end moves with the text that follows. The view's first visible line shifts the same way. So a command edits at one cursor and the others (and later, the other view of a split) stay on their text without the command knowing about them.
+
+An edit command loops over the cursors, replaces each one's range, and puts that cursor after its new text. When the loop ends, cursors that now overlap are merged and every desired column is reset. Line commands (indent, dedent) rewrite each run of touched lines with one replace, which would pull cursors inside it to its start, so they put the cursors back on the same text themselves. Ctrl-D, Ctrl-K and Ctrl-Shift-Up/Down first collapse to the primary cursor.
+
+Enter copies the indentation before the cursor and adds one level after `{`, `[` or `(`. With the matching closer right after the cursor it puts the closer on its own line below. Blanks after the cursor are dropped, and a line that holds only blanks before the cursor is left empty rather than with trailing blanks. One level is `tabWidth` spaces, or a tab when expand tab is off (Alt-T).
+
+### Undo
+
+`undo` listens to the buffer too, and records each change as `{start, oldText, newText}`. Everything between `UndoBegin` and `UndoEnd` (which nest) is one group, which also keeps copies of the cursor set from before and after. Undo replays a group's records backwards as inverse replaces and restores the "before" cursors; redo replays them forwards and restores the "after" cursors. A change outside a group is a programming error and ends the editor through `Fatal`, so nothing can slip past the history.
+
+A typing, backspace or delete edit joins the last group when it is of the same kind, nothing has been undone, and nothing broke the run. `app` calls `UndoBreak` before every command except backspace and delete, and before a paste. Within a group, a change that simply continues the last record (typing after it, backspacing before it, deleting at the same place) extends that record, so typing a line costs one record.
+
+The history keeps a save point: the number of applied groups when the text matched the file. The buffer is modified when the history is not at its save point, or its line ending differs from the one on disk, so undoing back to the saved text, or switching the line ending back, clears `[+]`. Starting a new group after an undo drops the groups that could have been redone, and the save point with them when it was among them. A reload clears the history. There is no depth limit.
+
+### Prompts
+
+The message bar doubles as the prompt. `PromptAsk` edits one line of text (Left, Right, Home, End, Backspace, Ctrl-Backspace, Delete, paste up to the first line break), and `PromptChoose` waits for one of a few letters. Escape cancels either. The answer goes to a callback, and the prompt is closed before the callback runs, so a callback can open the next prompt. That is how the save flow chains: save as, then "overwrite?" when the name exists, or "changed on disk; overwrite?" when `FileSave` reports a change. The quit prompt saves through the same flow and quits from its completion callback. A save that fails after save as leaves the buffer unnamed again.
+
+### Clipboard
+
+Copy sends the text to `wl-copy` on standard input, and paste reads `wl-paste --no-newline --type text`. Both run with `posix_spawnp`, standard error to `/dev/null`, and a two second limit, after which the command is killed. The editor ignores SIGPIPE so a command that exits early cannot end it, and resets SIGPIPE to the default for the command. Without `WAYLAND_DISPLAY`, or when the command fails, the in-process copy is used.
+
+Copy with no selection is line wise: each cursor's line, ending in `\n`. The clipboard remembers the last copy and whether it was line wise. When a paste finds exactly that text, it is inserted as whole lines above the cursor's line instead of at the cursor.
+
+A paste, from Ctrl-V or a bracketed terminal paste, has `\r\n` turned into `\n` (a lone `\r` stays, as when loading) and is one undo step without any auto indentation.
+
+### Saving and reloading
+
+`document` keeps the file's line ending from its last load or save. Saving runs trailing whitespace trimming first when `trimTrailingWhitespace` is set (one undo step, so the screen matches the file), then `FileSave`, then marks the save point. Reload reads the file into a separate buffer and swaps the text in only when that worked, then clamps the view's cursors and scroll position into the new text.
 
 ## Conventions
 

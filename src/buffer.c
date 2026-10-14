@@ -76,6 +76,18 @@ BufferSetText(Buffer *buffer, const char *text, u64 length)
 }
 
 void
+BufferSwapText(Buffer *buffer, Buffer *other)
+{
+  Buffer swapped = *buffer;
+  buffer->lines = other->lines;
+  buffer->lineCount = other->lineCount;
+  buffer->lineCapacity = other->lineCapacity;
+  other->lines = swapped.lines;
+  other->lineCount = swapped.lineCount;
+  other->lineCapacity = swapped.lineCapacity;
+}
+
+void
 BufferFree(Buffer *buffer)
 {
   FreeLines(buffer, 0, buffer->lineCount);
@@ -131,6 +143,38 @@ PositionCompare(Position a, Position b)
   if (a.line != b.line) return a.line < b.line ? -1 : 1;
   if (a.byte != b.byte) return a.byte < b.byte ? -1 : 1;
   return 0;
+}
+
+Position
+BufferAdjust(Position position, const BufferChange *change)
+{
+  if (PositionCompare(position, change->start) < 0) return position;
+  if (PositionCompare(position, change->oldEnd) < 0) return change->start;
+
+  Position oldEnd = change->oldEnd;
+  Position newEnd = change->newEnd;
+  // a position on the last replaced line keeps its distance from the end of the change.
+  if (position.line == oldEnd.line) {
+    return (Position){newEnd.line, newEnd.byte + position.byte - oldEnd.byte};
+  }
+
+  return (Position){position.line - oldEnd.line + newEnd.line, position.byte};
+}
+
+Position
+BufferTextEnd(Position start, const char *text, u64 length)
+{
+  const char *end = text + length;
+  const char *lastNewline = nullptr;
+  u64 newlines = 0;
+
+  for (const char *at = text; (at = FindNewline(at, end)); at++) {
+    lastNewline = at;
+    newlines++;
+  }
+
+  if (!newlines) return (Position){start.line, start.byte + length};
+  return (Position){start.line + newlines, (u64)(end - lastNewline - 1)};
 }
 
 static Range

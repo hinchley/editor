@@ -42,11 +42,19 @@ typedef struct View {
   LayoutRows rows;
 } View;
 
+// sets up a view with one cursor at the start of buffer.
+// the view follows changes to the buffer, keeping its cursors on the same text, until
+// ViewFree.
 void
 ViewInit(View *view, Buffer *buffer, const DisplayOptions *options);
 
 void
 ViewFree(View *view);
+
+// keeps the cursors and scroll position inside the buffer after its text was replaced
+// without telling listeners (a reload).
+void
+ViewClamp(View *view);
 
 void
 ViewSetArea(View *view, i32 row, i32 column, i32 width, i32 height);

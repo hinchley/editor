@@ -29,8 +29,53 @@ CursorSetInit(CursorSet *set);
 void
 CursorSetFree(CursorSet *set);
 
+// makes target a copy of source.
+void
+CursorSetCopy(CursorSet *target, const CursorSet *source);
+
+// keeps only the primary cursor.
+void
+CursorSetCollapse(CursorSet *set);
+
+// moves every cursor to follow a change to the buffer.
+void
+CursorSetAdjust(CursorSet *set, const BufferChange *change);
+
+// keeps every cursor inside the buffer, after its text was replaced without a change.
+void
+CursorSetClamp(CursorSet *set, const Buffer *buffer);
+
+// sorts the cursors by position and merges any that overlap or meet.
+void
+CursorSetMerge(CursorSet *set);
+
 static inline Cursor *
 CursorSetPrimary(CursorSet *set)
 {
   return &set->cursors[set->primary];
+}
+
+static inline bool
+CursorHasSelection(const Cursor *cursor)
+{
+  return PositionCompare(cursor->anchor, cursor->head) != 0;
+}
+
+// the selection in text order.
+static inline Range
+CursorRange(const Cursor *cursor)
+{
+  if (PositionCompare(cursor->anchor, cursor->head) <= 0) {
+    return (Range){cursor->anchor, cursor->head};
+  }
+
+  return (Range){cursor->head, cursor->anchor};
+}
+
+// puts the cursor at a position with nothing selected.
+static inline void
+CursorPlace(Cursor *cursor, Position position)
+{
+  cursor->anchor = position;
+  cursor->head = position;
 }

@@ -1,8 +1,10 @@
 #include "render.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "layout.h"
+#include "memory.h"
 #include "screen.h"
 #include "settings.h"
 #include "theme.h"
@@ -15,6 +17,12 @@ static constexpr char invalidSymbol[] = "\uFFFD";
 // the status bar drops fields on the right rather than shorten the name below this.
 static constexpr i32 minNameWidth = 8;
 
+// bytes of the line being drawn that are selected.
+typedef struct Span {
+  u64 start;
+  u64 end;
+} Span;
+
 // what every row of one view draw shares.
 typedef struct Canvas {
   View *view;
@@ -24,64 +32,130 @@ typedef struct Canvas {
 
   // the screen column of the ruler within the text area, or -1 when it is not shown.
   i64 rulerX;
+
+  // the selected parts of the current line, and whether its line break is selected.
+  Span *spans;
+  u32 spanCount;
+  u32 spanCapacity;
+  bool lineBreakSelected;
 } Canvas;
 
 static void
-PutSymbol(i32 row, i32 column, const char *symbol, enum ThemeGroup group)
+PutSymbol(i32 row, i32 column, const char *symbol, Style style)
 {
-  ScreenPutCluster(row, column, symbol, strlen(symbol), 1, ThemeStyle(group));
+  ScreenPutCluster(row, column, symbol, strlen(symbol), 1, style);
+}
+
+// a style with the selection background when selected.
+static Style
+Highlight(Style style, bool selected)
+{
+  if (selected) style.background = ThemeStyle(ThemeSelection).background;
+  return style;
 }
 
 static void
-DrawBlank(const Canvas *canvas, i32 row, const LayoutCluster *cluster, i64 x)
+AddSpan(Canvas *canvas, u64 start, u64 end)
 {
-  // blank cells are already empty, so only a symbol in the first cell needs drawing.
+  if (canvas->spanCount == canvas->spanCapacity) {
+    canvas->spanCapacity = canvas->spanCapacity ? canvas->spanCapacity * 2 : 4;
+    canvas->spans = MemoryResize(canvas->spans, canvas->spanCapacity, sizeof(Span));
+  }
+
+  canvas->spans[canvas->spanCount++] = (Span){start, end};
+}
+
+static void
+FindSelection(Canvas *canvas, u64 line, u64 length)
+{
+  CursorSet *set = &canvas->view->cursors;
+  canvas->spanCount = 0;
+  canvas->lineBreakSelected = false;
+
+  for (u32 index = 0; index < set->count; index++) {
+    Range range = CursorRange(&set->cursors[index]);
+    if (range.start.line > line || range.end.line < line) continue;
+
+    u64 start = range.start.line == line ? range.start.byte : 0;
+    u64 end = range.end.line == line ? range.end.byte : length;
+    if (range.end.line > line) canvas->lineBreakSelected = true;
+    if (end > start) AddSpan(canvas, start, end);
+  }
+}
+
+static bool
+IsSelected(const Canvas *canvas, u64 byte)
+{
+  for (u32 index = 0; index < canvas->spanCount; index++) {
+    if (byte >= canvas->spans[index].start && byte < canvas->spans[index].end) return true;
+  }
+
+  return false;
+}
+
+// fills the visible cells from x to x + width.
+static void
+FillCells(const Canvas *canvas, i32 row, i64 x, i64 width, Style style)
+{
+  for (i64 cell = x; cell < x + width && cell < canvas->textWidth; cell++) {
+    if (cell >= 0) ScreenFill(row, canvas->textColumn + (i32)cell, 1, style);
+  }
+}
+
+static void
+DrawBlank(const Canvas *canvas, i32 row, const LayoutCluster *cluster, i64 x, bool selected)
+{
+  // blank cells are already empty, so unselected blanks only need their symbol.
+  if (selected) FillCells(canvas, row, x, cluster->width, ThemeStyle(ThemeSelection));
+
   // a tab cut by the left edge loses its symbol, and the ruler shows through blanks.
   if (!canvas->view->options->showWhitespace) return;
-  if (x < 0 || x >= canvas->textWidth || x == canvas->rulerX) return;
+  if (x < 0 || x >= canvas->textWidth || (x == canvas->rulerX && !selected)) return;
 
   const char *symbol = cluster->kind == LayoutKindSpace ? spaceSymbol : tabSymbol;
-  PutSymbol(row, canvas->textColumn + (i32)x, symbol, ThemeWhitespace);
+  enum ThemeGroup group = selected ? ThemeSelectionWhitespace : ThemeWhitespace;
+  PutSymbol(row, canvas->textColumn + (i32)x, symbol, ThemeStyle(group));
 }
 
 static void
-DrawControl(const Canvas *canvas, i32 row, const LayoutCluster *cluster, i32 column)
+DrawControl(const Canvas *canvas, i32 row, i32 column, u64 byte, Style style)
 {
-  char symbol[2] = {'^', (char)(canvas->text[cluster->start] ^ 0x40)};
-  ScreenPutText(row, column, symbol, 2, ThemeStyle(ThemeControl));
+  char symbol[2] = {'^', (char)(canvas->text[byte] ^ 0x40)};
+  ScreenPutText(row, column, symbol, 2, style);
 }
 
 // draws one cluster at x columns into the text area.
 static void
 DrawCluster(const Canvas *canvas, i32 row, const LayoutCluster *cluster, i64 x)
 {
+  bool selected = canvas->spanCount && IsSelected(canvas, cluster->start);
+
   if (cluster->kind == LayoutKindSpace || cluster->kind == LayoutKindTab) {
-    DrawBlank(canvas, row, cluster, x);
+    DrawBlank(canvas, row, cluster, x, selected);
     return;
   }
 
   // a cluster cut by either edge of the text area shows as blank cells.
   if (x < 0 || x + cluster->width > canvas->textWidth) {
-    for (i64 cell = x; cell < x + cluster->width && cell < canvas->textWidth; cell++) {
-      if (cell >= 0) ScreenFill(row, canvas->textColumn + (i32)cell, 1, styleDefault);
-    }
-
+    FillCells(canvas, row, x, cluster->width, Highlight(styleDefault, selected));
     return;
   }
 
   i32 column = canvas->textColumn + (i32)x;
   const char *bytes = canvas->text + cluster->start;
   u64 size = cluster->end - cluster->start;
+  Style text = Highlight(styleDefault, selected);
+  Style control = Highlight(ThemeStyle(ThemeControl), selected);
 
   switch (cluster->kind) {
   case LayoutKindText:
-    ScreenPutCluster(row, column, bytes, size, cluster->width, styleDefault);
+    ScreenPutCluster(row, column, bytes, size, cluster->width, text);
     break;
   case LayoutKindControl:
-    DrawControl(canvas, row, cluster, column);
+    DrawControl(canvas, row, column, cluster->start, control);
     break;
   case LayoutKindInvalid:
-    PutSymbol(row, column, invalidSymbol, ThemeControl);
+    PutSymbol(row, column, invalidSymbol, control);
     break;
   case LayoutKindSpace:
   case LayoutKindTab:
@@ -112,6 +186,7 @@ DrawLine(Canvas *canvas, u64 line, u64 firstRow, i32 row)
   const LayoutRows *rows = ViewLayoutLine(view, line);
   i32 bottom = view->row + view->height;
   canvas->text = text->data;
+  FindSelection(canvas, line, text->length);
 
   LayoutIterator iterator = LayoutBegin(text->data, text->length);
   LayoutCluster cluster;
@@ -124,7 +199,7 @@ DrawLine(Canvas *canvas, u64 line, u64 firstRow, i32 row)
     i32 screenRow = row + drawn;
 
     // wrapped rows start at their own first column; unwrapped lines scroll sideways.
-    i64 offset = more ? (i64)cluster.column : 0;
+    i64 offset = (i64)(more ? cluster.column : iterator.column);
     if (!view->options->softWrap) offset = (i64)view->leftColumn;
 
     if (visible) DrawGutter(canvas, screenRow, line, index == 0);
@@ -136,6 +211,12 @@ DrawLine(Canvas *canvas, u64 line, u64 firstRow, i32 row)
       if (x >= canvas->textWidth && layoutRow.last) break;
       if (visible) DrawCluster(canvas, screenRow, &cluster, x);
       more = LayoutNext(&iterator, &cluster);
+    }
+
+    // a selected line break shows as one selected cell after the end of the line.
+    if (visible && layoutRow.last && !more && canvas->lineBreakSelected) {
+      i64 x = (i64)iterator.column - offset;
+      FillCells(canvas, screenRow, x, 1, ThemeStyle(ThemeSelection));
     }
 
     if (visible) drawn++;
@@ -153,7 +234,7 @@ DrawRuler(const Canvas *canvas)
   i32 column = canvas->textColumn + (i32)canvas->rulerX;
 
   for (i32 row = view->row; row < view->row + view->height; row++) {
-    PutSymbol(row, column, rulerSymbol, ThemeRuler);
+    PutSymbol(row, column, rulerSymbol, ThemeStyle(ThemeRuler));
   }
 }
 
@@ -184,6 +265,8 @@ DrawView(View *view)
     row += DrawLine(&canvas, line, firstRow, row);
     firstRow = 0;
   }
+
+  free(canvas.spans);
 }
 
 static void

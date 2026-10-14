@@ -1,0 +1,35 @@
+#pragma once
+
+// questions asked in the message bar.
+// a text prompt edits one line of input until enter accepts it or escape cancels it.
+// a choice prompt waits for one of a few letter keys, or escape.
+// one prompt is open at a time, and while it is open it takes every key.
+#include "key.h"
+#include "types.h"
+
+// receives the answer: the text for a text prompt, the chosen letter for a choice, or
+// nullptr when the prompt was cancelled.
+// the prompt is closed before this runs, so it may open another.
+typedef void (*PromptDone)(void *context, const char *answer, u64 length);
+
+// opens a text prompt showing label, with initial as the starting text.
+void
+PromptAsk(const char *label, const char *initial, PromptDone done, void *context);
+
+// opens a choice prompt showing question; choices holds the accepted lowercase letters.
+void
+PromptChoose(const char *question, const char *choices, PromptDone done, void *context);
+
+bool
+PromptActive(void);
+
+void
+PromptKey(Key key);
+
+// adds pasted text to a text prompt, up to its first line break.
+void
+PromptPaste(const char *text, u64 length);
+
+// draws the open prompt on a screen row and puts the terminal cursor in it.
+void
+PromptDraw(i32 row, i32 width);

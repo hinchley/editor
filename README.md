@@ -4,7 +4,7 @@ A personal terminal text editor for Linux, written in C23.
 
 It targets Wayland and the foot, alacritty and ghostty terminals, and requires the Kitty Keyboard Protocol. There is no fallback for legacy terminals.
 
-> Status: early development (milestone M3, view, movement and rendering). The editor shows one file (or an empty buffer) with the line number gutter, whitespace symbols, the ruler, soft wrap, the status bar and the message bar. Every movement key works, but text cannot be edited yet. Ctrl-S saves the file unchanged, and Ctrl-Q quits. Only one file argument is accepted for now.
+> Status: early development (milestone M4, editing, undo, prompts and clipboard). The editor edits one file (or an unnamed buffer) with undo, the clipboard, saving and reloading. Only one file argument is accepted for now; buffer lists, search, multiple cursors, split view and highlighting come in later milestones.
 
 ## Build
 
@@ -28,7 +28,16 @@ editor folder                # load every file under folder and pick one
 
 Files over 100 MB, files with a nul byte in their first 4 KB, and anything that is not a regular file are not opened. A file is saved with the line ending it was loaded with (LF or CRLF); a file that mixes both is normalised to the more common one. Saving is atomic, follows symbolic links and keeps the file's permissions. If the file changed on disk since it was opened, the editor asks before overwriting it.
 
-Working so far: the arrows, Home (first non-blank, then line start), End, PageUp, PageDown, Ctrl-Left and Ctrl-Right (by word), Ctrl-Home and Ctrl-End, Ctrl-Up and Ctrl-Down (scroll without moving the cursor), Alt-W (soft wrap), Alt-L (line numbers), Alt-. (whitespace), Alt-G (ruler at column 100), Ctrl-S and Ctrl-Q. The other bindings report that they are not available yet.
+Working so far:
+
+- Movement: the arrows, Home (first non-blank, then line start), End, PageUp, PageDown, Ctrl-Left and Ctrl-Right (by word), Ctrl-Home and Ctrl-End, Ctrl-Up and Ctrl-Down (scroll without moving the cursor). Shift with any of them extends the selection. Ctrl-A selects everything, Ctrl-M selects inside the closest brackets (again to include the brackets, again for the next pair out), Alt-M jumps to the matching bracket, Ctrl-L goes to a line or `line:column`, and Esc clears the selection.
+- Editing: typing, Enter (keeps the indentation, adds a level after `{`, `[` or `(`, and opens a block between a pair), Tab (spaces up to the next tab stop, or indents every selected line), Shift-Tab (dedents the line or the selected lines), Backspace (deletes back to the previous tab stop in leading spaces), Delete, Ctrl-Backspace (previous word), Ctrl-D (duplicate lines), Ctrl-K (delete lines), Ctrl-Shift-Up and Ctrl-Shift-Down (move lines).
+- Undo and redo: Ctrl-Z and Ctrl-Y. Consecutive typing, backspaces or deletes are one step until the cursor moves or another command runs. A paste is one step. Undoing back to the saved text clears `[+]`.
+- Clipboard: Ctrl-C, Ctrl-X and Ctrl-V use `wl-copy` and `wl-paste`, and fall back to an in-editor clipboard without a Wayland session. With no selection, copy and cut take the whole line, and pasting that text again inserts it as a line above the cursor. Pasted `\r\n` becomes `\n`.
+- Files: Ctrl-S saves (asking for a name when the buffer has none, and before overwriting an existing file or one changed on disk), Alt-R reloads from disk (asking first if there are unsaved changes), Alt-E switches between LF and CRLF, and Ctrl-Q quits (offering to save unsaved changes).
+- Display: Alt-W (soft wrap), Alt-L (line numbers), Alt-. (whitespace), Alt-G (ruler), Ctrl-G (ruler column), Alt-T (spaces or tabs for indentation).
+
+The other bindings report that they are not available yet.
 
 Key bindings will be documented here in full as features land. They follow the spec, with one change: project search is Alt-Shift-F rather than Ctrl-Shift-F, because alacritty and ghostty use Ctrl-Shift-F for their own search.
 

@@ -1,5 +1,6 @@
 #include "move.h"
 
+#include "bracket.h"
 #include "utf8.h"
 
 enum CharacterClass {
@@ -45,6 +46,7 @@ static Position
 Right(View *view, Position at)
 {
   const StrBuf *text = LineOf(view, at.line);
+
   if (at.byte < text->length) {
     return (Position){at.line, Utf8NextBoundary(text->data, text->length, at.byte)};
   }
@@ -135,8 +137,8 @@ PageRows(const View *view)
   return view->height > 2 ? view->height - 1 : 1;
 }
 
-static Position
-Target(View *view, const Cursor *cursor, enum Move move)
+Position
+MovePosition(View *view, const Cursor *cursor, enum Move move)
 {
   Position head = cursor->head;
 
@@ -171,7 +173,7 @@ MoveCursors(View *view, enum Move move, bool extend)
 
   for (u32 index = 0; index < set->count; index++) {
     Cursor *cursor = &set->cursors[index];
-    cursor->head = Target(view, cursor, move);
+    cursor->head = MovePosition(view, cursor, move);
     if (!extend) cursor->anchor = cursor->head;
 
     // vertical movement keeps aiming for the same column.
@@ -184,4 +186,69 @@ MoveCursors(View *view, enum Move move, bool extend)
   if (move == MovePageDown) view->top = ViewStep(view, view->top, PageRows(view), &moved);
 
   ViewScrollToCursor(view);
+}
+
+// collapses to the primary cursor and gives it a new anchor and head.
+static void
+SelectOnly(View *view, Position anchor, Position head)
+{
+  CursorSetCollapse(&view->cursors);
+  Cursor *cursor = CursorSetPrimary(&view->cursors);
+  cursor->anchor = anchor;
+  cursor->head = head;
+  cursor->desiredColumn = ViewRowColumn(view, head);
+  ViewScrollToCursor(view);
+}
+
+void
+MoveSelectAll(View *view)
+{
+  SelectOnly(view, (Position){0, 0}, BufferEnd(view->buffer));
+}
+
+bool
+MoveToMatchingBracket(View *view)
+{
+  Position head = CursorSetPrimary(&view->cursors)->head;
+  Position match;
+  bool found = BracketMatch(view->buffer, head, &match);
+
+  // a bracket just before the cursor counts too, as it is where typing one leaves it.
+  if (!found && head.byte > 0) {
+    found = BracketMatch(view->buffer, (Position){head.line, head.byte - 1}, &match);
+  }
+
+  if (found) SelectOnly(view, match, match);
+  return found;
+}
+
+bool
+MoveSelectBrackets(View *view)
+{
+  Range selection = CursorRange(CursorSetPrimary(&view->cursors));
+  Range pair;
+  if (!BracketEnclosing(view->buffer, selection, &pair)) return false;
+
+  // the text inside the brackets, or the brackets too when that is already selected.
+  Position inside = {pair.start.line, pair.start.byte + 1};
+  bool insideSelected = PositionCompare(selection.start, inside) == 0 &&
+    PositionCompare(selection.end, pair.end) == 0;
+
+  Position after = {pair.end.line, pair.end.byte + 1};
+
+  if (insideSelected) SelectOnly(view, pair.start, after);
+  else SelectOnly(view, inside, pair.end);
+  return true;
+}
+
+void
+MoveGoTo(View *view, u64 line, u64 column)
+{
+  u64 lastLine = BufferLineCount(view->buffer) - 1;
+  if (line > lastLine) line = lastLine;
+
+  const StrBuf *text = BufferLine(view->buffer, line);
+  LayoutRow whole = {0, text->length, true};
+  Position position = {line, LayoutByteAt(text->data, text->length, whole, column)};
+  SelectOnly(view, position, position);
 }

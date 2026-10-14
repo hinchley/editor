@@ -107,6 +107,9 @@ InstallSignals(void)
   action.sa_flags = SA_RESTART;
   sigaction(SIGWINCH, &action, nullptr);
 
+  // a clipboard command that exits early must not end the editor through its pipe.
+  signal(SIGPIPE, SIG_IGN);
+
   static constexpr i32 stopSignals[] = {
     SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT
   };

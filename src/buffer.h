@@ -62,6 +62,11 @@ BufferInit(Buffer *buffer);
 void
 BufferSetText(Buffer *buffer, const char *text, u64 length);
 
+// exchanges the text of two buffers, leaving their listeners in place and telling no one.
+// used to reload a file that was read into a separate buffer.
+void
+BufferSwapText(Buffer *buffer, Buffer *other);
+
 // releases the text and listeners and leaves a zeroed Buffer.
 void
 BufferFree(Buffer *buffer);
@@ -97,6 +102,16 @@ BufferClamp(const Buffer *buffer, Position position);
 // -1, 0 or 1 as a is before, equal to or after b.
 i32
 PositionCompare(Position a, Position b);
+
+// where a position ends up after a change.
+// a position inside the replaced text moves to its start, and one at or after its end
+// moves with the text that follows, so an insertion at a position pushes it along.
+Position
+BufferAdjust(Position position, const BufferChange *change);
+
+// the end of text (lines separated by "\n") when it starts at start.
+Position
+BufferTextEnd(Position start, const char *text, u64 length);
 
 // appends the text of range, with lines joined by "\n".
 void
