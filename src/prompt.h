@@ -30,6 +30,19 @@ PromptAsk(const char *label, const char *initial, PromptDone done, void *context
 void
 PromptHandle(PromptChanged changed, PromptComplete complete);
 
+// changes the label of the open prompt.
+void
+PromptSetLabel(const char *label);
+
+// replaces the text of the open text prompt, with the cursor at its end, and reports the
+// change.
+void
+PromptSetText(const char *text, u64 length);
+
+// the text typed into the open text prompt so far.
+const StrBuf *
+PromptText(void);
+
 // opens a choice prompt showing question; choices holds the accepted lowercase letters.
 void
 PromptChoose(const char *question, const char *choices, PromptDone done, void *context);

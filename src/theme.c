@@ -36,7 +36,12 @@ static const ThemeEntry themeEntries[ThemeGroupCount] = {
 
   // selected text keeps its own colour on this background.
   [ThemeSelection] = {"selection", {colorDefault, 238, 0}},
-  [ThemeSelectionWhitespace] = {"selectionwhitespace", {244, 238, 0}}
+  [ThemeSelectionWhitespace] = {"selectionwhitespace", {244, 238, 0}},
+
+  // search matches and unknown words, and the one that is selected.
+  [ThemeMatch] = {"match", {235, 180, 0}},
+  [ThemeMatchSelected] = {"matchselected", {235, 214, 0}},
+  [ThemeMisspelt] = {"misspelt", {colorDefault, 52, 0}}
 };
 
 Style

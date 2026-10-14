@@ -51,3 +51,13 @@ Utf8ClusterWidth(const char *text, u64 length);
 // simple case folding of one code point, used for case insensitive comparison.
 u32
 Utf8Fold(u32 codepoint);
+
+// true for a code point that is part of a word: an ascii letter or digit, "_", or any
+// non-ascii character.
+static inline bool
+Utf8IsWord(u32 codepoint)
+{
+  bool letter = (codepoint | 0x20) >= 'a' && (codepoint | 0x20) <= 'z';
+  bool digit = codepoint >= '0' && codepoint <= '9';
+  return letter || digit || codepoint == '_' || codepoint >= 0x80;
+}

@@ -62,6 +62,28 @@ PromptHandle(PromptChanged changed, PromptComplete complete)
 }
 
 void
+PromptSetLabel(const char *newLabel)
+{
+  StrBufClear(&label);
+  StrBufAppendString(&label, newLabel);
+}
+
+void
+PromptSetText(const char *newText, u64 length)
+{
+  StrBufClear(&text);
+  StrBufAppend(&text, newText, length);
+  cursor = text.length;
+  if (onChange) onChange(doneContext, text.data ? text.data : "", text.length);
+}
+
+const StrBuf *
+PromptText(void)
+{
+  return &text;
+}
+
+void
 PromptChoose(const char *question, const char *newChoices, PromptDone done, void *context)
 {
   Open(PromptKindChoice, question, done, context);

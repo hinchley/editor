@@ -17,11 +17,17 @@ static constexpr char invalidSymbol[] = "\uFFFD";
 // the status bar drops fields on the right rather than shorten the name below this.
 static constexpr i32 minNameWidth = 8;
 
-// bytes of the line being drawn that are selected.
+// bytes of the line being drawn.
 typedef struct Span {
   u64 start;
   u64 end;
 } Span;
+
+typedef struct SpanList {
+  Span *spans;
+  u32 count;
+  u32 capacity;
+} SpanList;
 
 // what every row of one view draw shares.
 typedef struct Canvas {
@@ -38,10 +44,15 @@ typedef struct Canvas {
   i32 cursorColumn;
 
   // the selected parts of the current line, and whether its line break is selected.
-  Span *spans;
-  u32 spanCount;
-  u32 spanCapacity;
+  SpanList selected;
   bool lineBreakSelected;
+
+  // the matches on the current line, in order, the first one that may still hold the
+  // cluster being drawn, and the group they draw with.
+  const MatchSet *marks;
+  SpanList matched;
+  u32 nextMatch;
+  enum ThemeGroup matchGroup;
 } Canvas;
 
 static void
@@ -61,30 +72,35 @@ PutFaintSymbol(const Canvas *canvas, i32 row, i32 column, const char *symbol, St
   PutSymbol(row, column, symbol, style);
 }
 
-// a style with the selection background when selected.
+// a style drawn over by a selection or match group (or left alone with ThemeNone).
+// the group's background always wins, and its foreground when it has one.
 static Style
-Highlight(Style style, bool selected)
+Highlight(Style style, enum ThemeGroup group)
 {
-  if (selected) style.background = ThemeStyle(ThemeSelection).background;
+  if (group == ThemeNone) return style;
+
+  Style mark = ThemeStyle(group);
+  style.background = mark.background;
+  if (mark.foreground != colorDefault) style.foreground = mark.foreground;
   return style;
 }
 
 static void
-AddSpan(Canvas *canvas, u64 start, u64 end)
+AddSpan(SpanList *list, u64 start, u64 end)
 {
-  if (canvas->spanCount == canvas->spanCapacity) {
-    canvas->spanCapacity = canvas->spanCapacity ? canvas->spanCapacity * 2 : 4;
-    canvas->spans = MemoryResize(canvas->spans, canvas->spanCapacity, sizeof(Span));
+  if (list->count == list->capacity) {
+    list->capacity = list->capacity ? list->capacity * 2 : 4;
+    list->spans = MemoryResize(list->spans, list->capacity, sizeof(Span));
   }
 
-  canvas->spans[canvas->spanCount++] = (Span){start, end};
+  list->spans[list->count++] = (Span){start, end};
 }
 
 static void
 FindSelection(Canvas *canvas, u64 line, u64 length)
 {
   CursorSet *set = &canvas->view->cursors;
-  canvas->spanCount = 0;
+  canvas->selected.count = 0;
   canvas->lineBreakSelected = false;
 
   for (u32 index = 0; index < set->count; index++) {
@@ -94,18 +110,56 @@ FindSelection(Canvas *canvas, u64 line, u64 length)
     u64 start = range.start.line == line ? range.start.byte : 0;
     u64 end = range.end.line == line ? range.end.byte : length;
     if (range.end.line > line) canvas->lineBreakSelected = true;
-    if (end > start) AddSpan(canvas, start, end);
+    if (end > start) AddSpan(&canvas->selected, start, end);
+  }
+}
+
+static void
+FindMatches(Canvas *canvas, const StrBuf *text)
+{
+  canvas->matched.count = 0;
+  canvas->nextMatch = 0;
+  if (canvas->marks->kind == MatchKindNone) return;
+
+  PatternMatch match = {};
+
+  while (MatchInLine(canvas->marks, text->data, text->length, match.end, &match)) {
+    AddSpan(&canvas->matched, match.start, match.end);
   }
 }
 
 static bool
 IsSelected(const Canvas *canvas, u64 byte)
 {
-  for (u32 index = 0; index < canvas->spanCount; index++) {
-    if (byte >= canvas->spans[index].start && byte < canvas->spans[index].end) return true;
+  const SpanList *list = &canvas->selected;
+
+  for (u32 index = 0; index < list->count; index++) {
+    if (byte >= list->spans[index].start && byte < list->spans[index].end) return true;
   }
 
   return false;
+}
+
+// clusters are drawn in order, so the matches before byte can be passed over for good.
+static bool
+IsMatched(Canvas *canvas, u64 byte)
+{
+  const SpanList *list = &canvas->matched;
+  while (canvas->nextMatch < list->count && list->spans[canvas->nextMatch].end <= byte) {
+    canvas->nextMatch++;
+  }
+
+  return canvas->nextMatch < list->count && list->spans[canvas->nextMatch].start <= byte;
+}
+
+// the group a byte is drawn over with: a match, the selection, or ThemeNone.
+static enum ThemeGroup
+MarkOf(Canvas *canvas, u64 byte)
+{
+  bool selected = canvas->selected.count && IsSelected(canvas, byte);
+  bool matched = canvas->matched.count && IsMatched(canvas, byte);
+  if (matched) return selected ? ThemeMatchSelected : canvas->matchGroup;
+  return selected ? ThemeSelection : ThemeNone;
 }
 
 // fills the visible cells from x to x + width.
@@ -118,18 +172,24 @@ FillCells(const Canvas *canvas, i32 row, i64 x, i64 width, Style style)
 }
 
 static void
-DrawBlank(const Canvas *canvas, i32 row, const LayoutCluster *cluster, i64 x, bool selected)
-{
-  // blank cells are already empty, so unselected blanks only need their symbol.
-  if (selected) FillCells(canvas, row, x, cluster->width, ThemeStyle(ThemeSelection));
+DrawBlank(
+  const Canvas *canvas,
+  i32 row,
+  const LayoutCluster *cluster,
+  i64 x,
+  enum ThemeGroup mark
+) {
+  // blank cells are already empty, so unmarked blanks only need their symbol.
+  if (mark != ThemeNone) FillCells(canvas, row, x, cluster->width, ThemeStyle(mark));
 
   // a tab cut by the left edge loses its symbol, and the ruler shows through blanks.
   if (!canvas->view->options->showWhitespace) return;
-  if (x < 0 || x >= canvas->textWidth || (x == canvas->rulerX && !selected)) return;
+  if (x < 0 || x >= canvas->textWidth || (x == canvas->rulerX && mark == ThemeNone)) return;
 
   const char *symbol = cluster->kind == LayoutKindSpace ? spaceSymbol : tabSymbol;
-  enum ThemeGroup group = selected ? ThemeSelectionWhitespace : ThemeWhitespace;
-  PutFaintSymbol(canvas, row, canvas->textColumn + (i32)x, symbol, ThemeStyle(group));
+  Style style = Highlight(ThemeStyle(ThemeWhitespace), mark);
+  if (mark == ThemeSelection) style = ThemeStyle(ThemeSelectionWhitespace);
+  PutFaintSymbol(canvas, row, canvas->textColumn + (i32)x, symbol, style);
 }
 
 static void
@@ -141,26 +201,26 @@ DrawControl(const Canvas *canvas, i32 row, i32 column, u64 byte, Style style)
 
 // draws one cluster at x columns into the text area.
 static void
-DrawCluster(const Canvas *canvas, i32 row, const LayoutCluster *cluster, i64 x)
+DrawCluster(Canvas *canvas, i32 row, const LayoutCluster *cluster, i64 x)
 {
-  bool selected = canvas->spanCount && IsSelected(canvas, cluster->start);
+  enum ThemeGroup mark = MarkOf(canvas, cluster->start);
 
   if (cluster->kind == LayoutKindSpace || cluster->kind == LayoutKindTab) {
-    DrawBlank(canvas, row, cluster, x, selected);
+    DrawBlank(canvas, row, cluster, x, mark);
     return;
   }
 
   // a cluster cut by either edge of the text area shows as blank cells.
   if (x < 0 || x + cluster->width > canvas->textWidth) {
-    FillCells(canvas, row, x, cluster->width, Highlight(styleDefault, selected));
+    FillCells(canvas, row, x, cluster->width, Highlight(styleDefault, mark));
     return;
   }
 
   i32 column = canvas->textColumn + (i32)x;
   const char *bytes = canvas->text + cluster->start;
   u64 size = cluster->end - cluster->start;
-  Style text = Highlight(styleDefault, selected);
-  Style control = Highlight(ThemeStyle(ThemeControl), selected);
+  Style text = Highlight(styleDefault, mark);
+  Style control = Highlight(ThemeStyle(ThemeControl), mark);
 
   switch (cluster->kind) {
   case LayoutKindText:
@@ -202,6 +262,7 @@ DrawLine(Canvas *canvas, u64 line, u64 firstRow, i32 row)
   i32 bottom = view->row + view->height;
   canvas->text = text->data;
   FindSelection(canvas, line, text->length);
+  FindMatches(canvas, text);
 
   LayoutIterator iterator = LayoutBegin(text->data, text->length);
   LayoutCluster cluster;
@@ -254,11 +315,13 @@ DrawRuler(const Canvas *canvas)
 }
 
 static void
-DrawView(View *view)
+DrawView(View *view, const MatchSet *marks)
 {
   const DisplayOptions *options = view->options;
   Canvas canvas = {
     .view = view,
+    .marks = marks,
+    .matchGroup = marks->kind == MatchKindSpell ? ThemeMisspelt : ThemeMatch,
     .textColumn = view->column + ViewGutterWidth(view),
     .textWidth = ViewTextWidth(view),
     .rulerX = -1,
@@ -285,7 +348,8 @@ DrawView(View *view)
     firstRow = 0;
   }
 
-  free(canvas.spans);
+  free(canvas.selected.spans);
+  free(canvas.matched.spans);
 }
 
 static void
@@ -368,7 +432,7 @@ RenderFrame(const Frame *frame)
   View *view = frame->view;
   ViewSetArea(view, 0, 0, frame->width, frame->height - 2);
   ViewScrollToCursor(view);
-  DrawView(view);
+  DrawView(view, frame->marks);
   DrawStatus(view, frame->status, frame->height - 2);
 
   const StrBuf *message = frame->message;

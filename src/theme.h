@@ -34,6 +34,9 @@ enum ThemeGroup {
   ThemeMessage,
   ThemeSelection,
   ThemeSelectionWhitespace,
+  ThemeMatch,
+  ThemeMatchSelected,
+  ThemeMisspelt,
   ThemeGroupCount
 };
 

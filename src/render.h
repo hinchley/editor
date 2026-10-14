@@ -1,6 +1,7 @@
 #pragma once
 
 // draws a frame into the screen grid: the view, the status bar and the message bar.
+#include "match.h"
 #include "strbuf.h"
 #include "types.h"
 #include "view.h"
@@ -24,6 +25,9 @@ typedef struct Frame {
   i32 width;
   i32 height;
   View *view;
+
+  // the matches to highlight in the view.
+  const MatchSet *marks;
   const StatusInfo *status;
   const StrBuf *message;
 } Frame;

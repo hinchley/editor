@@ -29,6 +29,10 @@ MoveCursors(View *view, enum Move move, bool extend);
 Position
 MovePosition(View *view, const Cursor *cursor, enum Move move);
 
+// collapses to the primary cursor and gives it a new anchor and head, scrolling to it.
+void
+MoveSelect(View *view, Position anchor, Position head);
+
 // selects the whole buffer with a single cursor.
 void
 MoveSelectAll(View *view);

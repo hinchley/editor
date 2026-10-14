@@ -1,9 +1,11 @@
 #include "complete.h"
 
 #include <dirent.h>
+#include <pwd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "memory.h"
 
@@ -60,6 +62,31 @@ IsFolder(DIR *listing, const struct dirent *entry)
   return fstatat(dirfd(listing), entry->d_name, &status, 0) == 0 && S_ISDIR(status.st_mode);
 }
 
+static const char *
+HomeFolder(void)
+{
+  const char *home = getenv("HOME");
+  if (home && *home) return home;
+
+  struct passwd *entry = getpwuid(getuid());
+  return entry ? entry->pw_dir : nullptr;
+}
+
+void
+CompleteExpandHome(const char *path, u64 length, StrBuf *expanded)
+{
+  bool tilde = length && path[0] == '~' && (length == 1 || path[1] == '/');
+  const char *home = tilde ? HomeFolder() : nullptr;
+
+  if (home) {
+    StrBufAppendString(expanded, home);
+    path++;
+    length--;
+  }
+
+  StrBufAppend(expanded, path, length);
+}
+
 // lists the entries of the folder that start with name.
 static void
 Gather(const char *name, u64 length)
@@ -67,7 +94,10 @@ Gather(const char *name, u64 length)
   StrBufClear(&candidates.names);
   candidates.count = 0;
 
-  DIR *listing = opendir(folder.length ? folder.data : ".");
+  StrBuf listed = {};
+  CompleteExpandHome(folder.data ? folder.data : "", folder.length, &listed);
+  DIR *listing = opendir(listed.length ? listed.data : ".");
+  StrBufFree(&listed);
   if (!listing) return;
 
   struct dirent *entry;
@@ -137,6 +167,12 @@ CompletePath(StrBuf *path)
   }
 
   StrBufClear(&stepped);
+
+  if (path->length == 1 && text[0] == '~') {
+    StrBufAppendByte(path, '/');
+    return;
+  }
+
   const char *slash = strrchr(text, '/');
   u64 folderLength = slash ? (u64)(slash - text) + 1 : 0;
   StrBufClear(&folder);

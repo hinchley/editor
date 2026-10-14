@@ -2,6 +2,7 @@
 
 #include <sys/stat.h>
 
+#include "complete.h"
 #include "edit.h"
 #include "memory.h"
 #include "prompt.h"
@@ -116,7 +117,7 @@ SaveAsAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
     return;
   }
 
-  StrBufAppend(&Saving()->file.path, answer, length);
+  CompleteExpandHome(answer, length, &Saving()->file.path);
   namedForSave = true;
 
   // an existing file is only replaced once confirmed.
@@ -128,6 +129,12 @@ SaveAsAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
   }
 
   Write(false);
+}
+
+static void
+CompleteSaveAs([[maybe_unused]] void *context, StrBuf *text)
+{
+  CompletePath(text);
 }
 
 static void
@@ -147,6 +154,7 @@ AskForName(void)
   }
 
   PromptAsk(label.data, "", SaveAsAnswered, nullptr);
+  PromptHandle(nullptr, CompleteSaveAs);
   StrBufFree(&label);
 }
 

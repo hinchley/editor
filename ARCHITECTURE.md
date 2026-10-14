@@ -36,14 +36,14 @@ This document describes how the editor is put together. It grows with each miles
 | `buffer` | The text of one buffer as a flat array of lines, and `BufferReplace`, the single edit primitive, which notifies listeners. |
 | `file` | Loading a file into a buffer (size and binary checks, line ending detection) and saving it atomically. |
 | `undo` | The undo history of one buffer: groups of recorded changes with the cursors before and after each. |
-| `document` | A buffer with its file, undo history and view, and whether it differs from the file. |
+| `document` | A buffer with its file, undo history and view, whether it differs from the file, and what it highlights (search matches, unknown words or nothing). |
 | `filter` | Path patterns from `.editor` files: names, folders, anchored paths and `*`. |
 | `loader` | Turns the paths from the command line (or Ctrl-O) into the list of files to load: walking folders, applying `.editor` files, following file links, removing duplicates and enforcing the file limit. |
 | `workspace` | The buffer list: loaded entries, which are open, the current one, and when each was last used. Opens an entry the first time it is used. |
 | `session` | Commands that change which buffers are loaded or current: startup loading, Ctrl-N, Ctrl-O, Ctrl-PgUp/PgDn, Ctrl-Tab, the buffer pickers, and the unsaved changes question before quitting or replacing the buffers. |
 | `save` | Saving one document or every modified one, with the questions on the way (save as, overwrite, changed on disk). |
 | `picker` | The filterable full window list used for buffers and shortcuts. |
-| `complete` | Tab completion of paths in the Ctrl-O prompt. |
+| `complete` | Tab completion of paths in the Ctrl-O and save as prompts, and expanding a leading `~`. |
 | `term` | The terminal session: raw mode, startup handshake, alternate screen, keyboard protocol, bracketed paste, cursor shape, window size, waiting for input or a resize, and restoring the terminal on every exit path. |
 | `input` | Decodes the bytes read from the terminal into events: keys, pastes, cursor position reports and keyboard protocol reports. Pure parsing, no I/O. |
 | `key` | The `Key` type (code plus modifiers) and key names such as `ctrl+shift+up`. |
@@ -58,9 +58,13 @@ This document describes how the editor is put together. It grows with each miles
 | `edit` | Editing commands: typing, line breaks, indentation, deletion, line commands, copy, cut and paste. Each edits at every cursor as one undo step. |
 | `prompt` | Questions asked in the message bar: a line of text, or a choice of letters. |
 | `clipboard` | Copy and paste through `wl-copy` and `wl-paste`, with an in-process fallback. |
-| `render` | Draws a frame: the view (gutter, text, selections, whitespace symbols, ruler), the status bar and the message bar. |
+| `render` | Draws a frame: the view (gutter, text, selections, matches, whitespace symbols, ruler), the status bar and the message bar. |
+| `pattern` | The literal search pattern shared by find, replace and the match commands: escapes, anchors, case folding, whole words, and finding a match in a line. |
+| `spell` | The word list compiled in from `data/words.txt`, and finding unknown words in a line. |
+| `match` | The match set a document highlights (a pattern's matches or unknown words): finding the matches on a line, the next or previous one in the buffer, and counting them. |
+| `search` | The search commands: Ctrl-F, Alt-N and Alt-P, Ctrl-W, Ctrl-R and Alt-S. |
 
-Later milestones add `search`, `spell`, `lang`, `highlight` and `project`.
+Later milestones add `lang`, `highlight` and `project`.
 
 ## Terminal
 
@@ -170,6 +174,28 @@ A paste, from Ctrl-V or a bracketed terminal paste, has `\r\n` turned into `\n` 
 ### Saving and reloading
 
 `document` keeps the file's line ending from its last load or save. Saving runs trailing whitespace trimming first when `trimTrailingWhitespace` is set (one undo step, so the screen matches the file), then `FileSave`, then marks the save point. Reload reads the file into a separate buffer and swaps the text in only when that worked, then clamps the view's cursors and scroll position into the new text.
+
+## Search
+
+### Patterns
+
+One pattern syntax serves Ctrl-F, Ctrl-R, Alt-N and Alt-P (and will serve project search). A pattern is literal text. A `^` at its start and a `$` at its end are anchors, and the escapes `\t`, `\r`, `\n`, `\\`, `\^` and `\$` stand for those characters; any other backslash is literal. A match never crosses a line break, so a pattern holding `\n` never matches, and an empty pattern matches nothing, so matches are never empty and stepping through them always moves.
+
+Without case matching (the default, toggled with Ctrl-T for the session), the pattern is kept as case folded code points, and the text is folded one code point at a time as it is compared, with a fast path for ASCII. Folding can change a character's length (the Kelvin sign folds to `k`), so offsets are always those of the original text. A match must start and end on grapheme cluster boundaries, so `e` does not match the start of an `e` with a combining accent. Ctrl-W builds a whole word, case matching pattern from the word at the cursor (word characters as for word movement).
+
+### Match sets
+
+Matches are never stored. Each document has a `marks` kind (none, search or spell), and the last search pattern is shared by every document. Rendering finds the matches on each visible line as it draws it, and Alt-N and Alt-P scan from the cursor, line by line, going round the end of the buffer once. So an edit can never leave a highlight or a step out of date, and the cost is proportional to the lines drawn or scanned. A match that is also selected is drawn in a stronger colour, which is how the current match stands out. Esc clears multiple cursors first, then the selection, then the highlights.
+
+Incremental find saves the cursors, scroll position, marks kind and last pattern when it starts, and puts all of them back on Esc. Each change to the prompt searches again from where it started, so deleting a character goes back to an earlier match. The search prompts take Up, Down, Ctrl-N, Ctrl-P and Ctrl-T before the prompt itself sees them.
+
+### Replace
+
+Ctrl-R runs from the start of the selection to the end of the buffer, then from the top back to where it started. That stop position moves with each replacement through `BufferAdjust`, and every search continues after the last replacement, so replacing `a` with `aa` cannot loop. The run is one undo group, opened before the first replacement and closed when the run ends (answers come one prompt at a time, but the prompt takes every key, so nothing else can edit in between). Replacing all rebuilds each line once and replaces it with a single change, so 100,000 matches take about 0.1 seconds.
+
+### Spell check
+
+The word list is embedded with `#embed` and indexed (one offset per word) the first time it is used, then binary searched in byte order. A run of letters, digits, `_` and apostrophes is read whole: runs with digits or `_` are skipped, apostrophes at either end are trimmed, words in capitals only are taken for acronyms, and words inside a blank separated chunk holding `://`, `www.` or `@` are skipped as links. A word is known when it is in the list as written, or when it starts with a capital and its lowercase form is. Typographic apostrophes are looked up as `'`. Letters are those of the Latin, Greek and Cyrillic scripts; other scripts are not checked. Spell check covers the whole file for now; M9 limits code files to comments and strings and leaves out Markdown code.
 
 ## Buffers
 

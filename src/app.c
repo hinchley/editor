@@ -15,6 +15,7 @@
 #include "render.h"
 #include "save.h"
 #include "screen.h"
+#include "search.h"
 #include "session.h"
 #include "settings.h"
 #include "term.h"
@@ -250,7 +251,8 @@ Paste(void)
   StrBufFree(&text);
 }
 
-// escape clears a selection, or collapses several cursors to one.
+// escape collapses several cursors to one, then clears the selection, then stops
+// highlighting matches.
 static void
 Cancel(void)
 {
@@ -262,7 +264,13 @@ Cancel(void)
   }
 
   Cursor *cursor = CursorSetPrimary(set);
-  cursor->anchor = cursor->head;
+
+  if (CursorHasSelection(cursor)) {
+    cursor->anchor = cursor->head;
+    return;
+  }
+
+  SearchClear();
 }
 
 static bool
@@ -398,6 +406,22 @@ BufferCommand(enum Command command)
   return true;
 }
 
+static bool
+SearchCommand(enum Command command)
+{
+  switch (command) {
+  case CommandFind: SearchFind(); break;
+  case CommandFindNext: SearchStep(false); break;
+  case CommandFindPrevious: SearchStep(true); break;
+  case CommandJumpWord: SearchWord(); break;
+  case CommandReplace: SearchReplace(); break;
+  case CommandSpellCheck: SearchSpell(); break;
+  default: return false;
+  }
+
+  return true;
+}
+
 static void
 RunCommand(const Binding *binding)
 {
@@ -409,6 +433,7 @@ RunCommand(const Binding *binding)
   if (!deleting) UndoBreak(&Current()->undo);
 
   if (MoveCommand(command) || EditCommand(command) || BufferCommand(command)) return;
+  if (SearchCommand(command)) return;
 
   switch (command) {
   case CommandScrollUp: Scroll(-1); break;
@@ -439,6 +464,12 @@ HandleKey(Key key)
   // a picker reads its filter through a prompt, so it gets the keys first.
   if (PickerActive()) {
     PickerKey(key);
+    return;
+  }
+
+  // so do the find and replace prompts.
+  if (SearchActive()) {
+    SearchKey(key);
     return;
   }
 
@@ -519,10 +550,13 @@ Draw(void)
     .loadedCount = workspace.count
   };
 
+  MatchSet marks = SearchMarks(document);
+
   Frame frame = {
     .width = windowSize.width,
     .height = windowSize.height,
     .view = &document->view,
+    .marks = &marks,
     .status = &status,
     .message = &message
   };
@@ -544,6 +578,7 @@ AppRun(i32 argumentCount, char **arguments)
 {
   // files are loaded before the terminal changes, so argument errors leave it untouched.
   WorkspaceInit(&workspace, &displayOptions);
+  SearchInit(&workspace, &message);
   SessionStart(&workspace, &message, arguments + 1, (u64)argumentCount - 1);
 
   TermStart();

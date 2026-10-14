@@ -22,12 +22,7 @@ ClassAt(const StrBuf *text, u64 byte)
   Utf8Decode(text->data + byte, text->length - byte, &codepoint);
 
   if (codepoint == ' ' || codepoint == '\t') return CharacterClassSpace;
-
-  // any non-ascii character counts as part of a word.
-  bool letter = (codepoint | 0x20) >= 'a' && (codepoint | 0x20) <= 'z';
-  bool digit = codepoint >= '0' && codepoint <= '9';
-  bool word = letter || digit || codepoint == '_' || codepoint >= 0x80;
-  return word ? CharacterClassWord : CharacterClassPunctuation;
+  return Utf8IsWord(codepoint) ? CharacterClassWord : CharacterClassPunctuation;
 }
 
 static Position
@@ -188,9 +183,8 @@ MoveCursors(View *view, enum Move move, bool extend)
   ViewScrollToCursor(view);
 }
 
-// collapses to the primary cursor and gives it a new anchor and head.
-static void
-SelectOnly(View *view, Position anchor, Position head)
+void
+MoveSelect(View *view, Position anchor, Position head)
 {
   CursorSetCollapse(&view->cursors);
   Cursor *cursor = CursorSetPrimary(&view->cursors);
@@ -203,7 +197,7 @@ SelectOnly(View *view, Position anchor, Position head)
 void
 MoveSelectAll(View *view)
 {
-  SelectOnly(view, (Position){0, 0}, BufferEnd(view->buffer));
+  MoveSelect(view, (Position){0, 0}, BufferEnd(view->buffer));
 }
 
 bool
@@ -218,7 +212,7 @@ MoveToMatchingBracket(View *view)
     found = BracketMatch(view->buffer, (Position){head.line, head.byte - 1}, &match);
   }
 
-  if (found) SelectOnly(view, match, match);
+  if (found) MoveSelect(view, match, match);
   return found;
 }
 
@@ -236,8 +230,8 @@ MoveSelectBrackets(View *view)
 
   Position after = {pair.end.line, pair.end.byte + 1};
 
-  if (insideSelected) SelectOnly(view, pair.start, after);
-  else SelectOnly(view, inside, pair.end);
+  if (insideSelected) MoveSelect(view, pair.start, after);
+  else MoveSelect(view, inside, pair.end);
   return true;
 }
 
@@ -250,5 +244,5 @@ MoveGoTo(View *view, u64 line, u64 column)
   const StrBuf *text = BufferLine(view->buffer, line);
   LayoutRow whole = {0, text->length, true};
   Position position = {line, LayoutByteAt(text->data, text->length, whole, column)};
-  SelectOnly(view, position, position);
+  MoveSelect(view, position, position);
 }

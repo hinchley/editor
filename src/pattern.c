@@ -1,0 +1,235 @@
+#include "pattern.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+#include "memory.h"
+#include "utf8.h"
+
+// the character an escape stands for, or 0 when the backslash is literal.
+static char
+Escaped(char character)
+{
+  switch (character) {
+  case 't': return '\t';
+  case 'r': return '\r';
+  case 'n': return '\n';
+  case '\\': return '\\';
+  case '^': return '^';
+  case '$': return '$';
+  default: return '\0';
+  }
+}
+
+static void
+AddFolded(Pattern *pattern, u32 codepoint)
+{
+  if (pattern->foldedCount == pattern->foldedCapacity) {
+    u64 capacity = pattern->foldedCapacity ? pattern->foldedCapacity * 2 : 16;
+    pattern->folded = MemoryResize(pattern->folded, capacity, sizeof(u32));
+    pattern->foldedCapacity = capacity;
+  }
+
+  pattern->folded[pattern->foldedCount++] = codepoint;
+}
+
+static void
+Fold(Pattern *pattern)
+{
+  const char *text = pattern->text.data;
+  u64 length = pattern->text.length;
+  pattern->foldedCount = 0;
+
+  for (u64 at = 0; at < length;) {
+    u32 codepoint;
+    at += Utf8Decode(text + at, length - at, &codepoint);
+    AddFolded(pattern, Utf8Fold(codepoint));
+  }
+}
+
+void
+PatternSet(Pattern *pattern, const char *source, u64 length, PatternOptions options)
+{
+  StrBufClear(&pattern->source);
+  StrBufAppend(&pattern->source, source, length);
+  StrBufClear(&pattern->text);
+  pattern->options = options;
+  pattern->lineStart = length && source[0] == '^';
+  pattern->lineEnd = false;
+
+  for (u64 at = pattern->lineStart; at < length; at++) {
+    char escaped = source[at] == '\\' && at + 1 < length ? Escaped(source[at + 1]) : '\0';
+
+    if (escaped) {
+      StrBufAppendByte(&pattern->text, escaped);
+      at++;
+    } else if (source[at] == '$' && at + 1 == length) {
+      pattern->lineEnd = true;
+    } else {
+      StrBufAppendByte(&pattern->text, source[at]);
+    }
+  }
+
+  const char *text = pattern->text.data;
+  u64 size = pattern->text.length;
+  pattern->impossible = !size || memchr(text, '\n', size);
+  Fold(pattern);
+}
+
+void
+PatternFree(Pattern *pattern)
+{
+  StrBufFree(&pattern->source);
+  StrBufFree(&pattern->text);
+  free(pattern->folded);
+  *pattern = (Pattern){};
+}
+
+// true when a grapheme cluster starts at offset at.
+static bool
+IsBoundary(const char *text, u64 length, u64 at)
+{
+  if (at == 0 || at >= length) return true;
+  if ((u8)text[at - 1] < 0x80 && (u8)text[at] < 0x80) return true;
+
+  u64 start = Utf8PreviousBoundary(text, length, at);
+  return Utf8NextBoundary(text, length, start) == at;
+}
+
+static bool
+WordBefore(const char *text, u64 at)
+{
+  if (at == 0) return false;
+
+  u64 start = Utf8PreviousStart(text, at);
+  u32 codepoint;
+  Utf8Decode(text + start, at - start, &codepoint);
+  return Utf8IsWord(codepoint);
+}
+
+static bool
+WordAfter(const char *text, u64 length, u64 at)
+{
+  if (at >= length) return false;
+
+  u32 codepoint;
+  Utf8Decode(text + at, length - at, &codepoint);
+  return Utf8IsWord(codepoint);
+}
+
+// checks what surrounds a match of the text: the anchors, word edges and clusters.
+static bool
+Accepts(const Pattern *pattern, const char *text, u64 length, PatternMatch match)
+{
+  if (pattern->lineEnd && match.end != length) return false;
+
+  bool wholeWord = pattern->options.wholeWord;
+  if (wholeWord && (WordBefore(text, match.start) || WordAfter(text, length, match.end))) {
+    return false;
+  }
+
+  return IsBoundary(text, length, match.start) && IsBoundary(text, length, match.end);
+}
+
+// reads one code point at at, case folded, and returns the offset after it.
+static u64
+ReadFolded(const char *text, u64 length, u64 at, u32 *codepoint)
+{
+  u8 byte = (u8)text[at];
+
+  if (byte < 0x80) {
+    *codepoint = byte >= 'A' && byte <= 'Z' ? byte | 0x20u : byte;
+    return at + 1;
+  }
+
+  at += Utf8Decode(text + at, length - at, codepoint);
+  *codepoint = Utf8Fold(*codepoint);
+  return at;
+}
+
+// compares the folded pattern with the text at start (whose first code point is already
+// known to match) and gives the end of the match.
+static bool
+FoldedMatches(const Pattern *pattern, const char *text, u64 length, u64 next, u64 *end)
+{
+  for (u64 index = 1; index < pattern->foldedCount; index++) {
+    if (next >= length) return false;
+
+    u32 codepoint;
+    next = ReadFolded(text, length, next, &codepoint);
+    if (codepoint != pattern->folded[index]) return false;
+  }
+
+  *end = next;
+  return true;
+}
+
+static bool
+FindFolded(const Pattern *pattern, const char *text, u64 length, u64 from, PatternMatch *match)
+{
+  u32 first = pattern->folded[0];
+
+  for (u64 at = from; at < length;) {
+    u32 codepoint;
+    u64 next = ReadFolded(text, length, at, &codepoint);
+    u64 end = 0;
+
+    if (codepoint == first && FoldedMatches(pattern, text, length, next, &end)) {
+      *match = (PatternMatch){at, end};
+      if (Accepts(pattern, text, length, *match)) return true;
+    }
+
+    if (pattern->lineStart) return false;
+
+    at = next;
+  }
+
+  return false;
+}
+
+static bool
+FindExact(const Pattern *pattern, const char *text, u64 length, u64 from, PatternMatch *match)
+{
+  const char *wanted = pattern->text.data;
+  u64 size = pattern->text.length;
+
+  for (u64 at = from; at + size <= length; at++) {
+    const char *first = memchr(text + at, wanted[0], length - size + 1 - at);
+    if (!first) return false;
+
+    at = (u64)(first - text);
+    if (pattern->lineStart && at != 0) return false;
+
+    *match = (PatternMatch){at, at + size};
+    bool same = memcmp(first, wanted, size) == 0;
+    if (same && Accepts(pattern, text, length, *match)) return true;
+    if (pattern->lineStart) return false;
+  }
+
+  return false;
+}
+
+bool
+PatternFind(
+  const Pattern *pattern,
+  const char *text,
+  u64 length,
+  u64 from,
+  PatternMatch *match
+) {
+  if (pattern->impossible || from >= length) return false;
+  if (pattern->lineStart && from > 0) return false;
+
+  if (pattern->options.caseSensitive) return FindExact(pattern, text, length, from, match);
+  return FindFolded(pattern, text, length, from, match);
+}
+
+void
+PatternUnescape(const char *source, u64 length, StrBuf *output)
+{
+  for (u64 at = 0; at < length; at++) {
+    char escaped = source[at] == '\\' && at + 1 < length ? Escaped(source[at + 1]) : '\0';
+    StrBufAppendByte(output, escaped ? escaped : source[at]);
+    at += escaped != '\0';
+  }
+}

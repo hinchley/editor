@@ -166,9 +166,10 @@ OpenAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
 {
   if (!answer || !length) return;
 
-  // the loader takes the same kind of list as the command line.
+  // the loader takes the same kind of list as the command line, after the shell would
+  // have replaced "~".
   StrBuf path = {};
-  StrBufAppend(&path, answer, length);
+  CompleteExpandHome(answer, length, &path);
   LoaderList list = {};
   enum LoaderStatus status = LoaderLoad(&list, &path.data, 1, maxFileCount, message);
 

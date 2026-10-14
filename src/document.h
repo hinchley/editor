@@ -8,6 +8,7 @@
 // its buffer through pointers.
 #include "buffer.h"
 #include "file.h"
+#include "match.h"
 #include "strbuf.h"
 #include "types.h"
 #include "undo.h"
@@ -22,6 +23,9 @@ typedef struct Document {
   // the line ending the file had when last loaded or saved, so switching back to it
   // clears the modified state again.
   enum LineEnding savedLineEnding;
+
+  // what the view highlights: search matches, unknown words or nothing.
+  enum MatchKind marks;
 } Document;
 
 // opens path, or an unnamed empty document when path is nullptr.
