@@ -273,6 +273,58 @@ ScrollColumns(View *view)
   }
 }
 
+// the rows the view keeps in sight, upper to lower, with the margins wanted around them.
+typedef struct Sight {
+  ViewRow upper;
+  ViewRow lower;
+  u64 above;
+  u64 below;
+} Sight;
+
+// every cursor when they all fit in the view (with the margins when there is room for
+// them), or else just the primary one.
+static Sight
+SightOf(View *view)
+{
+  CursorSet *set = &view->cursors;
+  ViewRow primary = ViewRowOf(view, CursorSetPrimary(set)->head);
+  Margins margins = MarginsAround(view, primary);
+  Sight sight = {primary, primary, margins.above, margins.below};
+  if (set->count < 2) return sight;
+
+  Position first = set->cursors[0].head;
+  Position last = first;
+
+  for (u32 index = 1; index < set->count; index++) {
+    Position head = set->cursors[index].head;
+    if (PositionCompare(head, first) < 0) first = head;
+    if (PositionCompare(head, last) > 0) last = head;
+  }
+
+  u64 height = (u64)view->height;
+  if (last.line - first.line >= height) return sight;
+
+  ViewRow upper = ViewRowOf(view, first);
+  ViewRow lower = ViewRowOf(view, last);
+  i64 span = Distance(view, upper, lower, height);
+  if (span >= (i64)height) return sight;
+
+  u64 above = MarginsAround(view, upper).above;
+  u64 below = MarginsAround(view, lower).below;
+  if ((u64)span + above + below >= height) above = below = 0;
+  return (Sight){upper, lower, above, below};
+}
+
+// true when the view starting at top shows the sight with its margins.
+static bool
+InSight(View *view, ViewRow top, const Sight *sight)
+{
+  u64 height = (u64)view->height;
+  i64 upper = Distance(view, top, sight->upper, height);
+  i64 lower = Distance(view, top, sight->lower, height);
+  return upper >= (i64)sight->above && lower <= (i64)(height - 1 - sight->below);
+}
+
 void
 ViewScrollToCursor(View *view)
 {
@@ -280,17 +332,17 @@ ViewScrollToCursor(View *view)
 
   u64 moved;
   u64 height = (u64)view->height;
-  ViewRow cursor = ViewRowOf(view, CursorSetPrimary(&view->cursors)->head);
-  Margins margins = MarginsAround(view, cursor);
+  Sight sight = SightOf(view);
   view->top = ViewStep(view, view->top, 0, &moved);
 
-  i64 distance = Distance(view, view->top, cursor, height);
-  i64 lowest = (i64)(height - 1 - margins.below);
+  i64 upper = Distance(view, view->top, sight.upper, height);
+  i64 lower = Distance(view, view->top, sight.lower, height);
+  i64 lowest = (i64)(height - 1 - sight.below);
 
-  if (distance < (i64)margins.above) {
-    view->top = ViewStep(view, cursor, -(i64)margins.above, &moved);
-  } else if (distance > lowest) {
-    view->top = ViewStep(view, cursor, -lowest, &moved);
+  if (upper < (i64)sight.above) {
+    view->top = ViewStep(view, sight.upper, -(i64)sight.above, &moved);
+  } else if (lower > lowest) {
+    view->top = ViewStep(view, sight.lower, -lowest, &moved);
   }
 
   // never leave empty rows below the end of the buffer while there is text above.
@@ -313,11 +365,8 @@ ViewScroll(View *view, i64 count)
   ViewRow highest = ViewStep(view, LastRow(view), -(i64)(height - 1), &moved);
   if (count > 0 && RowCompare(top, highest) > 0) return false;
 
-  ViewRow cursor = ViewRowOf(view, CursorSetPrimary(&view->cursors)->head);
-  Margins margins = MarginsAround(view, cursor);
-  i64 distance = Distance(view, top, cursor, height);
-  i64 lowest = (i64)(height - 1 - margins.below);
-  if (distance < (i64)margins.above || distance > lowest) return false;
+  Sight sight = SightOf(view);
+  if (!InSight(view, top, &sight)) return false;
 
   view->top = top;
   return true;

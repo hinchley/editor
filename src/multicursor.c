@@ -126,8 +126,12 @@ MultiCursorAddRow(View *view, bool up)
   CursorSetMerge(set);
   Cursor *edge = &set->cursors[up ? 0 : set->count - 1];
 
+  // a selection is stepped over from its outer end, or the new cursor would land inside it.
+  Range range = CursorRange(edge);
+  Position from = up ? range.start : range.end;
+
   u64 moved;
-  ViewRow row = ViewStep(view, ViewRowOf(view, edge->head), up ? -1 : 1, &moved);
+  ViewRow row = ViewStep(view, ViewRowOf(view, from), up ? -1 : 1, &moved);
   if (moved == 0) return false;
 
   Position position = ViewPositionAt(view, row, edge->desiredColumn);

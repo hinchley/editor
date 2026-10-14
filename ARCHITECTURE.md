@@ -126,9 +126,9 @@ Each cursor keeps a desired column: its column within its visual row. Up, Down, 
 
 ### Scrolling
 
-The view keeps its first visible row (`top`) and, without soft wrap, its first visible column (`leftColumn`). `ViewScrollToCursor` runs before every frame, so movement, resizing and toggles all end with the primary cursor in sight. It keeps `scrollOffset` rows between the cursor and the top and bottom edges (capped at just under half the height). The margin shrinks to the rows that exist before or after the cursor, which is how it yields at the start and end of the buffer. The view never scrolls so far that empty rows show below the end of the buffer. Columns get the same margin, and it yields at the start of the line.
+The view keeps its first visible row (`top`) and, without soft wrap, its first visible column (`leftColumn`). `ViewScrollToCursor` runs before every frame, so movement, resizing and toggles all end with the cursors in sight. It keeps `scrollOffset` rows between the cursor and the top and bottom edges (capped at just under half the height). With several cursors whose heads span fewer rows than the view, it keeps the whole span in sight instead, with the margins when they fit and without them when they do not, so adding cursors does not scroll the first ones away. A span taller than the view falls back to the primary cursor. The margin shrinks to the rows that exist before or after the cursor, which is how it yields at the start and end of the buffer. The view never scrolls so far that empty rows show below the end of the buffer. Columns get the same margin, and it yields at the start of the line.
 
-Ctrl-Up and Ctrl-Down move `top` by one row and leave the cursor alone. They refuse (with a message) when the cursor would end up inside the margin, or the view would pass either end. PageUp and PageDown move both the cursor and `top` by the height less one row, so the cursor keeps its screen row.
+Ctrl-Up and Ctrl-Down move `top` by one row and leave the cursor alone. They refuse (with a message) when a cursor being kept in sight would end up inside the margin, or the view would pass either end. PageUp and PageDown move both the cursor and `top` by the height less one row, so the cursor keeps its screen row.
 
 ### Rendering
 
@@ -150,9 +150,9 @@ An edit command loops over the cursors, replaces each one's range, and puts that
 
 ### Multiple cursors
 
-The primary cursor is the one most recently added. The view scrolls to it, Esc collapses to it, and the status bar reports its position. Merging finds it again by value after sorting, so it survives the cursors around it being joined.
+The primary cursor is the one most recently added. Esc collapses to it, the status bar reports its position, and the view follows it when the cursors do not all fit. Movement merges cursors that meet, as edits do. Merging finds it again by value after sorting, so it survives the cursors around it being joined.
 
-Ctrl-E with no selection at the primary cursor selects the word at every cursor that sits on or just after one. With a selection on one line, it escapes the selected text into a case matching pattern (whole word when the selection is exactly one word) and searches forward from the selection's end with `MatchFind`. Matches that overlap any cursor are passed over, and the search stops once it has gone round the end and come back to the primary selection, so pressing it again after the last occurrence reports "no other occurrence" instead of looping. Ctrl-Alt-Up and Ctrl-Alt-Down step one visual row from the first or last cursor and keep its desired column, so a column of cursors goes down a ragged block of lines at one column.
+Ctrl-E with no selection at the primary cursor selects the word at every cursor that sits on or just after one. With a selection on one line, it escapes the selected text into a case matching pattern (whole word when the selection is exactly one word) and searches forward from the selection's end with `MatchFind`. Matches that overlap any cursor are passed over, and the search stops once it has gone round the end and come back to the primary selection, so pressing it again after the last occurrence reports "no other occurrence" instead of looping. Ctrl-Alt-Up and Ctrl-Alt-Down step one visual row from the first or last cursor (from the outer end of its selection, so the new cursor never lands inside it) and keep its desired column, so a column of cursors goes down a ragged block of lines at one column.
 
 A paste with as many lines as there are cursors (not counting the empty line after the last line break of a line wise copy) gives the cursors one line each, in buffer order. Otherwise each cursor gets the whole text.
 

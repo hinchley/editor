@@ -90,14 +90,16 @@ ViewRowColumn(View *view, Position position);
 Position
 ViewPositionAt(View *view, ViewRow row, u64 column);
 
-// scrolls so the primary cursor is shown with the scroll margin around it, and keeps the
-// view from showing empty rows past the end of the buffer.
+// scrolls so the cursors are shown with the scroll margin around them, and keeps the view
+// from showing empty rows past the end of the buffer.
+// when the cursors do not all fit (or there is one), the primary cursor is kept in sight.
+// when they fit but not with their margins, they are kept in sight without margins.
 void
 ViewScrollToCursor(View *view);
 
 // scrolls by count rows without moving the cursor.
-// returns false, without scrolling, when the cursor would end up inside the scroll margin
-// or the view would pass either end of the buffer.
+// returns false, without scrolling, when a cursor kept in sight would end up inside the
+// scroll margin or out of view, or the view would pass either end of the buffer.
 bool
 ViewScroll(View *view, i64 count);
 

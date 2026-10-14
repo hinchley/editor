@@ -203,6 +203,9 @@ MoveCursors(View *view, enum Move move, bool extend)
     if (!IsVertical(move)) cursor->desiredColumn = ViewRowColumn(view, cursor->head);
   }
 
+  // cursors that moved onto each other become one.
+  CursorSetMerge(set);
+
   // a page move scrolls the view with the cursor, so the cursor keeps its screen row.
   u64 moved;
   if (move == MovePageUp) view->top = ViewStep(view, view->top, -PageRows(view), &moved);

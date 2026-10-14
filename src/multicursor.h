@@ -14,8 +14,8 @@
 void
 MultiCursorAddNext(View *view, StrBuf *message);
 
-// adds a cursor on the visual row above the first cursor, or below the last one, at that
-// cursor's desired column.
+// adds a cursor on the visual row above the first cursor, or below the last one (above or
+// below its whole selection), at that cursor's desired column.
 // returns false at the start or end of the buffer.
 bool
 MultiCursorAddRow(View *view, bool up);
