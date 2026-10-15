@@ -153,6 +153,12 @@ static constexpr u8 noGroup = 0xFF;
 static constexpr u64 windowBefore = 64;
 static constexpr u64 windowAfter = 192;
 
+// a line longer than longLineSize is coloured only around the byte asked for, from a
+// quarter of longLineReach before it to longLineReach after it, so the cost of colouring
+// does not grow with the length of the line.
+static constexpr u64 longLineSize = 16384;
+static constexpr u64 longLineReach = 65536;
+
 // how deep languages may nest (markdown, its inline text, html inside that, a script).
 static constexpr u32 maxDepth = 4;
 
@@ -186,16 +192,31 @@ typedef struct Layer {
   u64 used;
 } Layer;
 
+// the bytes of a line that a window colours: all of a short line, part of a long one.
+typedef struct Span {
+  u64 from;
+  u64 to;
+} Span;
+
 // the groups of count lines from first, one byte per text byte.
-// the groups of line first + index start at bytes + starts[index].
+// the groups of line first + index start at bytes + starts[index], and only the bytes in
+// spans[index] are coloured.
 typedef struct Window {
   bool valid;
   u64 first;
   u64 count;
   u64 *starts;
+  Span *spans;
   u8 *bytes;
   u64 used;
 } Window;
+
+// part of a window that one query run colours: a run of short lines, or the span of a
+// long line.
+typedef struct Segment {
+  TSPoint start;
+  TSPoint end;
+} Segment;
 
 struct Highlight {
   Buffer *buffer;
@@ -503,6 +524,7 @@ HighlightFree(Highlight *highlight)
 
   for (u32 index = 0; index < 2; index++) {
     free(highlight->windows[index].starts);
+    free(highlight->windows[index].spans);
     free(highlight->windows[index].bytes);
   }
 
@@ -612,12 +634,10 @@ NodeText(void *context, TSNode node, StrBuf *text)
 }
 
 static TSQueryCursor *
-CursorOver(const Query *query, TSNode root, const Window *window)
+CursorOver(const Query *query, TSNode root, Segment segment)
 {
   TSQueryCursor *cursor = ts_query_cursor_new();
-  TSPoint start = {(u32)window->first, 0};
-  TSPoint end = {(u32)(window->first + window->count), 0};
-  ts_query_cursor_set_point_range(cursor, start, end);
+  ts_query_cursor_set_point_range(cursor, segment.start, segment.end);
   ts_query_cursor_exec(cursor, query->query, root);
   return cursor;
 }
@@ -659,20 +679,25 @@ ComparePaints(const void *a, const void *b)
   return first->order < second->order ? -1 : 1;
 }
 
+// paints a capture over the part of it inside the segment, so a node that reaches into
+// other segments cannot paint over what they coloured.
 static void
-PaintRows(Highlight *highlight, Window *window, const Paint *paint)
+PaintRows(Highlight *highlight, Window *window, Segment segment, const Paint *paint)
 {
   u8 group = paint->group;
   enum ThemeGroup themeGroup = (enum ThemeGroup)(group & ~specialBit);
   bool literal = themeGroup == ThemeLiteral || themeGroup == ThemeUri;
-  u64 first = paint->start.row > window->first ? paint->start.row : window->first;
+  TSPoint start = paint->start;
+  TSPoint end = paint->end;
+  if (ComparePoints(start, segment.start) < 0) start = segment.start;
+  if (ComparePoints(end, segment.end) > 0) end = segment.end;
   u64 last = window->first + window->count - 1;
-  if (paint->end.row < last) last = paint->end.row;
+  if (end.row < last) last = end.row;
 
-  for (u64 line = first; line <= last; line++) {
+  for (u64 line = start.row; line <= last; line++) {
     u64 length = BufferLine(highlight->buffer, line)->length;
-    u64 from = line == paint->start.row ? paint->start.column : 0;
-    u64 to = line == paint->end.row ? paint->end.column : length;
+    u64 from = line == start.row ? start.column : 0;
+    u64 to = line == end.row ? end.column : length;
     if (to > length) to = length;
 
     u8 *bytes = window->bytes + window->starts[line - window->first];
@@ -685,10 +710,15 @@ PaintRows(Highlight *highlight, Window *window, const Paint *paint)
 }
 
 static void
-PaintCaptures(Highlight *highlight, u32 grammar, TSNode root, Window *window)
-{
+PaintCaptures(
+  Highlight *highlight,
+  u32 grammar,
+  TSNode root,
+  Window *window,
+  Segment segment
+) {
   const Compiled *queries = &compiled[grammar];
-  TSQueryCursor *cursor = CursorOver(&queries->highlights, root, window);
+  TSQueryCursor *cursor = CursorOver(&queries->highlights, root, segment);
   PaintList list = {};
   TSQueryMatch match;
   u32 captureIndex;
@@ -713,7 +743,7 @@ PaintCaptures(Highlight *highlight, u32 grammar, TSNode root, Window *window)
   if (list.count) qsort(list.paints, list.count, sizeof(Paint), ComparePaints);
 
   for (u32 index = 0; index < list.count; index++) {
-    PaintRows(highlight, window, &list.paints[index]);
+    PaintRows(highlight, window, segment, &list.paints[index]);
   }
 
   free(list.paints);
@@ -794,11 +824,11 @@ AddSite(SiteList *list, Site site)
 }
 
 static void
-FindSites(Highlight *highlight, u32 grammar, TSNode root, Window *window, SiteList *sites)
+FindSites(Highlight *highlight, u32 grammar, TSNode root, Segment segment, SiteList *sites)
 {
   const Compiled *queries = &compiled[grammar];
   const Query *query = &queries->injections;
-  TSQueryCursor *cursor = CursorOver(query, root, window);
+  TSQueryCursor *cursor = CursorOver(query, root, segment);
   TSQueryMatch match;
 
   while (ts_query_cursor_next_match(cursor, &match)) {
@@ -883,23 +913,31 @@ LayerTree(Highlight *highlight, Site *site)
   return tree;
 }
 
+// what PaintTree paints: a part of a window, and how deep the language is nested.
+typedef struct PaintTarget {
+  Window *window;
+  Segment segment;
+  u32 depth;
+} PaintTarget;
+
 static void
-PaintTree(Highlight *highlight, u32 grammar, TSTree *tree, Window *window, u32 depth)
+PaintTree(Highlight *highlight, u32 grammar, TSTree *tree, PaintTarget target)
 {
   if (!tree) return;
 
   TSNode root = ts_tree_root_node(tree);
-  PaintCaptures(highlight, grammar, root, window);
-  if (!compiled[grammar].injections.query || depth + 1 >= maxDepth) return;
+  PaintCaptures(highlight, grammar, root, target.window, target.segment);
+  if (!compiled[grammar].injections.query || target.depth + 1 >= maxDepth) return;
 
   // the sites are all found before any is parsed, as parsing may move the layers.
   SiteList sites = {};
-  FindSites(highlight, grammar, root, window, &sites);
+  FindSites(highlight, grammar, root, target.segment, &sites);
+  target.depth++;
 
   for (u32 index = 0; index < sites.count; index++) {
     Site *site = &sites.sites[index];
     u32 injected = site->grammar;
-    PaintTree(highlight, injected, LayerTree(highlight, site), window, depth + 1);
+    PaintTree(highlight, injected, LayerTree(highlight, site), target);
   }
 
   free(sites.sites);
@@ -923,20 +961,73 @@ TrimLayers(Highlight *highlight)
   highlight->layerCount = kept;
 }
 
+// the bytes of a line coloured around focus.
+static Span
+SpanAround(u64 length, u64 focus)
+{
+  if (length <= longLineSize) return (Span){0, length};
+
+  u64 before = longLineReach / 4;
+  u64 from = focus > before ? focus - before : 0;
+  u64 to = length - from > longLineReach ? from + longLineReach : length;
+  return (Span){from > length ? length : from, to};
+}
+
+// true when a window's span of a line covers focus, with room to scroll on.
+static bool
+Covers(Span span, u64 length, u64 focus)
+{
+  if (length <= longLineSize) return true;
+  return focus >= span.from && (span.to == length || focus + longLineReach / 2 <= span.to);
+}
+
+// colours each run of short lines in one go, and each long line over its span alone.
 static void
-Fill(Highlight *highlight, Window *window, u64 line)
+PaintWindow(Highlight *highlight, Window *window)
+{
+  PaintTarget target = {.window = window};
+  u64 end = window->first + window->count;
+  u64 line = window->first;
+
+  while (line < end) {
+    u64 index = line - window->first;
+    u64 length = BufferLine(highlight->buffer, line)->length;
+    Span span = window->spans[index];
+    Segment *segment = &target.segment;
+
+    if (length > longLineSize) {
+      segment->start = (TSPoint){(u32)line, (u32)span.from};
+      segment->end = (TSPoint){(u32)line, (u32)span.to};
+      line++;
+    } else {
+      segment->start = (TSPoint){(u32)line, 0};
+      while (line < end && BufferLine(highlight->buffer, line)->length <= longLineSize) line++;
+      segment->end = (TSPoint){(u32)line, 0};
+    }
+
+    PaintTree(highlight, highlight->grammar, highlight->tree, target);
+  }
+}
+
+static void
+Fill(Highlight *highlight, Window *window, u64 line, u64 focus)
 {
   u64 lineCount = BufferLineCount(highlight->buffer);
   window->first = line > windowBefore ? line - windowBefore : 0;
   u64 end = line + windowAfter < lineCount ? line + windowAfter : lineCount;
   window->count = end - window->first;
   window->starts = MemoryResize(window->starts, window->count + 1, sizeof(u64));
+  window->spans = MemoryResize(window->spans, window->count, sizeof(Span));
 
   u64 total = 0;
 
+  // other long lines in the window are coloured around the same byte, which suits an
+  // unwrapped view scrolled sideways.
   for (u64 index = 0; index < window->count; index++) {
+    u64 length = BufferLine(highlight->buffer, window->first + index)->length;
     window->starts[index] = total;
-    total += BufferLine(highlight->buffer, window->first + index)->length;
+    window->spans[index] = SpanAround(length, focus);
+    total += length;
   }
 
   window->starts[window->count] = total;
@@ -947,7 +1038,7 @@ Fill(Highlight *highlight, Window *window, u64 line)
   window->used = highlight->serial;
   window->valid = true;
   ParseBuffer(highlight);
-  PaintTree(highlight, highlight->grammar, highlight->tree, window, 0);
+  PaintWindow(highlight, window);
   TrimLayers(highlight);
 
   // the trees go only once nothing is using them.
@@ -955,29 +1046,33 @@ Fill(Highlight *highlight, Window *window, u64 line)
 }
 
 const u8 *
-HighlightLine(Highlight *highlight, u64 line)
+HighlightLine(Highlight *highlight, u64 line, u64 focus)
 {
   if (!highlight || HighlightDisabled(highlight)) return nullptr;
 
   Window *windows = highlight->windows;
+  u64 length = BufferLine(highlight->buffer, line)->length;
 
   for (u32 index = 0; index < 2; index++) {
     Window *window = &windows[index];
-    bool inside = line >= window->first && line < window->first + window->count;
-    if (window->valid && inside) return window->bytes + window->starts[line - window->first];
+    bool inside = window->valid && line >= window->first;
+    inside = inside && line < window->first + window->count;
+    if (!inside || !Covers(window->spans[line - window->first], length, focus)) continue;
+
+    return window->bytes + window->starts[line - window->first];
   }
 
   // the window used longest ago is filled again.
   Window *window = &windows[0];
   if (windows[1].used < windows[0].used || !windows[1].valid) window = &windows[1];
-  Fill(highlight, window, line);
+  Fill(highlight, window, line, focus);
   return window->bytes + window->starts[line - window->first];
 }
 
 bool
 HighlightSpellable(Highlight *highlight, u64 line, u64 byte)
 {
-  const u8 *groups = HighlightLine(highlight, line);
+  const u8 *groups = HighlightLine(highlight, line, byte);
   if (!groups) return true;
   if (groups[byte] & (literalBit | specialBit)) return false;
 

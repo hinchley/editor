@@ -488,7 +488,9 @@ RunCommand(const Binding *binding)
   case CommandToggleRuler: Toggle(&displayOptions.ruler, "ruler"); break;
   case CommandSetRulerColumn: AskRulerColumn(); break;
   case CommandHelp: ShowHelp(); break;
-  default: StrBufAppendFormat(&message, "not available yet: %s", binding->help); break;
+
+  // the rest were run above.
+  default: break;
   }
 }
 

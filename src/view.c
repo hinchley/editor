@@ -5,12 +5,24 @@
 // the line number gutter is never narrower than this many digits.
 static constexpr i32 minGutterDigits = 3;
 
+// lines at least this long keep their rows in the view's cache.
+// shorter lines are laid out again whenever they are needed, which costs less than
+// looking them up.
+static constexpr u64 cacheMinLength = 4096;
+
+static void
+ForgetRows(View *view)
+{
+  for (u32 index = 0; index < viewCacheSize; index++) view->cache[index].valid = false;
+}
+
 // keeps the cursors and the first visible line on the same text when the buffer changes.
 static void
 FollowChange(void *context, const BufferChange *change)
 {
   View *view = context;
   CursorSetAdjust(&view->cursors, change);
+  ForgetRows(view);
 
   // a change wholly above the view shifts it; one reaching into it starts it at the change.
   ViewRow *top = &view->top;
@@ -36,12 +48,14 @@ ViewFree(View *view)
   BufferUnlisten(view->buffer, FollowChange, view);
   CursorSetFree(&view->cursors);
   LayoutRowsFree(&view->rows);
+  for (u32 index = 0; index < viewCacheSize; index++) LayoutRowsFree(&view->cache[index].rows);
 }
 
 void
 ViewClamp(View *view)
 {
   CursorSetClamp(&view->cursors, view->buffer);
+  ForgetRows(view);
   u64 lastLine = BufferLineCount(view->buffer) - 1;
   if (view->top.line > lastLine) view->top = (ViewRow){lastLine, 0};
 }
@@ -88,8 +102,24 @@ ViewLayoutLine(View *view, u64 line)
 {
   const StrBuf *text = BufferLine(view->buffer, line);
   i32 width = view->options->softWrap ? ViewTextWidth(view) : 0;
-  LayoutWrap(text->data, text->length, width, &view->rows);
-  return &view->rows;
+
+  if (width == 0 || text->length < cacheMinLength) {
+    LayoutWrap(text->data, text->length, width, &view->rows);
+    return &view->rows;
+  }
+
+  for (u32 index = 0; index < viewCacheSize; index++) {
+    ViewRowCache *entry = &view->cache[index];
+    if (entry->valid && entry->line == line && entry->width == width) return &entry->rows;
+  }
+
+  ViewRowCache *entry = &view->cache[view->cacheNext];
+  view->cacheNext = (view->cacheNext + 1) % viewCacheSize;
+  LayoutWrap(text->data, text->length, width, &entry->rows);
+  entry->valid = true;
+  entry->line = line;
+  entry->width = width;
+  return &entry->rows;
 }
 
 static u64

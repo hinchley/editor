@@ -23,6 +23,17 @@ typedef struct ViewRow {
   u64 row;
 } ViewRow;
 
+// long lines whose rows a view keeps.
+static constexpr u32 viewCacheSize = 4;
+
+// the rows of one line laid out at width.
+typedef struct ViewRowCache {
+  bool valid;
+  u64 line;
+  i32 width;
+  LayoutRows rows;
+} ViewRowCache;
+
 typedef struct View {
   Buffer *buffer;
   const DisplayOptions *options;
@@ -38,8 +49,12 @@ typedef struct View {
   i32 width;
   i32 height;
 
-  // the rows of the most recently laid out line.
+  // the rows of the most recently laid out short line.
   LayoutRows rows;
+
+  // the rows of recently laid out long lines, which are kept until the buffer changes.
+  ViewRowCache cache[viewCacheSize];
+  u32 cacheNext;
 } View;
 
 // sets up a view with one cursor at the start of buffer.

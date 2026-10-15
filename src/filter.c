@@ -52,6 +52,7 @@ FilterParse(Filter *filter, const char *text, u64 length)
 
     // a comment starts at a "#" that begins the line or follows a blank.
     u64 stop = at;
+
     while (stop < end && !(text[stop] == '#' && (stop == at || IsBlank(text[stop - 1])))) {
       stop++;
     }

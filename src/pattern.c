@@ -134,6 +134,7 @@ Accepts(const Pattern *pattern, const char *text, u64 length, PatternMatch match
   if (pattern->lineEnd && match.end != length) return false;
 
   bool wholeWord = pattern->options.wholeWord;
+
   if (wholeWord && (WordBefore(text, match.start) || WordAfter(text, length, match.end))) {
     return false;
   }

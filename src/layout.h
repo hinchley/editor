@@ -57,6 +57,15 @@ typedef struct LayoutRow {
 LayoutIterator
 LayoutBegin(const char *text, u64 length);
 
+// an iterator starting at the cluster that holds byte (or at the end of the line).
+LayoutIterator
+LayoutBeginAt(const char *text, u64 length, u64 byte);
+
+// an iterator starting at the cluster that covers display column (or at the end of the
+// line).
+LayoutIterator
+LayoutBeginAtColumn(const char *text, u64 length, u64 column);
+
 // reads the next cluster, or returns false at the end of the line.
 bool
 LayoutNext(LayoutIterator *iterator, LayoutCluster *cluster);

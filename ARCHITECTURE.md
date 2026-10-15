@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes how the editor is put together. It grows with each milestone.
+This document describes how the editor is put together.
 
 ## Layout
 
@@ -11,7 +11,7 @@ This document describes how the editor is put together. It grows with each miles
 | `vendor/grammars/<lang>/` | Generated grammar sources (`parser.c`, optional `scanner.c`) and their `tree_sitter/` headers. |
 | `vendor/queries/<lang>/` | `highlights.scm` and, where the grammar embeds other languages, `injections.scm`. |
 | `data/words.txt` | Spell check word list, one word per line, sorted in byte order (`LC_ALL=C`). |
-| `tools/` | Developer scripts that are not part of the binary. |
+| `tools/` | Developer scripts that are not part of the binary: `unicodedata.py` generates `src/unicodedata.c`, and `bindings.py` writes the key binding tables in README.md from `src/keymap.c`. |
 | `build.sh` | The build. Outputs `./editor`, objects go to `build/`. |
 
 ## Glossary
@@ -19,6 +19,18 @@ This document describes how the editor is put together. It grows with each miles
 - **Loaded**: a file is in the buffer list.
 - **Open**: a loaded buffer whose contents have been read into memory. Files from folders are loaded at startup but only opened when first used.
 - **Display column**: a 1-based screen column within a line, with tabs expanded and wide characters counted as two. Used by the status bar, go to line and the ruler.
+
+## Data flow
+
+The editor is one thread around one loop in `app`:
+
+1. **Input.** `TermWait` polls standard input and the resize pipe. `input` decodes the bytes into events: keys, pastes and terminal replies.
+2. **Dispatch.** A running project search, an open picker, the find and replace prompts and any other prompt take a key first, in that order. Otherwise a printable key is typed, and any other key is looked up in `keymap`, whose command `app` runs.
+3. **Commands** live in the modules that own what they change (`move`, `edit`, `search`, `session`, `save`, `project`). They work on the current document's focused view through `workspace`, and change text only through `BufferReplace`.
+4. **Listeners.** Every replace notifies the buffer's listeners: both views of the document (cursors and scroll position), its undo history (records) and its highlighter (tree edits). Nothing else needs telling, so a command does not know who shows the text.
+5. **Frame.** Once no input is waiting, `RenderFrame` scrolls each view to its cursors and draws the views, status bars and message bar into the `screen` grid, laying out only the visible rows and colouring only the visible lines. `ScreenFlush` writes the cells that changed.
+
+Loading runs before the loop: `loader` turns the command line into the list of files, `workspace` holds them as entries, and an entry's file is read into a `document` the first time it is used.
 
 ## Modules
 
@@ -118,11 +130,13 @@ Each `File` keeps a `FileStamp` (device, inode, size, modification time) from it
 
 `layout` is the only place that turns bytes into columns. `LayoutNext` walks a line one grapheme cluster at a time and gives each cluster its display column (from the line start) and width. Printable ASCII followed by ASCII takes a fast path that skips the grapheme rules. A tab is as wide as the distance to the next multiple of `tabWidth`, measured from the start of the logical line even when the line is wrapped. An ASCII control character is drawn as `^X` in two columns. An invalid byte, a C1 control character, or a cluster with no width of its own (such as a lone U+200B) is drawn as U+FFFD in one column, so nothing on a line is invisible.
 
+Measuring a column, finding the byte at a column, and starting to draw part way along a line all start from the line's beginning, since columns depend on everything before them. `LayoutBeginAt` and `LayoutBeginAtColumn` pass over runs of printable ASCII a byte at a time without reading clusters (a byte followed by a non-ASCII byte is left to the full rules, since a combining mark could join it), so on a 17 MB line a column takes about 5 ms instead of 35.
+
 `LayoutWrap` splits a line into visual rows. A row breaks after its last space or tab that fits, or else just before the cluster that does not fit. Wrapped rows have no continuation indent. When the last row is exactly full, an empty row follows it, so the cursor at the end of the line has a cell to sit in. Without soft wrap a line is one row.
 
 ### Visual rows
 
-A `ViewRow` is a line plus the index of one of its rows. `ViewStep` moves forward or back by any number of visual rows and stops at the ends of the buffer. Vertical movement, paging, scrolling and the scroll margin are all written against `ViewStep`, so the same code serves wrapped and unwrapped views. Nothing holds a row index for the whole buffer. A wrapped line is laid out when it is reached, so the cost depends on the rows stepped over, not the buffer size. Without soft wrap every line is one row, and stepping is plain arithmetic on line numbers, so a jump across a million lines is instant.
+A `ViewRow` is a line plus the index of one of its rows. `ViewStep` moves forward or back by any number of visual rows and stops at the ends of the buffer. Vertical movement, paging, scrolling and the scroll margin are all written against `ViewStep`, so the same code serves wrapped and unwrapped views. Nothing holds a row index for the whole buffer. A wrapped line is laid out when it is reached, so the cost depends on the rows stepped over, not the buffer size. Without soft wrap every line is one row, and stepping is plain arithmetic on line numbers, so a jump across a million lines is instant. A wrapped line of 4 KB or more keeps its rows in a small cache in the view (four lines, emptied by any change to the buffer), because scrolling and drawing ask for the same line's rows many times a frame.
 
 Each cursor keeps a desired column: its column within its visual row. Up, Down, PageUp and PageDown aim for it, and every other movement resets it. Home and End act on the logical line. Up on the first row goes to the start of the buffer, and Down on the last row to the end.
 
@@ -134,7 +148,7 @@ Ctrl-Up and Ctrl-Down move `top` by one row and leave the cursor alone. They ref
 
 ### Rendering
 
-`RenderFrame` gives the view every row except the bottom two (the status bar and the message bar), scrolls it to its cursor and draws it. With a split it draws two panes, left to right, either side of a one column separator, each with its own status bar. The gutter is the line number right aligned with a space either side, at least three digits wide. Only the first row of a wrapped line is numbered. With whitespace display on, a space is drawn as `·` and a tab as `→` in its first cell, in the `whitespace` colour. The ruler is drawn as `│` in the cell just after `rulerColumn` before the text, so text covers it, and spaces and tabs let it show through. A cluster cut by the left or right edge of the text area shows as blank cells.
+`RenderFrame` gives the view every row except the bottom two (the status bar and the message bar), scrolls it to its cursor and draws it. With a split it draws two panes, left to right, either side of a one column separator, each with its own status bar. The gutter is the line number right aligned with a space either side, at least three digits wide. Only the first row of a wrapped line is numbered. With whitespace display on, a space is drawn as `·` and a tab as `→` in its first cell, in the `whitespace` colour. The ruler is drawn as `│` in the cell just after `rulerColumn` before the text, so text covers it, and spaces and tabs let it show through. A cluster cut by the left or right edge of the text area shows as blank cells. Drawing a line starts at its first visible row, or without soft wrap at the cluster under the first visible column, so the part of a long line before the view is never laid out cluster by cluster.
 
 With more than one cursor, the terminal cursor is hidden and every cursor (the primary one too) is drawn by switching its cell to the `cursor` style (reverse video on the default colours) after the text is drawn, so it reads as a block whatever the cell held. A cursor at the end of a line covers the empty cell after it. Cursors outside the view are skipped by their line number before anything is measured.
 
@@ -146,7 +160,7 @@ The status bar shows the name (shortened in the middle to fit) with `[+]` and `[
 
 ### Cursors follow changes
 
-A view listens to its buffer. After every `BufferReplace` it moves each cursor with `BufferAdjust`: a position before the change stays, one inside the replaced text moves to its start, and one at or after its end moves with the text that follows. The view's first visible line shifts the same way. So a command edits at one cursor and the others (and later, the other view of a split) stay on their text without the command knowing about them.
+A view listens to its buffer. After every `BufferReplace` it moves each cursor with `BufferAdjust`: a position before the change stays, one inside the replaced text moves to its start, and one at or after its end moves with the text that follows. The view's first visible line shifts the same way. So a command edits at one cursor and the others stay on their text without the command knowing about them. The other view of a split follows the same way.
 
 An edit command loops over the cursors, replaces each one's range, and puts that cursor after its new text. When the loop ends, cursors that now overlap are merged and every desired column is reset. Commands that rewrite lines replace only the bytes that change, so every view of the buffer, not just the one editing, keeps its cursors on the same text: indent and dedent make one replace per changed line, Ctrl-D inserts the copy above the lines, and moving lines takes the neighbouring line out and puts it back on the other side (so the moved lines are never replaced; cursors on the neighbour in another view move to the end of the moved lines). Indent and dedent then put the editing view's cursors back themselves, so a cursor at the start of a line stays before the new indentation. Ctrl-D, Ctrl-K and Ctrl-Shift-Up/Down first collapse to the primary cursor, and so do the commands that place one cursor (Ctrl-L, Ctrl-M, Alt-M and the search commands).
 
@@ -202,7 +216,7 @@ Below `minSplitWidth` (80) columns only the focused view is drawn, at full width
 
 ### Patterns
 
-One pattern syntax serves Ctrl-F, Ctrl-R, Alt-N and Alt-P (and will serve project search). A pattern is literal text. A `^` at its start and a `$` at its end are anchors, and the escapes `\t`, `\r`, `\n`, `\\`, `\^` and `\$` stand for those characters; any other backslash is literal. A match never crosses a line break, so a pattern holding `\n` never matches, and an empty pattern matches nothing, so matches are never empty and stepping through them always moves.
+One pattern syntax serves Ctrl-F, Ctrl-R, Alt-N, Alt-P and project search. A pattern is literal text. A `^` at its start and a `$` at its end are anchors, and the escapes `\t`, `\r`, `\n`, `\\`, `\^` and `\$` stand for those characters; any other backslash is literal. A match never crosses a line break, so a pattern holding `\n` never matches, and an empty pattern matches nothing, so matches are never empty and stepping through them always moves.
 
 Without case matching (the default, toggled with Ctrl-T for the session), the pattern is kept as case folded code points, and the text is folded one code point at a time as it is compared, with a fast path for ASCII. Folding can change a character's length (the Kelvin sign folds to `k`), so offsets are always those of the original text. A match must start and end on grapheme cluster boundaries, so `e` does not match the start of an `e` with a combining accent. Ctrl-W builds a whole word, case matching pattern from the word at the cursor (word characters as for word movement).
 
@@ -238,7 +252,7 @@ Files are de-duplicated by id in a hash set, so a file named twice, inside a nam
 
 ### .editor files
 
-Each folder in a walk is probed for `.editor`. When there is one, its patterns replace the ones from above for that folder and everything below, and paths are matched relative to it. Patterns come one per line; `#` at the start of a line or after a blank starts a comment. `filter` knows four forms: a name (`foo.txt`, `*.c`), a folder name (`bar/`), and either one tied to a path when it starts with `/` or has a `/` inside (`/foo/foo.txt`, `/*.c`, `/bar/`). `*` matches within one name and is the only wildcard. A folder is tested before it is entered, so a matched folder is never read, and a file also matches a folder pattern that matches any folder above it (which project search scopes will rely on). The folder that holds an `.editor` file is judged by the patterns above it, not its own. Files named on the command line are always loaded, and `.editor` files are only read when loading (startup and Ctrl-O on a folder).
+Each folder in a walk is probed for `.editor`. When there is one, its patterns replace the ones from above for that folder and everything below, and paths are matched relative to it. Patterns come one per line; `#` at the start of a line or after a blank starts a comment. `filter` knows four forms: a name (`foo.txt`, `*.c`), a folder name (`bar/`), and either one tied to a path when it starts with `/` or has a `/` inside (`/foo/foo.txt`, `/*.c`, `/bar/`). `*` matches within one name and is the only wildcard. A folder is tested before it is entered, so a matched folder is never read, and a file also matches a folder pattern that matches any folder above it (which project search scopes rely on, so `src/` picks everything under any `src` folder). The folder that holds an `.editor` file is judged by the patterns above it, not its own. Files named on the command line are always loaded, and `.editor` files are only read when loading (startup and Ctrl-O on a folder).
 
 ### The buffer list
 
@@ -274,7 +288,9 @@ Each injection is a layer: a grammar, its ranges and its tree. Layers are found 
 
 ### Colouring lines
 
-`HighlightLine` gives a byte per text byte: the syntax group in the low six bits, plus two flags for spell check. It fills a window of lines (64 before the line asked for and 192 after) by running each layer's highlight query over just those rows. Captures that fail their predicates are dropped. The rest are sorted by start, enclosing nodes before the nodes inside them, and for the same node by pattern, then painted in that order, so an inner node beats the node around it and a later pattern beats an earlier one (the convention of the vendored queries, as in `(identifier) @variable` followed by more specific patterns). Injected layers are painted after the layer that holds them. Two windows are kept, one for each side of a split, and any edit invalidates both. Rendering asks for the groups of each line it draws and starts from that group's style, with selections and matches drawn over it.
+`HighlightLine` gives a byte per text byte: the syntax group in the low six bits, plus two flags for spell check. It fills a window of lines (64 before the line asked for and 192 after) by running each layer's highlight query over just those rows. Captures that fail their predicates are dropped. The rest are sorted by start, enclosing nodes before the nodes inside them, and for the same node by pattern, then painted in that order, so an inner node beats the node around it and a later pattern beats an earlier one (the convention of the vendored queries, as in `(identifier) @variable` followed by more specific patterns). Injected layers are painted after the layer that holds them. Two windows are kept, one for each side of a split, and any edit invalidates both.
+
+A line over 16 KB (minified code) is coloured only around the part being drawn: from 16 KB before the first byte drawn to 64 KB after it. The window runs the queries once for each run of ordinary lines and once for each long line's span, and clips every capture to the part it was run for, so a node reaching into another part cannot paint over it. Other long lines in the window are coloured around the same byte offset, which suits an unwrapped view scrolled sideways. Asking for a long line outside its span fills the window again. So a keystroke on a 1 MB minified line costs about 30 ms rather than 300. Rendering asks for the groups of each line it draws and starts from that group's style, with selections and matches drawn over it.
 
 A capture name picks the group that shares its first component (`string.special` is `string`), except that any `*.builtin` is `builtin`, and Markdown's `text.*` captures use their second component: `title`, `literal`, `emphasis`, `strong`, `uri` and `reference`, which are markup groups in the theme. A capture with no group colours nothing, and `@none` (which Markdown puts on code block contents) clears the colour.
 
@@ -283,6 +299,16 @@ Tree-sitter leaves text predicates to its user. `query` evaluates `#eq?`, `#matc
 ### Spell check scope
 
 Painting `literal` or `uri` also sets a sticky literal flag that later paints do not clear, so the contents of a code block stay marked as code even though `@none` and the injected language recolour them. A `string.special` capture (a CSS colour, a regular expression, a JSON key) sets a special flag. Spell check passes over literal and special bytes, and otherwise looks at comments and strings in every language, and in prose languages also at uncoloured text and markup (headings, emphasis, link text).
+
+## Performance
+
+Measured on the release build, timed from the key to the end of the frame:
+
+- A 100 MB file of 1.3 million lines loads in about half a second. Moving, typing, paging and undo each take under 10 ms. Indenting every line takes 0.3 seconds, and spell check (which counts every unknown word) about 3 seconds.
+- A 17 MB line without soft wrap takes about 35 ms a key, and with soft wrap 5 to 75 ms (more right after an edit, when its rows are laid out again).
+- Tree-sitter highlighting is skipped above 16 MB, and stops for a buffer whose parse takes over a second (a 7 MB minified file does after its first edit). The first edit after parsing a 3 MB Markdown file pauses for about 0.3 seconds, and typing in a 2,000 line fenced block costs about 35 ms, because the Markdown grammar scans the whole block again.
+- 100,000 files load and draw the picker in about 60 ms from the page cache, filtering them takes 2 to 4 ms a key, and searching them all takes about 0.35 seconds.
+- An edit with 1,000 cursors takes 4 to 22 ms, and with 10,000 about 0.2 seconds (see Multiple cursors).
 
 ## Comments
 

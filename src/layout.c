@@ -74,17 +74,74 @@ LayoutNext(LayoutIterator *iterator, LayoutCluster *cluster)
   return true;
 }
 
+static bool
+IsPrintableAscii(u8 byte)
+{
+  return byte >= 0x20 && byte < 0x7F;
+}
+
+// passes over the printable ascii before limit, one column per byte, without reading
+// clusters.
+// a byte followed by a non-ascii byte is left for LayoutNext, since a combining mark
+// could join it.
+static void
+SkipAscii(LayoutIterator *iterator, u64 limit)
+{
+  const char *text = iterator->text;
+  u64 start = iterator->at;
+  u64 at = start;
+  if (limit > iterator->length) limit = iterator->length;
+
+  while (at < limit && IsPrintableAscii((u8)text[at])) at++;
+  if (at > start && at < iterator->length && (u8)text[at] >= 0x80) at--;
+
+  iterator->column += at - start;
+  iterator->at = at;
+}
+
+// moves the iterator to the start of the first cluster that ends after byte, or that ends
+// past column, whichever comes first.
+static void
+Seek(LayoutIterator *iterator, u64 byte, u64 column)
+{
+  LayoutCluster cluster;
+
+  while (true) {
+    // printable ascii is one column per byte, so the column gives a byte limit too.
+    u64 columns = column - iterator->column;
+    u64 bytes = byte > iterator->at ? byte - iterator->at : 0;
+    SkipAscii(iterator, iterator->at + (columns < bytes ? columns : bytes));
+
+    LayoutIterator before = *iterator;
+    if (!LayoutNext(iterator, &cluster)) return;
+
+    if (cluster.end > byte || cluster.column + cluster.width > column) {
+      *iterator = before;
+      return;
+    }
+  }
+}
+
+LayoutIterator
+LayoutBeginAt(const char *text, u64 length, u64 byte)
+{
+  LayoutIterator iterator = LayoutBegin(text, length);
+  Seek(&iterator, byte, UINT64_MAX);
+  return iterator;
+}
+
+LayoutIterator
+LayoutBeginAtColumn(const char *text, u64 length, u64 column)
+{
+  LayoutIterator iterator = LayoutBegin(text, length);
+  Seek(&iterator, UINT64_MAX, column);
+  return iterator;
+}
+
 u64
 LayoutColumn(const char *text, u64 length, u64 byte)
 {
-  LayoutIterator iterator = LayoutBegin(text, length);
-  LayoutCluster cluster;
-
-  while (LayoutNext(&iterator, &cluster)) {
-    if (cluster.end > byte) return cluster.column;
-  }
-
-  return iterator.column;
+  return LayoutBeginAt(text, length, byte).column;
 }
 
 static void
@@ -173,26 +230,20 @@ LayoutRowOf(const LayoutRows *rows, u64 byte)
 u64
 LayoutByteAt(const char *text, u64 length, LayoutRow row, u64 column)
 {
-  LayoutIterator iterator = LayoutBegin(text, length);
+  LayoutIterator iterator = LayoutBeginAt(text, length, row.start);
+  u64 target = iterator.column + column;
   LayoutCluster cluster;
-  u64 rowColumn = 0;
-  u64 lastStart = row.start;
-  bool started = false;
 
-  while (LayoutNext(&iterator, &cluster)) {
-    if (cluster.start < row.start) continue;
-    if (cluster.start >= row.end) break;
+  // the clusters ending before the target column are passed over, and the next one in
+  // the row holds it.
+  u64 rowEnd = row.last ? length : row.end;
+  Seek(&iterator, rowEnd, target);
+  if (LayoutNext(&iterator, &cluster) && cluster.start < rowEnd) return cluster.start;
+  if (row.last) return row.end;
 
-    if (!started) {
-      rowColumn = cluster.column;
-      started = true;
-    }
-
-    if (cluster.column + cluster.width > rowColumn + column) return cluster.start;
-    lastStart = cluster.start;
-  }
-
-  return row.last ? row.end : lastStart;
+  // past the end of a row that wraps, the position stays on its final cluster.
+  iterator = LayoutBeginAt(text, length, row.end > 0 ? row.end - 1 : 0);
+  return iterator.at > row.start ? iterator.at : row.start;
 }
 
 void

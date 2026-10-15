@@ -35,9 +35,10 @@ HighlightDisabled(const Highlight *highlight);
 
 // the group of every byte of a line (read with HighlightGroup), or nullptr when the
 // buffer is not highlighted.
+// a very long line is only coloured around focus, a byte near the part to be drawn.
 // valid until the buffer changes or a line far from this one is asked for.
 const u8 *
-HighlightLine(Highlight *highlight, u64 line);
+HighlightLine(Highlight *highlight, u64 line, u64 focus);
 
 static inline enum ThemeGroup
 HighlightGroup(const u8 *groups, u64 byte)

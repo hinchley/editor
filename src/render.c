@@ -150,6 +150,7 @@ static bool
 IsMatched(Canvas *canvas, u64 byte)
 {
   const SpanList *list = &canvas->matched;
+
   while (canvas->nextMatch < list->count && list->spans[canvas->nextMatch].end <= byte) {
     canvas->nextMatch++;
   }
@@ -271,40 +272,45 @@ DrawLine(Canvas *canvas, u64 line, u64 firstRow, i32 row)
   canvas->text = text->data;
   FindSelection(canvas, line, text->length);
   FindMatches(canvas, line);
-  canvas->groups = HighlightLine(canvas->highlight, line);
 
-  LayoutIterator iterator = LayoutBegin(text->data, text->length);
+  // drawing starts at the first row shown, or (without soft wrap) at the first column
+  // shown, so the text before it is passed over without reading its clusters.
+  bool wrapped = view->options->softWrap;
+  u64 firstIndex = firstRow < rows->count ? firstRow : rows->count - 1;
+  LayoutIterator iterator = wrapped
+    ? LayoutBeginAt(text->data, text->length, rows->starts[firstIndex])
+    : LayoutBeginAtColumn(text->data, text->length, view->leftColumn);
+  canvas->groups = HighlightLine(canvas->highlight, line, iterator.at);
   LayoutCluster cluster;
   bool more = LayoutNext(&iterator, &cluster);
   i32 drawn = 0;
 
-  for (u64 index = 0; index < rows->count && row + drawn < bottom; index++) {
+  for (u64 index = firstIndex; index < rows->count && row + drawn < bottom; index++) {
     LayoutRow layoutRow = LayoutGetRow(rows, index, text->length);
-    bool visible = index >= firstRow;
     i32 screenRow = row + drawn;
 
     // wrapped rows start at their own first column; unwrapped lines scroll sideways.
     i64 offset = (i64)(more ? cluster.column : iterator.column);
-    if (!view->options->softWrap) offset = (i64)view->leftColumn;
+    if (!wrapped) offset = (i64)view->leftColumn;
 
-    if (visible) DrawGutter(canvas, screenRow, line, index == 0);
+    DrawGutter(canvas, screenRow, line, index == 0);
 
     while (more && (layoutRow.last || cluster.start < layoutRow.end)) {
       i64 x = (i64)cluster.column - offset;
 
       // nothing further along an unwrapped line can be on screen.
       if (x >= canvas->textWidth && layoutRow.last) break;
-      if (visible) DrawCluster(canvas, screenRow, &cluster, x);
+      DrawCluster(canvas, screenRow, &cluster, x);
       more = LayoutNext(&iterator, &cluster);
     }
 
     // a selected line break shows as one selected cell after the end of the line.
-    if (visible && layoutRow.last && !more && canvas->lineBreakSelected) {
+    if (layoutRow.last && !more && canvas->lineBreakSelected) {
       i64 x = (i64)iterator.column - offset;
       FillCells(canvas, screenRow, x, 1, ThemeStyle(ThemeSelection));
     }
 
-    if (visible) drawn++;
+    drawn++;
   }
 
   return drawn;
@@ -373,6 +379,7 @@ DrawCursorBlocks(View *view)
   for (u32 index = 0; index < set->count; index++) {
     i32 row;
     i32 column;
+
     if (ViewScreenOf(view, set->cursors[index].head, &row, &column)) {
       ScreenSetStyle(row, column, style);
     }

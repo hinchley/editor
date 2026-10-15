@@ -5,8 +5,9 @@
 // an entry is loaded when it is in the list and open once its document has been read,
 // which happens the first time it is used.
 // documents are allocated one by one, so they never move while the list grows.
-// the window shows one view, or two side by side when split. each side uses its own slot
-// of every document's views, and the focused view's entry is the current one.
+// the window shows one view, or two side by side when split.
+// each side uses its own slot of every document's views, and the focused view's entry is
+// the current one.
 #include "document.h"
 #include "file.h"
 #include "loader.h"

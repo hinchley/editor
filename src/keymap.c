@@ -117,7 +117,7 @@ const Binding keymapBindings[] = {
   {{'f', control}, CommandFind, "incremental search"},
   {{'n', alt}, CommandFindNext, "jump to the next match"},
   {{'p', alt}, CommandFindPrevious, "jump to the previous match"},
-  {{'f', alt | shift}, CommandProjectSearch, "search every open buffer and list the matches"},
+  {{'f', alt | shift}, CommandProjectSearch, "search the loaded files and list the matches"},
   {{'f', alt}, CommandProjectResults, "reopen the list of project search matches"},
   {{'r', control}, CommandReplace, "search and replace"},
   {{'l', control}, CommandGoToLine, "go to a line number"},
