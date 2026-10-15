@@ -62,6 +62,11 @@ static bool capped;
 // the hit opened last from the list, or noHit.
 static u64 lastOpened = noHit;
 
+// the hits a replace takes, in list order, and the replacement once it is known.
+static u64 *chosen;
+static u64 chosenCount;
+static StrBuf replacement;
+
 void
 ProjectInit(Workspace *newWorkspace, StrBuf *newMessage)
 {
@@ -376,6 +381,145 @@ Picked([[maybe_unused]] void *context, bool picked, u64 id)
   if (WorkspaceSwitch(workspace, index, message)) SelectHit(&hits[id]);
 }
 
+// the number of entries the chosen hits are in.
+static u64
+ChosenFiles(void)
+{
+  u64 files = 0;
+
+  for (u64 at = 0; at < chosenCount; at++) {
+    if (!at || hits[chosen[at]].entry != hits[chosen[at - 1]].entry) files++;
+  }
+
+  return files;
+}
+
+// replaces every match on the lines of the chosen hits from first to end, which are in one
+// entry, matching each line again as its document has it now.
+// the lines change from the last up, so a replacement holding a line break leaves the
+// lines above where they were, and the whole entry undoes in one step.
+// returns false when the entry has been closed or cannot be opened.
+static bool
+ReplaceInEntry(u64 first, u64 end, u64 *lines, u64 *matches)
+{
+  u64 index = WorkspaceEntryOf(workspace, hits[chosen[first]].entry);
+  StrBuf ignored = {};
+  bool opened = index != workspaceNone && WorkspaceOpen(workspace, index, &ignored);
+  StrBufFree(&ignored);
+  if (!opened) return false;
+
+  Document *document = workspace->entries[index].document;
+  Buffer *buffer = &document->buffer;
+  UndoBreak(&document->undo);
+  UndoBegin(&document->undo, UndoKindOther, &document->view->cursors);
+  StrBuf rebuilt = {};
+
+  for (u64 at = end; at-- > first;) {
+    u64 line = hits[chosen[at]].line;
+    if (line >= BufferLineCount(buffer)) continue;
+
+    const StrBuf *text = BufferLine(buffer, line);
+    PatternMatch match;
+    if (!PatternFind(&pattern, text->data, text->length, 0, &match)) continue;
+
+    u64 stop = PatternReplaceLine(
+      &pattern, text->data, text->length, match, UINT64_MAX, &replacement, &rebuilt, matches
+    );
+    Range range = {{line, match.start}, {line, stop}};
+    BufferReplace(buffer, range, TextOf(&rebuilt), rebuilt.length);
+    (*lines)++;
+  }
+
+  StrBufFree(&rebuilt);
+  UndoEnd(&document->undo, &document->view->cursors);
+  return true;
+}
+
+static void
+ReplaceChosen(void)
+{
+  u64 lines = 0;
+  u64 matches = 0;
+  u64 changedFiles = 0;
+  u64 failed = 0;
+  u64 first = 0;
+
+  while (first < chosenCount) {
+    u64 end = first + 1;
+    while (end < chosenCount && hits[chosen[end]].entry == hits[chosen[first]].entry) end++;
+
+    u64 before = matches;
+    if (!ReplaceInEntry(first, end, &lines, &matches)) failed++;
+    else if (matches > before) changedFiles++;
+    first = end;
+  }
+
+  // the hits no longer describe the text.
+  ProjectClear();
+
+  if (matches) {
+    const char *format = "replaced %lu match%s on %lu line%s in %lu file%s";
+    const char *plural = matches == 1 ? "" : "es";
+    StrBufAppendFormat(
+      message, format, matches, plural, lines, Plural(lines), changedFiles, Plural(changedFiles)
+    );
+    StrBufAppendString(message, " (ctrl+u reviews, ctrl+shift+s saves)");
+  } else {
+    StrBufAppendString(message, "no match left on those lines");
+  }
+
+  if (failed) {
+    StrBufAppendFormat(message, ", %lu file%s could not be opened", failed, Plural(failed));
+  }
+}
+
+static void
+Confirmed([[maybe_unused]] void *context, const char *answer, [[maybe_unused]] u64 length)
+{
+  if (answer && *answer == 'y') ReplaceChosen();
+  else PickerResume();
+}
+
+static void
+ReplacementGiven(const StrBuf *text)
+{
+  if (!text) {
+    PickerResume();
+    return;
+  }
+
+  StrBufClear(&replacement);
+  StrBufAppend(&replacement, TextOf(text), text->length);
+
+  StrBuf question = {};
+  u64 files = ChosenFiles();
+  const char *format = "replace in %lu line%s of %lu file%s? (y/n)";
+  StrBufAppendFormat(&question, format, chosenCount, Plural(chosenCount), files, Plural(files));
+  PromptChoose(question.data, "yn", Confirmed, nullptr);
+  StrBufFree(&question);
+}
+
+// ctrl+r replaces the matches on the lines the list shows.
+static bool
+ListKey([[maybe_unused]] void *context, Key key)
+{
+  if (key.modifiers != KeyModifierControl || key.code != 'r') return false;
+
+  chosenCount = PickerShownCount();
+
+  if (!chosenCount) {
+    StrBufAppendString(message, "no lines to replace in");
+    return true;
+  }
+
+  chosen = MemoryResize(chosen, chosenCount, sizeof(u64));
+  for (u64 at = 0; at < chosenCount; at++) chosen[at] = PickerShownId(at);
+
+  PickerSuspend();
+  SearchReplacement(&pattern, ReplacementGiven);
+  return true;
+}
+
 // lists the hits, leaving out those in closed buffers, with the first hit from position on
 // selected.
 static void
@@ -423,6 +567,7 @@ ShowList(u64 position)
   if (left) StrBufAppendFormat(&title, ", %lu in closed buffers left out", left);
   PickerOpen(title.data, "filter: ", Picked, nullptr);
   PickerShowPreview(DrawPreview, nullptr);
+  PickerHandleKeys(ListKey, nullptr);
   PickerSelect(selected < shown ? selected : shown - 1);
   StrBufFree(&title);
   StrBufFree(&item);

@@ -10,7 +10,8 @@ enum SearchPrompt {
   SearchPromptFind,
   SearchPromptPattern,
   SearchPromptReplacement,
-  SearchPromptProject
+  SearchPromptProject,
+  SearchPromptProjectReplacement
 };
 
 // what escape puts back after incremental find.
@@ -47,6 +48,7 @@ static StrBuf lastReplacement;
 
 static enum SearchPrompt prompt;
 static SearchProjectDone projectDone;
+static SearchReplacementDone replacementDone;
 static SearchSaved saved;
 static Replacing replacing;
 
@@ -349,22 +351,15 @@ ReplaceLine(Range match, StrBuf *rebuilt)
   const StrBuf *line = BufferLine(&Current()->buffer, lineIndex);
   bool stopHere = replacing.wrapped && lineIndex == replacing.stop.line;
   u64 limit = stopHere ? replacing.stop.byte : UINT64_MAX;
-  const char *replacement = replacing.text.data;
-  u64 replacementLength = replacing.text.length;
+  PatternMatch first = {match.start.byte, match.end.byte};
+  u64 count = 0;
+  const StrBuf *with = &replacing.text;
+  u64 end =
+    PatternReplaceLine(&last, line->data, line->length, first, limit, with, rebuilt, &count);
 
-  PatternMatch hit = {match.start.byte, match.end.byte};
-  u64 copied = hit.start;
-  StrBufClear(rebuilt);
-
-  do {
-    StrBufAppend(rebuilt, line->data + copied, hit.start - copied);
-    StrBufAppend(rebuilt, replacement ? replacement : "", replacementLength);
-    copied = hit.end;
-    replacing.replaced++;
-    replacing.decided++;
-  } while (PatternFind(&last, line->data, line->length, copied, &hit) && hit.start < limit);
-
-  Range range = {match.start, {lineIndex, copied}};
+  replacing.replaced += count;
+  replacing.decided += count;
+  Range range = {match.start, {lineIndex, end}};
   Apply(range, rebuilt->data ? rebuilt->data : "", rebuilt->length);
 }
 
@@ -523,6 +518,35 @@ SearchProject(SearchProjectDone done)
   Label("search files");
 }
 
+static void
+ProjectReplacementAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
+{
+  prompt = SearchPromptNone;
+
+  if (!answer) {
+    replacementDone(nullptr);
+    return;
+  }
+
+  StrBufClear(&lastReplacement);
+  StrBufAppend(&lastReplacement, answer, length);
+  StrBuf text = {};
+  PatternUnescape(answer, length, &text);
+  replacementDone(&text);
+  StrBufFree(&text);
+}
+
+void
+SearchReplacement(const Pattern *pattern, SearchReplacementDone done)
+{
+  replacementDone = done;
+  StrBuf label = {};
+  StrBufAppendFormat(&label, "replace %s with: ", TextOf(&pattern->source));
+  prompt = SearchPromptProjectReplacement;
+  PromptAsk(label.data, "", ProjectReplacementAnswered, nullptr);
+  StrBufFree(&label);
+}
+
 void
 SearchShow(Document *document, const Pattern *pattern)
 {
@@ -543,7 +567,8 @@ Recall(void)
 {
   const StrBuf *text = &last.source;
   if (prompt == SearchPromptFind) text = &saved.source;
-  if (prompt == SearchPromptReplacement) text = &lastReplacement;
+  bool replacement = prompt == SearchPromptReplacement || prompt == SearchPromptProjectReplacement;
+  if (replacement) text = &lastReplacement;
   if (text->length) PromptSetText(text->data, text->length);
 }
 
@@ -580,7 +605,9 @@ SearchKey(Key key)
     return;
   }
 
-  if (control && key.code == 't' && prompt != SearchPromptReplacement) {
+  bool replacement = prompt == SearchPromptReplacement || prompt == SearchPromptProjectReplacement;
+
+  if (control && key.code == 't' && !replacement) {
     ToggleCase();
     return;
   }

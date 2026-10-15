@@ -43,6 +43,31 @@ PickerSelect(u64 position);
 void
 PickerShowPreview(PickerPreview preview, void *context);
 
+// takes a key with modifiers before the filter prompt does, returning true when it used
+// it.
+typedef bool (*PickerKeyHandler)(void *context, Key key);
+
+// gives the list just opened a handler for keys with modifiers.
+void
+PickerHandleKeys(PickerKeyHandler handler, void *context);
+
+// how many items the filter shows, and the id of the one at position among them, in list
+// order.
+u64
+PickerShownCount(void);
+
+u64
+PickerShownId(u64 position);
+
+// closes the open list for a while, as when a key handler asks a question, keeping its
+// items, filter and selection.
+void
+PickerSuspend(void);
+
+// opens the suspended list again as it was.
+void
+PickerResume(void);
+
 bool
 PickerActive(void);
 

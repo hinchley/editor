@@ -41,6 +41,7 @@ static u64 matchCount;
 
 static bool active;
 static StrBuf title;
+static StrBuf label;
 static PickerDone onDone;
 static void *doneContext;
 
@@ -48,6 +49,15 @@ static void *doneContext;
 static PickerPreview preview;
 static void *previewContext;
 static u64 widest;
+
+// takes modified keys before the filter does (or nullptr).
+static PickerKeyHandler keyHandler;
+static void *keyContext;
+
+// the filter and selection of a suspended list.
+static StrBuf suspendedFilter;
+static u64 suspendedSelected;
+static u64 suspendedTop;
 
 // the selected match, the first match shown, and how many rows the list had last drawn.
 static u64 selected;
@@ -174,17 +184,20 @@ Answered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]] u6
 }
 
 void
-PickerOpen(const char *newTitle, const char *label, PickerDone done, void *context)
+PickerOpen(const char *newTitle, const char *newLabel, PickerDone done, void *context)
 {
   StrBufClear(&title);
   StrBufAppendString(&title, newTitle);
+  StrBufClear(&label);
+  StrBufAppendString(&label, newLabel);
   onDone = done;
   doneContext = context;
   preview = nullptr;
+  keyHandler = nullptr;
   active = true;
   Filter(nullptr, "", 0);
 
-  PromptAsk(label, "", Answered, nullptr);
+  PromptAsk(newLabel, "", Answered, nullptr);
   PromptHandle(Filter, nullptr);
 }
 
@@ -207,6 +220,48 @@ PickerShowPreview(PickerPreview newPreview, void *context)
     u64 width = LayoutColumn(text, length, length);
     if (width > widest) widest = width;
   }
+}
+
+void
+PickerHandleKeys(PickerKeyHandler handler, void *context)
+{
+  keyHandler = handler;
+  keyContext = context;
+}
+
+u64
+PickerShownCount(void)
+{
+  return matchCount;
+}
+
+u64
+PickerShownId(u64 position)
+{
+  return items[matches[position]].id;
+}
+
+void
+PickerSuspend(void)
+{
+  const StrBuf *filter = PromptText();
+  StrBufClear(&suspendedFilter);
+  StrBufAppend(&suspendedFilter, filter->data ? filter->data : "", filter->length);
+  suspendedSelected = selected;
+  suspendedTop = top;
+  active = false;
+}
+
+void
+PickerResume(void)
+{
+  active = true;
+  PromptAsk(label.data, "", Answered, nullptr);
+  PromptHandle(Filter, nullptr);
+  const char *filter = suspendedFilter.data ? suspendedFilter.data : "";
+  PromptSetText(filter, suspendedFilter.length);
+  selected = suspendedSelected;
+  top = suspendedTop;
 }
 
 bool
@@ -233,6 +288,7 @@ PickerKey(Key key)
   i64 all = (i64)matchCount;
 
   if (key.modifiers) {
+    if (keyHandler && keyHandler(keyContext, key)) return;
     PromptKey(key);
     return;
   }

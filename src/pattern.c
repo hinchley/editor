@@ -244,3 +244,31 @@ PatternUnescape(const char *source, u64 length, StrBuf *output)
     at += escaped != '\0';
   }
 }
+
+u64
+PatternReplaceLine(
+  const Pattern *pattern,
+  const char *text,
+  u64 length,
+  PatternMatch first,
+  u64 limit,
+  const StrBuf *replacement,
+  StrBuf *rebuilt,
+  u64 *count
+) {
+  const char *with = replacement->data ? replacement->data : "";
+  PatternMatch hit = first;
+  u64 copied = hit.start;
+  StrBufClear(rebuilt);
+
+  // matches are found in the original text, so a replacement holding the pattern is never
+  // matched again.
+  do {
+    StrBufAppend(rebuilt, text + copied, hit.start - copied);
+    StrBufAppend(rebuilt, with, replacement->length);
+    copied = hit.end;
+    (*count)++;
+  } while (PatternFind(pattern, text, length, copied, &hit) && hit.start < limit);
+
+  return copied;
+}

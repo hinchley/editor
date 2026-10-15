@@ -5,8 +5,10 @@
 // the search is a scan (see scan.h): open buffers are searched as they are in memory, and
 // the others are read straight from disk without opening them, a slice at a time, so it
 // shows its progress and escape stops it, keeping the lines found so far.
-// the list is kept until escape in the list clears it, a new search replaces it or a
-// folder replaces every buffer.
+// ctrl+r in the list replaces every match on the lines it shows, in their buffers, leaving
+// them unsaved.
+// the list is kept until escape in the list or a replace clears it, a new search replaces
+// it or a folder replaces every buffer.
 #include "pattern.h"
 #include "strbuf.h"
 #include "types.h"

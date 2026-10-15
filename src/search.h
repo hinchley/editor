@@ -1,7 +1,8 @@
 #pragma once
 
 // the search commands: incremental find, stepping through matches, finding the word under
-// the cursor, search and replace, spell check, and the pattern prompt of project search.
+// the cursor, search and replace, spell check, and the prompts of project search and
+// replace.
 // the last search pattern is shared by every buffer, and each document chooses what it
 // highlights: matches of that pattern, unknown words, or nothing.
 #include "document.h"
@@ -50,11 +51,20 @@ typedef void (*SearchProjectDone)(const Pattern *pattern);
 void
 SearchProject(SearchProjectDone done);
 
+// receives the replacement text with its escapes replaced, or nullptr when the prompt was
+// cancelled.
+typedef void (*SearchReplacementDone)(const StrBuf *replacement);
+
+// asks what to replace pattern with, as replace does (up or down recalls the last
+// replacement), and hands the answer to done.
+void
+SearchReplacement(const Pattern *pattern, SearchReplacementDone done);
+
 // makes pattern the last search and highlights its matches in document.
 void
 SearchShow(Document *document, const Pattern *pattern);
 
-// true while a find, replace or project search prompt is open, which takes keys before
+// true while a find, replace or project search or replace prompt is open, which takes keys before
 // the prompt does.
 bool
 SearchActive(void);

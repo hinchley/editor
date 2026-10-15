@@ -73,16 +73,16 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `prompt` | Questions asked in the message bar: a line of text, or a choice of letters. |
 | `clipboard` | Copy and paste through `wl-copy` and `wl-paste`, with an in-process fallback. |
 | `render` | Draws a frame: one view or two side by side (gutter, syntax coloured text, selections, matches, whitespace symbols, ruler), a status bar under each, and the message bar. |
-| `pattern` | The literal search pattern shared by find, replace and the match commands: escapes, anchors, case folding, whole words, and finding a match in a line. |
+| `pattern` | The literal search pattern shared by find, replace and the match commands: escapes, anchors, case folding, whole words, finding a match in a line, and rebuilding a line with its matches replaced. |
 | `spell` | The word list compiled in from `data/words.txt`, and finding unknown words in a line. |
 | `match` | The match set a document highlights (a pattern's matches or unknown words, limited to the text spell check looks at): finding the matches on a line, the next or previous one in the buffer, and counting them. |
-| `search` | The search commands: Ctrl-F, Alt-N and Alt-P, Ctrl-W, Ctrl-R and Alt-S, and the pattern prompt of project search. |
+| `search` | The search commands: Ctrl-F, Alt-N and Alt-P, Ctrl-W, Ctrl-R and Alt-S, and the pattern and replacement prompts of project search and replace. |
 | `lang` | The languages by file name, extension or `#!` line: display name and comment markers. |
 | `query` | A compiled tree-sitter query with what the runtime leaves to its user: the text predicates (`#eq?`, `#match?`, `#lua-match?`, `#any-of?` and their `#not-` forms) and the injection settings of `#set!`. Knows nothing about particular languages. |
 | `highlight` | The grammar table and the only place that knows grammars: parsing a buffer (again incrementally after edits), injected languages, and the syntax group of every byte of the lines around the one asked for. Also tells spell check which text it looks at, lists the symbols of a buffer or of text read from a file, and finds the syntax node around a range. The trees stay private: other modules ask these questions as functions. |
 | `scan` | Going through a list of loaded entries a slice at a time between frames, handing each to a visitor with its document or its file's text, with progress and Esc. Project search and the symbol index are its clients. |
 | `preview` | Drawing the lines of an entry around one line beside a picker, from its buffer or its file, for project search matches and symbols. |
-| `project` | Project search (Alt-Shift-F, Alt-F): the scope, searching loaded files as a scan, and the hit list. |
+| `project` | Project search (Alt-Shift-F, Alt-F): the scope, searching loaded files as a scan, the hit list, and replacing on the lines it shows (Ctrl-R in the list). |
 | `jump` | Jump history (Alt-Left, Alt-Right): the places the cursor jumped from, by entry serial and position. |
 | `symbols` | The commands that go to symbols in the current buffer: the Alt-O picker (which starts on the symbol named by the word at the cursor, a definition before a prototype, or else the one the cursor is in), and Alt-] and Alt-[ to the next or previous definition. Also the index of every loaded file's symbols, and the commands that use it: go to definition (Alt-D), the signature (Alt-K) and the Alt-Shift-O picker. |
 
@@ -235,7 +235,7 @@ Incremental find saves the cursors, scroll position, marks kind and last pattern
 
 ### Replace
 
-Ctrl-R runs from the start of the selection to the end of the buffer, then from the top back to where it started. That stop position moves with each replacement through `BufferAdjust`, and every search continues after the last replacement, so replacing `a` with `aa` cannot loop. The run is one undo group, opened before the first replacement and closed when the run ends (answers come one prompt at a time, but the prompt takes every key, so nothing else can edit in between). Replacing all rebuilds each line once and replaces it with a single change, so 100,000 matches take about 0.1 seconds.
+Ctrl-R runs from the start of the selection to the end of the buffer, then from the top back to where it started. That stop position moves with each replacement through `BufferAdjust`, and every search continues after the last replacement, so replacing `a` with `aa` cannot loop. The run is one undo group, opened before the first replacement and closed when the run ends (answers come one prompt at a time, but the prompt takes every key, so nothing else can edit in between). Replacing all rebuilds each line once (`PatternReplaceLine`, which project replace shares) and replaces it with a single change, so 100,000 matches take about 0.1 seconds.
 
 ### Spell check
 
@@ -252,6 +252,12 @@ Alt-Shift-F takes its pattern through the search prompt (so Ctrl-T and recall wo
 The search never blocks the main loop: it is a scan (see Scans). Open entries are searched from their buffer, the others as `scan` reads them, and scanned line by line with `\r` before a line break left out, so line numbers match what opening the file gives. A case-sensitive search first checks the whole file with `memmem`. A matching line is recorded once, with its first match and up to 200 bytes of its text, and the search stops at `maxProjectHits` lines. Searching 100,000 small files from the page cache takes about half a second. Nothing is opened, so the open count stays the same.
 
 The hit list is a picker with a preview: `PickerShowPreview` gives the picker a function that draws beside the list when the window is at least 80 columns wide. Without a preview the picker shows each item's note, here the line's text. The preview (`preview`, shared with the symbol pickers) reads an unopened file again with `FileRead` (keeping the last one read) and draws the lines around the hit with their numbers, scrolled sideways when the match would be off screen, and every match highlighted. Opening a hit switches to its entry (opening it) and selects the match on the stored line, or the line's start when the text has changed. Hits keep their entry's serial, so closing a buffer or opening a folder never makes one lead to another file: the list leaves out hits whose serial no longer matches and counts them in its title. A folder opened with Ctrl-O still clears the list, only to free it.
+
+### Project replace
+
+Ctrl-R in the hit list replaces on the lines the list shows, so the filter decides which lines take part. The picker hands keys with modifiers to a handler the list gives it (`PickerHandleKeys`) before its filter prompt sees them, and tells which items the filter shows. The handler copies their ids, then `PickerSuspend` closes the list while keeping its items, filter and selection, and `search` asks for the replacement with the same prompt and recall as Ctrl-R. After "replace in N lines of M files? (y/n)", Esc at either question or `n` brings the list back as it was (`PickerResume`).
+
+Hits come grouped by entry, so the chosen ones are taken an entry at a time. Each entry is opened (one that has been closed or cannot be opened is counted and reported), and its lines are replaced from the last up, so a replacement holding a line break leaves the lines still to come where the hits say. Each line is matched again in the document's current text, so a line edited since the search takes only the matches it still has, or none. The line is rebuilt with `PatternReplaceLine`, which finds every match in the original text, so replacing `a` with `aa` ends, and each entry's changes are one undo group. Nothing is saved: the message points to Ctrl-U to review the changed buffers and Ctrl-Shift-S to save them. The hits no longer describe the text, so the list is cleared. 10,000 lines in 10 files take about 0.07 seconds.
 
 ## Buffers
 
@@ -281,7 +287,7 @@ Ctrl-PgUp and Ctrl-PgDn step through open entries in load order, wrapping. Ctrl-
 
 ### Pickers
 
-`picker` takes a list of items (text, an optional note, an id) and shows it over every row above the message bar, with a bar naming the list and counting matches. The filter is a text prompt with a change handler, so it edits like any prompt. Up, Down, PageUp, PageDown, Home and End are taken by the picker first, and Enter with no matches does nothing. Each item keeps a case folded copy of its text, so filtering 100,000 paths is a byte search per item. A filter matches anywhere in the item, `^` at its start ties it to the start and `$` at its end to the end, and both ignore case. Long items are shortened in the middle. The Alt-H list is built from the binding table, sorted by description, and Enter runs the picked command.
+`picker` takes a list of items (text, an optional note, an id) and shows it over every row above the message bar, with a bar naming the list and counting matches. The filter is a text prompt with a change handler, so it edits like any prompt. Up, Down, PageUp, PageDown, Home and End are taken by the picker first, and Enter with no matches does nothing. A list may also take keys with modifiers (the project list takes Ctrl-R), and may be suspended while a question is asked and resumed as it was. Each item keeps a case folded copy of its text, so filtering 100,000 paths is a byte search per item. A filter matches anywhere in the item, `^` at its start ties it to the start and `$` at its end to the end, and both ignore case. Long items are shortened in the middle. The Alt-H list is built from the binding table, sorted by description, and Enter runs the picked command.
 
 ### Jump history
 

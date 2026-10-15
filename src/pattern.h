@@ -58,6 +58,22 @@ PatternFind(
   PatternMatch *match
 );
 
+// replaces first, a match in a line of text, and every match after it that starts before
+// limit, all at once.
+// rebuilt is set to what replaces the text from first.start up to the returned end of the
+// last match, and the number of matches replaced is added to count.
+u64
+PatternReplaceLine(
+  const Pattern *pattern,
+  const char *text,
+  u64 length,
+  PatternMatch first,
+  u64 limit,
+  const StrBuf *replacement,
+  StrBuf *rebuilt,
+  u64 *count
+);
+
 // appends the source of a pattern that matches text literally, escaping backslashes and
 // the anchor characters where they would act as anchors.
 void
