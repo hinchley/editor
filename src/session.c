@@ -12,6 +12,7 @@
 #include "prompt.h"
 #include "save.h"
 #include "settings.h"
+#include "symbols.h"
 
 static Workspace *workspace;
 static StrBuf *message;
@@ -150,6 +151,7 @@ ReplaceAll(void)
 {
   u64 unreadable = pending.unreadable;
   ProjectClear();
+  SymbolsClear();
   WorkspaceFree(workspace);
   WorkspaceAddList(workspace, &pending);
   SwitchToFirst(false);

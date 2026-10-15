@@ -59,6 +59,23 @@ enum FileStatus {
   FileStatusError
 };
 
+// reads the whole file at path into text, as it is on disk, reusing text's memory, and
+// gives the stamp of the version read.
+// refuses what FileLoad refuses: anything that is not a regular file, a file larger than
+// maxFileSize and a binary file. a missing file gives FileStatusNew.
+// problems are appended to message, unless it is nullptr.
+// text and stamp are only meaningful when the status is FileStatusOk.
+enum FileStatus
+FileRead(const char *path, StrBuf *text, FileStamp *stamp, StrBuf *message);
+
+// the stamp of the file at path now; one that does not exist is not marked as existing.
+FileStamp
+FileStampOf(const char *path);
+
+// true when two stamps are the same version of a file, or both of no file.
+bool
+FileStampEqual(FileStamp a, FileStamp b);
+
 // reads the file at file->path into buffer and sets its line ending and stamp.
 // mixed line endings are normalised to the more common one.
 // anything worth telling the user, such as an error or the normalisation, is appended to

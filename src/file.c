@@ -51,8 +51,8 @@ StampOf(const struct stat *status)
   };
 }
 
-static bool
-StampEqual(FileStamp a, FileStamp b)
+bool
+FileStampEqual(FileStamp a, FileStamp b)
 {
   if (a.exists != b.exists) return false;
   if (!a.exists) return true;
@@ -65,14 +65,13 @@ StampEqual(FileStamp a, FileStamp b)
 static bool
 Changed(const File *file, FileStamp current)
 {
-  return current.exists && !StampEqual(file->stamp, current);
+  return current.exists && !FileStampEqual(file->stamp, current);
 }
 
 bool
 FileChangedOnDisk(const File *file)
 {
-  struct stat status;
-  return stat(file->path.data, &status) == 0 && Changed(file, StampOf(&status));
+  return Changed(file, FileStampOf(file->path.data));
 }
 
 static void
@@ -135,60 +134,107 @@ NormaliseEndings(char *data, u64 length, enum LineEnding *ending, bool *mixed)
   return kept;
 }
 
+FileStamp
+FileStampOf(const char *path)
+{
+  struct stat status;
+  return stat(path, &status) == 0 ? StampOf(&status) : (FileStamp){};
+}
+
+static void
+AppendPathError(StrBuf *message, const char *path, const char *what, i32 error)
+{
+  if (message) StrBufAppendFormat(message, "%s: %s: %s", path, what, strerror(error));
+}
+
 static enum FileStatus
-LoadOpened(File *file, Buffer *buffer, i32 descriptor, StrBuf *message)
+ReadOpened(const char *path, i32 descriptor, StrBuf *text, FileStamp *stamp, StrBuf *message)
 {
   struct stat status;
 
   if (fstat(descriptor, &status) != 0) {
-    AppendError(message, file, "cannot read file details", errno);
-    return FileStatusError;
-  }
-
-  if (S_ISDIR(status.st_mode)) {
-    StrBufAppendFormat(message, "%s: is a folder", file->path.data);
+    AppendPathError(message, path, "cannot read file details", errno);
     return FileStatusError;
   }
 
   if (!S_ISREG(status.st_mode)) {
-    StrBufAppendFormat(message, "%s: not a regular file", file->path.data);
+    const char *what = S_ISDIR(status.st_mode) ? "is a folder" : "not a regular file";
+    if (message) StrBufAppendFormat(message, "%s: %s", path, what);
     return FileStatusError;
   }
 
   u64 size = (u64)status.st_size;
 
   if (size > maxFileSize) {
-    StrBufAppendFormat(
-      message,
-      "%s: larger than %lu MB, not opened",
-      file->path.data,
-      maxFileSize / (1024 * 1024)
-    );
+    u64 megabytes = maxFileSize / (1024 * 1024);
+    if (message) StrBufAppendFormat(message, "%s: larger than %lu MB, not opened", path, megabytes);
     return FileStatusTooLarge;
   }
 
-  char *data = MemoryAllocate(size);
-  i64 count = ReadAll(descriptor, data, size);
+  StrBufClear(text);
+  StrBufReserve(text, size);
+  i64 count = ReadAll(descriptor, text->data, size);
 
   if (count < 0) {
-    AppendError(message, file, "cannot read", errno);
-    free(data);
+    AppendPathError(message, path, "cannot read", errno);
     return FileStatusError;
   }
 
-  u64 length = (u64)count;
-  u64 probe = length < binaryProbeSize ? length : binaryProbeSize;
+  text->length = (u64)count;
+  text->data[text->length] = '\0';
+  u64 probe = text->length < binaryProbeSize ? text->length : binaryProbeSize;
 
-  if (probe && memchr(data, '\0', probe)) {
-    StrBufAppendFormat(message, "%s: binary file, not opened", file->path.data);
-    free(data);
+  if (probe && memchr(text->data, '\0', probe)) {
+    if (message) StrBufAppendFormat(message, "%s: binary file, not opened", path);
     return FileStatusBinary;
   }
 
+  *stamp = StampOf(&status);
+  return FileStatusOk;
+}
+
+enum FileStatus
+FileRead(const char *path, StrBuf *text, FileStamp *stamp, StrBuf *message)
+{
+  // without O_NONBLOCK, opening a named pipe would wait for a writer.
+  // it changes nothing for regular files.
+  i32 descriptor = open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+  if (descriptor < 0 && errno == ENOENT) return FileStatusNew;
+
+  if (descriptor < 0) {
+    AppendPathError(message, path, "cannot open", errno);
+    return FileStatusError;
+  }
+
+  enum FileStatus result = ReadOpened(path, descriptor, text, stamp, message);
+  close(descriptor);
+  return result;
+}
+
+enum FileStatus
+FileLoad(File *file, Buffer *buffer, StrBuf *message)
+{
+  StrBuf text = {};
+  FileStamp stamp = {};
+  enum FileStatus result = FileRead(file->path.data, &text, &stamp, message);
+
+  if (result == FileStatusNew) {
+    // a new file: it is created by the first save.
+    BufferSetText(buffer, "", 0);
+    file->lineEnding = LineEndingLf;
+    file->stamp = (FileStamp){};
+    file->readOnly = false;
+  }
+
+  if (result != FileStatusOk) {
+    StrBufFree(&text);
+    return result;
+  }
+
   bool mixed;
-  length = NormaliseEndings(data, length, &file->lineEnding, &mixed);
-  BufferSetText(buffer, data, length);
-  free(data);
+  u64 length = NormaliseEndings(text.data, text.length, &file->lineEnding, &mixed);
+  BufferSetText(buffer, text.data, length);
+  StrBufFree(&text);
 
   if (mixed) {
     StrBufAppendFormat(
@@ -199,35 +245,9 @@ LoadOpened(File *file, Buffer *buffer, i32 descriptor, StrBuf *message)
     );
   }
 
-  file->stamp = StampOf(&status);
+  file->stamp = stamp;
   file->readOnly = access(file->path.data, W_OK) != 0;
   return FileStatusOk;
-}
-
-enum FileStatus
-FileLoad(File *file, Buffer *buffer, StrBuf *message)
-{
-  // without O_NONBLOCK, opening a named pipe would wait for a writer.
-  // it changes nothing for regular files.
-  i32 descriptor = open(file->path.data, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
-
-  if (descriptor < 0 && errno == ENOENT) {
-    // a new file: it is created by the first save.
-    BufferSetText(buffer, "", 0);
-    file->lineEnding = LineEndingLf;
-    file->stamp = (FileStamp){};
-    file->readOnly = false;
-    return FileStatusNew;
-  }
-
-  if (descriptor < 0) {
-    AppendError(message, file, "cannot open", errno);
-    return FileStatusError;
-  }
-
-  enum FileStatus result = LoadOpened(file, buffer, descriptor, message);
-  close(descriptor);
-  return result;
 }
 
 static void
@@ -513,7 +533,7 @@ FileRename(File *file, const char *path, StrBuf *message)
 {
   struct stat status;
   bool current = stat(file->path.data, &status) == 0 &&
-    StampEqual(file->stamp, StampOf(&status));
+    FileStampEqual(file->stamp, StampOf(&status));
   i32 error = rename(file->path.data, path) == 0 ? 0 : errno;
   const char *step = "cannot rename";
   bool copied = false;

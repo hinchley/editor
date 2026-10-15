@@ -145,6 +145,9 @@ const Binding keymapBindings[] = {
   {{'o', alt}, CommandFileSymbols, "pick a symbol of this file from a filterable list"},
   {{']', alt}, CommandNextSymbol, "go to the next definition"},
   {{'[', alt}, CommandPreviousSymbol, "go to the previous definition"},
+  {{'d', alt}, CommandGoToDefinition, "go to the definition of the name at the cursor"},
+  {{'k', alt}, CommandShowSignature, "show the signature of the name or call at the cursor"},
+  {{'o', alt | shift}, CommandProjectSymbols, "pick a symbol of the loaded files"},
 
   // display and settings.
   {{'t', alt}, CommandToggleExpandTab, "toggle expand tab to spaces"},

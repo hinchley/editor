@@ -13,10 +13,12 @@
 #include "move.h"
 #include "multicursor.h"
 #include "picker.h"
+#include "preview.h"
 #include "project.h"
 #include "prompt.h"
 #include "render.h"
 #include "save.h"
+#include "scan.h"
 #include "screen.h"
 #include "search.h"
 #include "session.h"
@@ -562,6 +564,9 @@ NavigationCommand(enum Command command)
   case CommandFileSymbols: SymbolsPickFile(); break;
   case CommandNextSymbol: SymbolsStep(false); break;
   case CommandPreviousSymbol: SymbolsStep(true); break;
+  case CommandGoToDefinition: SymbolsGoToDefinition(); break;
+  case CommandShowSignature: SymbolsShowSignature(windowSize.width); break;
+  case CommandProjectSymbols: SymbolsPickProject(); break;
   default: return false;
   }
 
@@ -705,9 +710,10 @@ RunCommand(const Binding *binding)
 static void
 HandleKey(Key key)
 {
-  // a running project search only listens for escape, and keeps its progress showing.
-  if (ProjectBusy()) {
-    ProjectKey(key);
+  // a running scan (project search, indexing symbols) only listens for escape, and keeps
+  // its progress showing.
+  if (ScanBusy()) {
+    ScanKey(key);
     return;
   }
 
@@ -744,7 +750,7 @@ HandleKey(Key key)
 static void
 HandlePaste(const char *text, u64 length)
 {
-  if (ProjectBusy()) return;
+  if (ScanBusy()) return;
 
   if (PromptActive()) {
     PromptPaste(text, length);
@@ -772,13 +778,13 @@ Resize(void)
   ScreenResize(windowSize.width, windowSize.height);
 }
 
-// waits for input, or while a project search runs only checks for it.
+// waits for input, or while a scan runs only checks for it.
 static void
 WaitForInput(void)
 {
   bool pending = InputPending();
   i32 timeout = pending ? escapeTimeout : -1;
-  if (ProjectBusy() && !pending) timeout = 0;
+  if (ScanBusy() && !pending) timeout = 0;
 
   switch (TermWait(timeout)) {
   case TermWaitInput:
@@ -879,6 +885,8 @@ AppRun(i32 argumentCount, char **arguments)
   // files are loaded before the terminal changes, so argument errors leave it untouched.
   WorkspaceInit(&workspace, &displayOptions);
   SearchInit(&workspace, &message);
+  ScanInit(&workspace, &message);
+  PreviewInit(&workspace);
   ProjectInit(&workspace, &message);
   JumpInit(&workspace, &message);
   SymbolsInit(&workspace, &message);
@@ -892,8 +900,8 @@ AppRun(i32 argumentCount, char **arguments)
     InputEvent event;
     while (running && InputNext(&event)) HandleEvent(&event);
 
-    // a project search runs a slice at a time, so its progress shows and escape stops it.
-    if (running && ProjectBusy()) ProjectContinue();
+    // a scan runs a slice at a time, so its progress shows and escape stops it.
+    if (running && ScanBusy()) ScanContinue();
     if (running) Draw();
     if (running) WaitForInput();
   }
