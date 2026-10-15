@@ -79,13 +79,15 @@ EditMoveLines(const EditContext *edit, bool up);
 
 // how sort orders lines.
 // the orders compare bytes, or code points after simple case folding with byte order
-// breaking ties; the unique orders then keep one of each run of equal lines.
+// breaking ties; the unique orders then keep one of each run of equal lines, and the
+// descending orders reverse the ascending ones.
 enum SortOrder {
-  SortOrderBytes,
-  SortOrderIgnoreCase,
+  SortOrderAscending,
+  SortOrderAscendingIgnoreCase,
+  SortOrderDescending,
+  SortOrderDescendingIgnoreCase,
   SortOrderUnique,
-  SortOrderUniqueIgnoreCase,
-  SortOrderReverse
+  SortOrderUniqueIgnoreCase
 };
 
 // what a sort did: the number of lines sorted and how many duplicates it removed.

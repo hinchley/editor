@@ -959,7 +959,8 @@ EditSortLines(const EditContext *edit, enum SortOrder order)
   LineBlock block = SortBlock(buffer, cursor);
   u64 count = block.last - block.first + 1;
 
-  bool ignoreCase = order == SortOrderIgnoreCase || order == SortOrderUniqueIgnoreCase;
+  bool ignoreCase = order == SortOrderAscendingIgnoreCase ||
+    order == SortOrderDescendingIgnoreCase || order == SortOrderUniqueIgnoreCase;
   Sorting sorting = {buffer->lines, ignoreCase};
   u64 *items = MemoryAllocate(count * sizeof(u64));
   u64 *scratch = MemoryAllocate(count * sizeof(u64));
@@ -970,7 +971,7 @@ EditSortLines(const EditContext *edit, enum SortOrder order)
   bool unique = order == SortOrderUnique || order == SortOrderUniqueIgnoreCase;
   if (unique) kept = KeepUnique(&sorting, items, count);
 
-  if (order == SortOrderReverse) {
+  if (order == SortOrderDescending || order == SortOrderDescendingIgnoreCase) {
     for (u64 index = 0; index < count / 2; index++) {
       u64 swap = items[index];
       items[index] = items[count - 1 - index];

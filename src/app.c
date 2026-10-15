@@ -306,11 +306,12 @@ SortAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]
   enum SortOrder order;
 
   switch (*answer) {
-  case 'i': order = SortOrderIgnoreCase; break;
+  case 'A': order = SortOrderAscendingIgnoreCase; break;
+  case 'd': order = SortOrderDescending; break;
+  case 'D': order = SortOrderDescendingIgnoreCase; break;
   case 'u': order = SortOrderUnique; break;
   case 'U': order = SortOrderUniqueIgnoreCase; break;
-  case 'r': order = SortOrderReverse; break;
-  default: order = SortOrderBytes; break;
+  default: order = SortOrderAscending; break;
   }
 
   EditContext edit = Editing();
@@ -327,9 +328,9 @@ SortAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]
 static void
 AskSortOrder(void)
 {
-  const char *question = "sort: (s)orted (i)gnore case (u)nique (U)nique ignoring case "
-    "(r)everse";
-  PromptChoose(question, "siuUr", SortAnswered, nullptr);
+  // a capital letter ignores case.
+  const char *question = "sort: (a)scending (d)escending (u)nique; capital ignores case";
+  PromptChoose(question, "aAdDuU", SortAnswered, nullptr);
 }
 
 static void

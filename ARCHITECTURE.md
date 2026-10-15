@@ -186,7 +186,7 @@ The history keeps a save point: the number of applied groups when the text match
 
 ### Prompts
 
-The message bar doubles as the prompt. `PromptAsk` edits one line of text (Left, Right, Home, End, Backspace, Ctrl-Backspace, Delete, paste up to the first line break), and `PromptChoose` waits for one of a few letters (a capital letter counts as its lowercase choice, unless it is a choice of its own, as `U` is for sort). Escape cancels either. The answer goes to a callback, and the prompt is closed before the callback runs, so a callback can open the next prompt. `PromptHandle` adds two optional handlers to a text prompt: one told about every change to the text (the picker filters with it), and one asked to complete the text on Tab (Ctrl-O uses it).
+The message bar doubles as the prompt. `PromptAsk` edits one line of text (Left, Right, Home, End, Backspace, Ctrl-Backspace, Delete, paste up to the first line break), and `PromptChoose` waits for one of a few letters (a capital letter counts as its lowercase choice, unless it is a choice of its own, as the capitals are for sort). Escape cancels either. The answer goes to a callback, and the prompt is closed before the callback runs, so a callback can open the next prompt. `PromptHandle` adds two optional handlers to a text prompt: one told about every change to the text (the picker filters with it), and one asked to complete the text on Tab (Ctrl-O uses it).
 
 ### Save flow
 
