@@ -7,6 +7,7 @@
 #include "memory.h"
 #include "move.h"
 #include "settings.h"
+#include "utf8.h"
 
 // the change one line gets from a line command: removed bytes at an offset replaced by
 // text.
@@ -809,6 +810,239 @@ EditMoveLines(const EditContext *edit, bool up)
   ShiftCursor(buffer, cursor, &original, up ? -1 : 1);
   End(edit);
   StrBufFree(&text);
+  return true;
+}
+
+// how a sort compares two lines.
+typedef struct Sorting {
+  const StrBuf *lines;
+  bool ignoreCase;
+} Sorting;
+
+static i32
+CompareBytes(const StrBuf *a, const StrBuf *b)
+{
+  u64 length = a->length < b->length ? a->length : b->length;
+  i32 order = length ? memcmp(a->data, b->data, length) : 0;
+  if (order) return order;
+  return (a->length > b->length) - (a->length < b->length);
+}
+
+// compares the case folded code points, with ascii taken a byte at a time.
+static i32
+CompareFolded(const StrBuf *a, const StrBuf *b)
+{
+  // identical bytes need no folding, so folding starts after the last ascii byte of the
+  // common prefix, which always ends a code point.
+  u64 limit = a->length < b->length ? a->length : b->length;
+  u64 boundary = 0;
+
+  for (u64 same = 0; same < limit && a->data[same] == b->data[same]; same++) {
+    if ((u8)a->data[same] < 0x80) boundary = same + 1;
+  }
+
+  u64 first = boundary;
+  u64 second = boundary;
+
+  while (first < a->length && second < b->length) {
+    u32 x = (u8)a->data[first];
+    u32 y = (u8)b->data[second];
+
+    if (x < 0x80 && y < 0x80) {
+      first++;
+      second++;
+      if (x >= 'A' && x <= 'Z') x += 32;
+      if (y >= 'A' && y <= 'Z') y += 32;
+    } else {
+      first += Utf8Decode(a->data + first, a->length - first, &x);
+      second += Utf8Decode(b->data + second, b->length - second, &y);
+      x = Utf8Fold(x);
+      y = Utf8Fold(y);
+    }
+
+    if (x != y) return x < y ? -1 : 1;
+  }
+
+  return (first < a->length) - (second < b->length);
+}
+
+static i32
+CompareLines(const Sorting *sorting, u64 a, u64 b)
+{
+  const StrBuf *first = &sorting->lines[a];
+  const StrBuf *second = &sorting->lines[b];
+  i32 order = sorting->ignoreCase ? CompareFolded(first, second) : 0;
+  return order ? order : CompareBytes(first, second);
+}
+
+// a stable merge sort of line indexes, with insertion sort for short runs.
+static void
+MergeSort(const Sorting *sorting, u64 *items, u64 *scratch, u64 count)
+{
+  if (count <= 16) {
+    for (u64 index = 1; index < count; index++) {
+      u64 item = items[index];
+      u64 at = index;
+
+      while (at > 0 && CompareLines(sorting, items[at - 1], item) > 0) {
+        items[at] = items[at - 1];
+        at--;
+      }
+
+      items[at] = item;
+    }
+
+    return;
+  }
+
+  u64 half = count / 2;
+  MergeSort(sorting, items, scratch, half);
+  MergeSort(sorting, items + half, scratch, count - half);
+  if (CompareLines(sorting, items[half - 1], items[half]) <= 0) return;
+
+  u64 left = 0;
+  u64 right = half;
+  u64 out = 0;
+
+  while (left < half && right < count) {
+    bool takeRight = CompareLines(sorting, items[right], items[left]) < 0;
+    scratch[out++] = takeRight ? items[right++] : items[left++];
+  }
+
+  while (left < half) scratch[out++] = items[left++];
+  memcpy(items, scratch, out * sizeof(u64));
+}
+
+// the lines a sort works on: those the selection touches, or every line but the empty
+// one after a final line break.
+static LineBlock
+SortBlock(const Buffer *buffer, const Cursor *cursor)
+{
+  if (CursorHasSelection(cursor)) return TouchedLines(cursor);
+
+  u64 last = BufferLineCount(buffer) - 1;
+  if (last > 0 && BufferLine(buffer, last)->length == 0) last--;
+  return (LineBlock){0, last};
+}
+
+// drops each line equal to the one kept before it and returns the new count.
+// the case folded orders compare without the byte order tie break, so lines differing
+// only in case are equal.
+static u64
+KeepUnique(const Sorting *sorting, u64 *items, u64 count)
+{
+  u64 kept = 0;
+
+  for (u64 index = 0; index < count; index++) {
+    const StrBuf *line = &sorting->lines[items[index]];
+    const StrBuf *previous = kept ? &sorting->lines[items[kept - 1]] : nullptr;
+    bool equal = false;
+
+    if (previous) {
+      i32 order = sorting->ignoreCase ? CompareFolded(previous, line) : 0;
+      equal = !order && (sorting->ignoreCase || CompareBytes(previous, line) == 0);
+    }
+
+    if (!equal) items[kept++] = items[index];
+  }
+
+  return kept;
+}
+
+SortResult
+EditSortLines(const EditContext *edit, enum SortOrder order)
+{
+  View *view = edit->view;
+  Buffer *buffer = view->buffer;
+  CursorSetCollapse(&view->cursors);
+  Cursor *cursor = CursorSetPrimary(&view->cursors);
+  LineBlock block = SortBlock(buffer, cursor);
+  u64 count = block.last - block.first + 1;
+
+  bool ignoreCase = order == SortOrderIgnoreCase || order == SortOrderUniqueIgnoreCase;
+  Sorting sorting = {buffer->lines, ignoreCase};
+  u64 *items = MemoryAllocate(count * sizeof(u64));
+  u64 *scratch = MemoryAllocate(count * sizeof(u64));
+  for (u64 index = 0; index < count; index++) items[index] = block.first + index;
+  MergeSort(&sorting, items, scratch, count);
+
+  u64 kept = count;
+  bool unique = order == SortOrderUnique || order == SortOrderUniqueIgnoreCase;
+  if (unique) kept = KeepUnique(&sorting, items, count);
+
+  if (order == SortOrderReverse) {
+    for (u64 index = 0; index < count / 2; index++) {
+      u64 swap = items[index];
+      items[index] = items[count - 1 - index];
+      items[count - 1 - index] = swap;
+    }
+  }
+
+  StrBuf text = {};
+  bool changed = kept != count;
+
+  for (u64 index = 0; index < kept; index++) {
+    const StrBuf *line = BufferLine(buffer, items[index]);
+    if (index) StrBufAppendByte(&text, '\n');
+    StrBufAppend(&text, line->data, line->length);
+    changed = changed || items[index] != block.first + index;
+  }
+
+  Position start = {block.first, 0};
+  Position end = {block.last, BufferLine(buffer, block.last)->length};
+  Begin(edit, UndoKindOther);
+
+  // lines already in order are left alone, which keeps the history clean.
+  if (changed) {
+    const char *data = text.data ? text.data : "";
+    end = BufferReplace(buffer, (Range){start, end}, data, text.length);
+  }
+
+  cursor->anchor = start;
+  cursor->head = end;
+  End(edit);
+
+  StrBufFree(&text);
+  free(scratch);
+  free(items);
+  return (SortResult){kept, count - kept};
+}
+
+// joins a line with the next one and returns where they meet.
+static Position
+JoinAt(Buffer *buffer, u64 line)
+{
+  const StrBuf *text = BufferLine(buffer, line);
+  const StrBuf *next = BufferLine(buffer, line + 1);
+  u64 indent = IndentLength(next);
+
+  bool nextEmpty = indent == next->length;
+  bool closer = !nextEmpty && strchr(")]}", next->data[indent]);
+  bool endsBlank = !text->length || IsBlank(text->data[text->length - 1]);
+  u64 space = !nextEmpty && !closer && !endsBlank;
+
+  Position join = {line, text->length};
+  BufferReplace(buffer, (Range){join, {line + 1, indent}}, " ", space);
+  return join;
+}
+
+bool
+EditJoinLines(const EditContext *edit)
+{
+  View *view = edit->view;
+  Buffer *buffer = view->buffer;
+  CursorSetCollapse(&view->cursors);
+  Cursor *cursor = CursorSetPrimary(&view->cursors);
+  LineBlock block = TouchedLines(cursor);
+  if (block.last == block.first) block.last++;
+  if (block.last >= BufferLineCount(buffer)) return false;
+
+  // each join replaces only the line break and blanks, so other views keep their text.
+  Begin(edit, UndoKindOther);
+  Position join = {};
+  for (u64 line = block.first; line < block.last; line++) join = JoinAt(buffer, block.first);
+  CursorPlace(cursor, join);
+  End(edit);
   return true;
 }
 

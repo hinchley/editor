@@ -206,11 +206,16 @@ ChoiceKey(Key key)
     return;
   }
 
-  bool letter = KeyIsText(key) && key.code < 0x80;
-  char lower = (char)(letter ? key.code | 0x20 : 0);
-  if (!letter || !strchr(choices.data, lower)) return;
+  if (!KeyIsText(key) || key.code >= 0x80) return;
 
-  Finish(&lower, 1);
+  // a capital letter that is a choice of its own is kept, otherwise it means the
+  // lowercase one.
+  char typed = (char)key.code;
+  char lower = (char)(key.code | 0x20);
+  char chosen = strchr(choices.data, typed) ? typed : lower;
+  if (!strchr(choices.data, chosen)) return;
+
+  Finish(&chosen, 1);
 }
 
 void

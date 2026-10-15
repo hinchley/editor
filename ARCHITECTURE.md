@@ -37,7 +37,7 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | Module | Responsibility |
 |---|---|
 | `main` | Calls `AppRun`. Nothing else. |
-| `app` | Startup, the main loop, key dispatch, the Alt-H list, and the commands on the current document that ask questions (reload, go to line, ruler column). |
+| `app` | Startup, the main loop, key dispatch, the Alt-H list, the commands on the current document that ask questions (reload, go to line, ruler column, sort order), and the ones that report on it (statistics, copy path). Statistics counts on demand: words as runs of `Utf8IsWord` code points, characters as grapheme clusters (`Utf8NextBoundary`), and bytes with line breaks as the file's line ending; 15 MB counts in about 0.5 s. |
 | `types.h` | Fixed width numeric aliases (`u8`..`u64`, `i8`..`i64`, `f32`, `f64`). The only numeric types used. |
 | `settings.h` | Built-in settings as named `constexpr` values. Values with a `Default` suffix only set the initial state of a runtime toggle. |
 | `fatal` | `Fatal` restores the terminal (through a registered cleanup hook), prints a message and exits. |
@@ -68,7 +68,7 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `move` | Cursor movement and selection commands, written once against visual rows. |
 | `bracket` | Finding the bracket that matches another, and the closest pair around a range. |
 | `multicursor` | Adding cursors: at the next occurrence of the selection (Ctrl-E) and on the row above or below (Ctrl-Alt-Up/Down). |
-| `edit` | Editing commands: typing, line breaks, indentation, comments, deletion, line commands, copy, cut and paste. Each edits at every cursor as one undo step. |
+| `edit` | Editing commands: typing, line breaks, indentation, comments, deletion, line commands (duplicate, delete, move, join, sort, trim), copy, cut and paste. Each edits at every cursor as one undo step. |
 | `prompt` | Questions asked in the message bar: a line of text, or a choice of letters. |
 | `clipboard` | Copy and paste through `wl-copy` and `wl-paste`, with an in-process fallback. |
 | `render` | Draws a frame: one view or two side by side (gutter, syntax coloured text, selections, matches, whitespace symbols, ruler), a status bar under each, and the message bar. |
@@ -162,7 +162,7 @@ The status bar shows the name (shortened in the middle to fit) with `[+]` and `[
 
 A view listens to its buffer. After every `BufferReplace` it moves each cursor with `BufferAdjust`: a position before the change stays, one inside the replaced text moves to its start, and one at or after its end moves with the text that follows. The view's first visible line shifts the same way. So a command edits at one cursor and the others stay on their text without the command knowing about them. The other view of a split follows the same way.
 
-An edit command loops over the cursors, replaces each one's range, and puts that cursor after its new text. When the loop ends, cursors that now overlap are merged and every desired column is reset. Commands that rewrite lines replace only the bytes that change, so every view of the buffer, not just the one editing, keeps its cursors on the same text: indent and dedent make one replace per changed line, Ctrl-D inserts the copy above the lines, and moving lines takes the neighbouring line out and puts it back on the other side (so the moved lines are never replaced; cursors on the neighbour in another view move to the end of the moved lines). Indent and dedent then put the editing view's cursors back themselves, so a cursor at the start of a line stays before the new indentation. Ctrl-D, Ctrl-K and Ctrl-Shift-Up/Down first collapse to the primary cursor, and so do the commands that place one cursor (Ctrl-L, Ctrl-M, Alt-M and the search commands).
+An edit command loops over the cursors, replaces each one's range, and puts that cursor after its new text. When the loop ends, cursors that now overlap are merged and every desired column is reset. Commands that rewrite lines replace only the bytes that change, so every view of the buffer, not just the one editing, keeps its cursors on the same text: indent and dedent make one replace per changed line, Ctrl-D inserts the copy above the lines, moving lines takes the neighbouring line out and puts it back on the other side (so the moved lines are never replaced; cursors on the neighbour in another view move to the end of the moved lines), each join replaces only a line break and the blanks after it, and trimming replaces only each line's trailing blanks. Sorting is the exception: it replaces the whole block of lines at once, so another view's cursors inside it move to its start. A sort orders line indexes with a stable merge sort (insertion sort for short runs) and builds the new text once; the case folded orders skip the common prefix of two lines up to its last ASCII byte (which always ends a code point) before folding, which roughly halves their time. 1M lines sort in about 0.5 s by bytes and 0.75 s ignoring case. Indent and dedent then put the editing view's cursors back themselves, so a cursor at the start of a line stays before the new indentation. Ctrl-D, Ctrl-K, Ctrl-Shift-Up/Down, Alt-J and Alt-Q first collapse to the primary cursor, and so do the commands that place one cursor (Ctrl-L, Ctrl-M, Alt-M and the search commands).
 
 ### Multiple cursors
 
@@ -186,7 +186,7 @@ The history keeps a save point: the number of applied groups when the text match
 
 ### Prompts
 
-The message bar doubles as the prompt. `PromptAsk` edits one line of text (Left, Right, Home, End, Backspace, Ctrl-Backspace, Delete, paste up to the first line break), and `PromptChoose` waits for one of a few letters. Escape cancels either. The answer goes to a callback, and the prompt is closed before the callback runs, so a callback can open the next prompt. `PromptHandle` adds two optional handlers to a text prompt: one told about every change to the text (the picker filters with it), and one asked to complete the text on Tab (Ctrl-O uses it).
+The message bar doubles as the prompt. `PromptAsk` edits one line of text (Left, Right, Home, End, Backspace, Ctrl-Backspace, Delete, paste up to the first line break), and `PromptChoose` waits for one of a few letters (a capital letter counts as its lowercase choice, unless it is a choice of its own, as `U` is for sort). Escape cancels either. The answer goes to a callback, and the prompt is closed before the callback runs, so a callback can open the next prompt. `PromptHandle` adds two optional handlers to a text prompt: one told about every change to the text (the picker filters with it), and one asked to complete the text on Tab (Ctrl-O uses it).
 
 ### Save flow
 

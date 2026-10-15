@@ -298,6 +298,172 @@ ToggleComment(void)
   EditToggleComment(&edit, lang->commentStart, lang->commentEnd);
 }
 
+static void
+SortAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]] u64 length)
+{
+  if (!answer) return;
+
+  enum SortOrder order;
+
+  switch (*answer) {
+  case 'i': order = SortOrderIgnoreCase; break;
+  case 'u': order = SortOrderUnique; break;
+  case 'U': order = SortOrderUniqueIgnoreCase; break;
+  case 'r': order = SortOrderReverse; break;
+  default: order = SortOrderBytes; break;
+  }
+
+  EditContext edit = Editing();
+  SortResult result = EditSortLines(&edit, order);
+  const char *plural = result.lines == 1 ? "" : "s";
+  StrBufAppendFormat(&message, "sorted %lu line%s", result.lines, plural);
+
+  if (result.removed) {
+    plural = result.removed == 1 ? "" : "s";
+    StrBufAppendFormat(&message, ", removed %lu duplicate%s", result.removed, plural);
+  }
+}
+
+static void
+AskSortOrder(void)
+{
+  const char *question = "sort: (s)orted (i)gnore case (u)nique (U)nique ignoring case "
+    "(r)everse";
+  PromptChoose(question, "siuUr", SortAnswered, nullptr);
+}
+
+static void
+TrimWhitespace(void)
+{
+  EditContext edit = Editing();
+  u64 count = EditTrimTrailingWhitespace(&edit);
+
+  if (count) StrBufAppendFormat(&message, "trimmed %lu line%s", count, count == 1 ? "" : "s");
+  else StrBufAppendString(&message, "no trailing whitespace");
+}
+
+static void
+CopyPath(void)
+{
+  const StrBuf *path = &Current()->file.path;
+
+  if (!path->length) {
+    StrBufAppendString(&message, "the buffer has no file name");
+    return;
+  }
+
+  bool system = ClipboardSet(path->data, path->length, false);
+  StrBufAppendString(&message, "copied ");
+  StrBufAppend(&message, path->data, path->length);
+  if (!system) StrBufAppendString(&message, " (the system clipboard is not available)");
+}
+
+// what statistics counts.
+typedef struct Counts {
+  u64 lines;
+  u64 words;
+  u64 characters;
+  u64 bytes;
+} Counts;
+
+// adds the words, characters and bytes of text within one line.
+// words are runs of word characters, as word movement sees them, and characters are
+// grapheme clusters.
+static void
+CountText(const char *text, u64 length, Counts *counts)
+{
+  bool inWord = false;
+
+  for (u64 at = 0; at < length;) {
+    u32 codepoint;
+    at += Utf8Decode(text + at, length - at, &codepoint);
+    bool word = Utf8IsWord(codepoint);
+    counts->words += word && !inWord;
+    inWord = word;
+  }
+
+  for (u64 at = 0; at < length; at = Utf8NextBoundary(text, length, at)) {
+    counts->characters++;
+  }
+
+  counts->bytes += length;
+}
+
+// adds the text of range, where a line break is one character and as many bytes as the
+// file's line ending.
+static void
+CountRange(const Buffer *buffer, Range range, u64 lineBreak, Counts *counts)
+{
+  for (u64 line = range.start.line; line <= range.end.line; line++) {
+    const StrBuf *text = BufferLine(buffer, line);
+    u64 start = line == range.start.line ? range.start.byte : 0;
+    u64 end = line == range.end.line ? range.end.byte : text->length;
+    CountText(text->data + start, end - start, counts);
+
+    if (line < range.end.line) {
+      counts->characters++;
+      counts->bytes += lineBreak;
+    }
+  }
+}
+
+static void
+AppendCounts(const Counts *part, const Counts *whole)
+{
+  const char *names[] = {"lines", "words", "characters", "bytes"};
+  u64 wholeCounts[] = {whole->lines, whole->words, whole->characters, whole->bytes};
+  u64 partCounts[] = {part->lines, part->words, part->characters, part->bytes};
+
+  for (u32 index = 0; index < 4; index++) {
+    if (index) StrBufAppendString(&message, ", ");
+    if (part != whole) StrBufAppendFormat(&message, "%lu of ", partCounts[index]);
+    StrBufAppendFormat(&message, "%lu %s", wholeCounts[index], names[index]);
+  }
+}
+
+// reports the counts of the whole buffer, and of the selections when there are any.
+static void
+ShowStatistics(void)
+{
+  Document *document = Current();
+  const Buffer *buffer = &document->buffer;
+  u64 lineBreak = document->file.lineEnding == LineEndingCrlf ? 2 : 1;
+
+  Counts whole = {.lines = BufferLineCount(buffer)};
+  CountRange(buffer, (Range){{}, BufferEnd(buffer)}, lineBreak, &whole);
+
+  CursorSet *set = &document->view->cursors;
+  CursorSetMerge(set);
+  Counts selected = {};
+  bool anySelection = false;
+
+  // the first line no selection has counted yet.
+  u64 uncounted = 0;
+
+  for (u32 index = 0; index < set->count; index++) {
+    const Cursor *cursor = &set->cursors[index];
+    if (!CursorHasSelection(cursor)) continue;
+
+    // a selection ending at the start of a line does not count that line, and a line
+    // shared by two selections counts once.
+    Range range = CursorRange(cursor);
+    u64 first = range.start.line > uncounted ? range.start.line : uncounted;
+    u64 last = range.end.line;
+    if (last > range.start.line && range.end.byte == 0) last--;
+
+    if (last >= first) {
+      selected.lines += last - first + 1;
+      uncounted = last + 1;
+    }
+
+    CountRange(buffer, range, lineBreak, &selected);
+    anySelection = true;
+  }
+
+  if (anySelection) StrBufAppendString(&message, "selection: ");
+  AppendCounts(anySelection ? &selected : &whole, &whole);
+}
+
 static bool
 MoveCommand(enum Command command)
 {
@@ -358,6 +524,9 @@ EditCommand(enum Command command)
   case CommandDuplicateLine: EditDuplicateLines(&edit); break;
   case CommandDeleteLine: EditDeleteLines(&edit); break;
   case CommandToggleComment: ToggleComment(); break;
+  case CommandSortLines: AskSortOrder(); break;
+  case CommandJoinLines: Report(EditJoinLines(&edit), "no line below to join"); break;
+  case CommandTrimWhitespace: TrimWhitespace(); break;
   default: return false;
   }
 
@@ -480,6 +649,8 @@ RunCommand(const Binding *binding)
   case CommandAddCursorBelow: Report(MultiCursorAddRow(view, false), "no line below"); break;
   case CommandReload: AskToReload(); break;
   case CommandToggleLineEndings: ToggleLineEndings(); break;
+  case CommandCopyPath: CopyPath(); break;
+  case CommandStatistics: ShowStatistics(); break;
   case CommandGoToLine: PromptAsk("go to line: ", "", GoToAnswered, nullptr); break;
   case CommandToggleExpandTab: Toggle(&expandTab, "expand tab"); break;
   case CommandToggleSoftWrap: Toggle(&displayOptions.softWrap, "soft wrap"); break;

@@ -43,7 +43,8 @@ PromptSetText(const char *text, u64 length);
 const StrBuf *
 PromptText(void);
 
-// opens a choice prompt showing question; choices holds the accepted lowercase letters.
+// opens a choice prompt showing question; choices holds the accepted letters.
+// a capital letter counts as its lowercase choice unless choices holds it too.
 void
 PromptChoose(const char *question, const char *choices, PromptDone done, void *context);
 

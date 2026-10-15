@@ -77,6 +77,38 @@ EditDeleteLines(const EditContext *edit);
 bool
 EditMoveLines(const EditContext *edit, bool up);
 
+// how sort orders lines.
+// the orders compare bytes, or code points after simple case folding with byte order
+// breaking ties; the unique orders then keep one of each run of equal lines.
+enum SortOrder {
+  SortOrderBytes,
+  SortOrderIgnoreCase,
+  SortOrderUnique,
+  SortOrderUniqueIgnoreCase,
+  SortOrderReverse
+};
+
+// what a sort did: the number of lines sorted and how many duplicates it removed.
+typedef struct SortResult {
+  u64 lines;
+  u64 removed;
+} SortResult;
+
+// sorts the lines the selection touches, or with no selection every line (except the
+// empty line after a final line break), and selects them.
+// the lines are replaced in one go, so cursors of another view inside them move to their
+// start.
+SortResult
+EditSortLines(const EditContext *edit, enum SortOrder order);
+
+// joins the selected lines, or the line with the next one, and returns false when there
+// is no next line.
+// each join replaces the line break and the next line's leading blanks with one space,
+// or with nothing when either side of the join is empty, the line ends in a blank, or the
+// next line starts with a closing bracket.
+bool
+EditJoinLines(const EditContext *edit);
+
 // copies each selection (joined with "\n") into text, or without any selection the line
 // of each cursor, each ending in "\n".
 // returns true when the copy is line wise.

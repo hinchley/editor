@@ -77,6 +77,9 @@ const Binding keymapBindings[] = {
     "jump to the next occurrence of the word under the cursor"
   },
   {{'/', control}, CommandToggleComment, "toggle line comments"},
+  {{'q', alt}, CommandSortLines, "sort the selected lines (or every line)"},
+  {{'j', alt}, CommandJoinLines, "join the selected lines (or this line and the next)"},
+  {{'t', alt | shift}, CommandTrimWhitespace, "trim trailing whitespace from every line"},
   {{'s', alt}, CommandSpellCheck, "spell check the current document"},
 
   // multiple cursors.
@@ -93,6 +96,12 @@ const Binding keymapBindings[] = {
   {{'o', control}, CommandOpen, "open a file (new buffer) or folder (replaces all)"},
   {{'r', alt}, CommandReload, "reload the file from disk (discards changes)"},
   {{'e', alt}, CommandToggleLineEndings, "toggle line endings between LF and CRLF"},
+  {{'c', alt | shift}, CommandCopyPath, "copy the file's path to the clipboard"},
+  {
+    {'i', alt},
+    CommandStatistics,
+    "count the lines, words, characters and bytes (of the selection)"
+  },
   {{KeyPageDown, control}, CommandNextBuffer, "switch to the next buffer"},
   {{KeyPageUp, control}, CommandPreviousBuffer, "switch to the previous buffer"},
   {{KeyTab, control}, CommandLastBuffer, "switch to the last-used buffer"},
