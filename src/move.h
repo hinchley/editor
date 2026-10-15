@@ -3,6 +3,7 @@
 // cursor movement.
 // every cursor of the view moves, and vertical movement works on visual rows, so the same
 // code serves wrapped and unwrapped views.
+#include "highlight.h"
 #include "view.h"
 
 enum Move {
@@ -59,3 +60,16 @@ MoveSelectBrackets(View *view);
 // a column inside a tab or wide character lands on its start.
 void
 MoveGoTo(View *view, u64 line, u64 column);
+
+// grows every cursor's selection to the smallest syntax node around it, or without a
+// syntax tree (highlight nullptr or off) selects inside the closest brackets as
+// MoveSelectBrackets does.
+// returns false, changing nothing, when no selection could grow.
+bool
+MoveExpandSelection(View *view, Highlight *highlight);
+
+// puts back the cursors from before the last expansion, as long as nothing changed them
+// or the text since.
+// returns false, changing nothing, when there is no expansion to undo.
+bool
+MoveShrinkSelection(View *view);

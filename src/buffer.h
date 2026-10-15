@@ -48,6 +48,10 @@ typedef struct Buffer {
   BufferListenerEntry *listeners;
   u32 listenerCount;
 
+  // counts changes to the text, including replacing all of it, so a copy of anything
+  // computed from the text can tell it is out of date.
+  u64 revision;
+
   // holds the replaced text while listeners run.
   StrBuf removed;
 } Buffer;

@@ -44,6 +44,12 @@ const Binding keymapBindings[] = {
     CommandSelectBrackets,
     "extend selection to all text inside closest brackets"
   },
+  {
+    {KeyUp, alt},
+    CommandExpandSelection,
+    "extend selection to the enclosing syntax node (or brackets)"
+  },
+  {{KeyDown, alt}, CommandShrinkSelection, "shrink selection back to before alt+up"},
   {{KeyEscape, 0}, CommandCancel, "clear the selection, or collapse to a single cursor"},
 
   // editing.
@@ -132,6 +138,13 @@ const Binding keymapBindings[] = {
   {{'f', alt}, CommandProjectResults, "reopen the list of project search matches"},
   {{'r', control}, CommandReplace, "search and replace"},
   {{'l', control}, CommandGoToLine, "go to a line number"},
+
+  // navigation.
+  {{KeyLeft, alt}, CommandJumpBack, "go back to where the cursor was before a jump"},
+  {{KeyRight, alt}, CommandJumpForward, "go forward again after going back"},
+  {{'o', alt}, CommandFileSymbols, "pick a symbol of this file from a filterable list"},
+  {{']', alt}, CommandNextSymbol, "go to the next definition"},
+  {{'[', alt}, CommandPreviousSymbol, "go to the previous definition"},
 
   // display and settings.
   {{'t', alt}, CommandToggleExpandTab, "toggle expand tab to spaces"},

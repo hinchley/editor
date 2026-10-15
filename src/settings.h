@@ -59,6 +59,12 @@ static constexpr u64 maxHighlightSize = 16ull * 1024 * 1024;
 // buffer, rather than leave the editor waiting.
 static constexpr i64 maxParseTime = 1000;
 
+// a symbol's signature is cut to this many bytes.
+static constexpr u64 maxSignatureLength = 512;
+
+// how many places jump history (alt+left, alt+right) keeps.
+static constexpr u32 jumpHistorySize = 32;
+
 // a split view needs at least this many columns.
 static constexpr i32 minSplitWidth = 80;
 

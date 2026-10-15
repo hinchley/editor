@@ -1,6 +1,9 @@
 #include "move.h"
 
+#include <stdlib.h>
+
 #include "bracket.h"
+#include "memory.h"
 #include "utf8.h"
 
 enum CharacterClass {
@@ -276,4 +279,121 @@ MoveGoTo(View *view, u64 line, u64 column)
   LayoutRow whole = {0, text->length, true};
   Position position = {line, LayoutByteAt(text->data, text->length, whole, column)};
   MoveSelect(view, position, position);
+}
+
+// the cursors before each expansion, the latest last, kept while the view's cursors and
+// text stay as the last expansion left them.
+static struct {
+  const View *view;
+  u64 revision;
+  CursorSet last;
+  CursorSet *before;
+  u32 count;
+  u32 capacity;
+} expansions;
+
+static bool
+SameCursors(const CursorSet *a, const CursorSet *b)
+{
+  if (a->count != b->count || a->primary != b->primary) return false;
+
+  for (u32 index = 0; index < a->count; index++) {
+    const Cursor *first = &a->cursors[index];
+    const Cursor *second = &b->cursors[index];
+    if (PositionCompare(first->anchor, second->anchor) != 0) return false;
+    if (PositionCompare(first->head, second->head) != 0) return false;
+  }
+
+  return true;
+}
+
+static void
+ForgetExpansions(void)
+{
+  for (u32 index = 0; index < expansions.count; index++) {
+    CursorSetFree(&expansions.before[index]);
+  }
+
+  expansions.count = 0;
+  expansions.view = nullptr;
+}
+
+// true when the view's cursors are as the last expansion left them.
+static bool
+Expanded(const View *view)
+{
+  return expansions.count && expansions.view == view &&
+    expansions.revision == view->buffer->revision &&
+    SameCursors(&view->cursors, &expansions.last);
+}
+
+static bool
+ExpandNodes(View *view, Highlight *highlight)
+{
+  CursorSet *set = &view->cursors;
+  bool grown = false;
+
+  for (u32 index = 0; index < set->count; index++) {
+    Cursor *cursor = &set->cursors[index];
+    Range outer;
+    if (!HighlightNodeAround(highlight, CursorRange(cursor), &outer)) continue;
+
+    cursor->anchor = outer.start;
+    cursor->head = outer.end;
+    cursor->desiredColumn = ViewRowColumn(view, cursor->head);
+    grown = true;
+  }
+
+  if (!grown) return false;
+
+  CursorSetMerge(set);
+  ViewScrollToCursor(view);
+  return true;
+}
+
+bool
+MoveExpandSelection(View *view, Highlight *highlight)
+{
+  if (!Expanded(view)) ForgetExpansions();
+
+  CursorSet before = {};
+  CursorSetCopy(&before, &view->cursors);
+  bool grown = ExpandNodes(view, highlight);
+
+  // without a tree there are still brackets.
+  bool untree = !highlight || HighlightDisabled(highlight);
+  if (!grown && untree) grown = MoveSelectBrackets(view);
+
+  if (!grown) {
+    CursorSetFree(&before);
+    return false;
+  }
+
+  if (expansions.count == expansions.capacity) {
+    expansions.capacity = expansions.capacity ? expansions.capacity * 2 : 16;
+    u32 capacity = expansions.capacity;
+    expansions.before = MemoryResize(expansions.before, capacity, sizeof(CursorSet));
+  }
+
+  expansions.before[expansions.count++] = before;
+  expansions.view = view;
+  expansions.revision = view->buffer->revision;
+  CursorSetCopy(&expansions.last, &view->cursors);
+  return true;
+}
+
+bool
+MoveShrinkSelection(View *view)
+{
+  if (!Expanded(view)) {
+    ForgetExpansions();
+    return false;
+  }
+
+  CursorSet *before = &expansions.before[--expansions.count];
+  CursorSetCopy(&view->cursors, before);
+  CursorSetFree(before);
+  CursorSetCopy(&expansions.last, &view->cursors);
+  ViewScrollToCursor(view);
+  return true;
 }

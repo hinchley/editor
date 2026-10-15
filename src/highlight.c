@@ -105,6 +105,35 @@ static const u8 zigHighlights[] = {
 #embed "../vendor/queries/zig/highlights.scm"
 };
 
+// the tags queries are the editor's own (see ARCHITECTURE.md, "Symbols").
+static const u8 bashTags[] = {
+#embed "../queries/bash/tags.scm"
+};
+
+static const u8 cTags[] = {
+#embed "../queries/c/tags.scm"
+};
+
+static const u8 goTags[] = {
+#embed "../queries/go/tags.scm"
+};
+
+static const u8 javascriptTags[] = {
+#embed "../queries/javascript/tags.scm"
+};
+
+static const u8 markdownTags[] = {
+#embed "../queries/markdown/tags.scm"
+};
+
+static const u8 phpTags[] = {
+#embed "../queries/php/tags.scm"
+};
+
+static const u8 zigTags[] = {
+#embed "../queries/zig/tags.scm"
+};
+
 typedef struct Embedded {
   const u8 *data;
   u64 size;
@@ -120,6 +149,9 @@ typedef struct Grammar {
   const TSLanguage *(*language)(void);
   Embedded highlights;
   Embedded injections;
+
+  // the symbols, optional.
+  Embedded tags;
 
   // prose is spell checked outside code; other languages only in comments and strings.
   bool prose;
@@ -138,13 +170,15 @@ static const Grammar grammars[] = {
     .name = "Bash",
     .injectionIds = {"bash", "shell"},
     .language = tree_sitter_bash,
-    .highlights = {bashHighlights, sizeof bashHighlights}
+    .highlights = {bashHighlights, sizeof bashHighlights},
+    .tags = {bashTags, sizeof bashTags}
   },
   {
     .name = "C",
     .injectionIds = {"c"},
     .language = tree_sitter_c,
-    .highlights = {cHighlights, sizeof cHighlights}
+    .highlights = {cHighlights, sizeof cHighlights},
+    .tags = {cTags, sizeof cTags}
   },
   {
     .name = "CSS",
@@ -157,6 +191,7 @@ static const Grammar grammars[] = {
     .injectionIds = {"go"},
     .language = tree_sitter_go,
     .highlights = {goHighlights, sizeof goHighlights},
+    .tags = {goTags, sizeof goTags},
     .firstPatternWins = true
   },
   {
@@ -171,6 +206,7 @@ static const Grammar grammars[] = {
     .injectionIds = {"javascript"},
     .language = tree_sitter_javascript,
     .highlights = {javascriptHighlights, sizeof javascriptHighlights},
+    .tags = {javascriptTags, sizeof javascriptTags},
     .injections = {javascriptInjections, sizeof javascriptInjections}
   },
   {
@@ -184,6 +220,7 @@ static const Grammar grammars[] = {
     .injectionIds = {"markdown"},
     .language = tree_sitter_markdown,
     .highlights = {markdownHighlights, sizeof markdownHighlights},
+    .tags = {markdownTags, sizeof markdownTags},
     .injections = {markdownInjections, sizeof markdownInjections},
     .prose = true
   },
@@ -200,6 +237,7 @@ static const Grammar grammars[] = {
     .injectionIds = {"php"},
     .language = tree_sitter_php,
     .highlights = {phpHighlights, sizeof phpHighlights},
+    .tags = {phpTags, sizeof phpTags},
     .injections = {phpInjections, sizeof phpInjections}
   },
   {
@@ -224,7 +262,8 @@ static const Grammar grammars[] = {
     .name = "Zig",
     .injectionIds = {"zig"},
     .language = tree_sitter_zig,
-    .highlights = {zigHighlights, sizeof zigHighlights}
+    .highlights = {zigHighlights, sizeof zigHighlights},
+    .tags = {zigTags, sizeof zigTags}
   }
 };
 
@@ -267,6 +306,15 @@ typedef struct Compiled {
   u8 *groups;
   u32 contentCapture;
   u32 languageCapture;
+
+  // the tags query, compiled on its own the first time symbols are asked for.
+  // kinds holds the kind of each @definition.<kind> capture, or nullptr.
+  bool tagsTried;
+  bool tagsReady;
+  Query tags;
+  const char **kinds;
+  u32 nameCapture;
+  u32 bodyCapture;
 } Compiled;
 
 static Compiled compiled[grammarCount];
@@ -1179,4 +1227,472 @@ HighlightSpellable(Highlight *highlight, u64 line, u64 byte)
 
   bool markup = group == ThemeNone || (group >= ThemeTitle && group <= ThemeReference);
   return grammars[highlight->grammar].prose && markup;
+}
+
+// compiles a grammar's tags query the first time symbols are asked for.
+// a query that fails to compile leaves the grammar without symbols, which the tags
+// harness would show.
+static bool
+CompileTags(u32 index)
+{
+  Compiled *grammar = &compiled[index];
+  if (grammar->tagsTried) return grammar->tagsReady;
+
+  grammar->tagsTried = true;
+  const Embedded *tags = &grammars[index].tags;
+  if (!tags->data) return false;
+
+  StrBuf error = {};
+  const TSLanguage *language = grammars[index].language();
+  Query *query = &grammar->tags;
+  grammar->tagsReady = QueryInit(query, language, tags->data, tags->size, &error);
+  StrBufFree(&error);
+  if (!grammar->tagsReady) return false;
+
+  // "definition.function" is a symbol of kind "function".
+  static constexpr char prefix[] = "definition.";
+  u32 count = ts_query_capture_count(query->query);
+  grammar->kinds = MemoryAllocateZeroed(count ? count : 1, sizeof(const char *));
+
+  for (u32 capture = 0; capture < count; capture++) {
+    u32 length;
+    const char *name = ts_query_capture_name_for_id(query->query, capture, &length);
+    bool definition = strncmp(name, prefix, sizeof prefix - 1) == 0;
+    if (definition) grammar->kinds[capture] = name + sizeof prefix - 1;
+  }
+
+  grammar->nameCapture = QueryCapture(query, "name");
+  grammar->bodyCapture = QueryCapture(query, "body");
+  return true;
+}
+
+bool
+HighlightHasSymbols(const char *language)
+{
+  u32 grammar = FindGrammarByName(language);
+  return grammar != UINT32_MAX && CompileTags(grammar);
+}
+
+// where the text of a tree comes from: a buffer, or text held in one piece.
+typedef struct Source {
+  const Buffer *buffer;
+  const char *text;
+  u64 length;
+} Source;
+
+// a place in a tree's text.
+typedef struct Place {
+  u32 byte;
+  TSPoint point;
+} Place;
+
+static Place
+StartOf(TSNode node)
+{
+  return (Place){ts_node_start_byte(node), ts_node_start_point(node)};
+}
+
+static Place
+EndOf(TSNode node)
+{
+  return (Place){ts_node_end_byte(node), ts_node_end_point(node)};
+}
+
+// appends the text from a place up to a byte.
+static void
+SourceText(const Source *source, Place from, u32 endByte, StrBuf *text)
+{
+  if (endByte <= from.byte) return;
+
+  if (source->text) {
+    StrBufAppend(text, source->text + from.byte, endByte - from.byte);
+    return;
+  }
+
+  // the end is found by counting the bytes on from the start, a line break being one.
+  Position start = {from.point.row, from.point.column};
+  Position end = start;
+  u64 left = endByte - from.byte;
+
+  while (left) {
+    u64 rest = BufferLine(source->buffer, end.line)->length - end.byte;
+
+    if (left <= rest) {
+      end.byte += left;
+      break;
+    }
+
+    left -= rest + 1;
+    end = (Position){end.line + 1, 0};
+  }
+
+  BufferGetText(source->buffer, (Range){start, end}, text);
+}
+
+static void
+SourceNodeText(void *context, TSNode node, StrBuf *text)
+{
+  SourceText(context, StartOf(node), ts_node_end_byte(node), text);
+}
+
+// appends text with each run of blanks and line breaks made one space, and none at the
+// start of out.
+static void
+AppendCollapsed(StrBuf *out, const char *text, u64 length)
+{
+  for (u64 at = 0; at < length; at++) {
+    char byte = text[at];
+    bool blank = byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r';
+
+    if (!blank) {
+      StrBufAppendByte(out, byte);
+      continue;
+    }
+
+    bool afterBlank = !out->length || out->data[out->length - 1] == ' ';
+    if (!afterBlank) StrBufAppendByte(out, ' ');
+  }
+}
+
+static void
+TrimEnd(StrBuf *text)
+{
+  while (text->length && text->data[text->length - 1] == ' ') text->length--;
+  if (text->data) text->data[text->length] = '\0';
+}
+
+// cuts text to at most maxSignatureLength bytes, on a code point boundary.
+static void
+Cut(StrBuf *text)
+{
+  if (text->length <= maxSignatureLength) return;
+
+  u64 length = maxSignatureLength;
+  while (length && ((u8)text->data[length] & 0xC0) == 0x80) length--;
+  text->length = length;
+  TrimEnd(text);
+  StrBufAppendString(text, "…");
+}
+
+// how far into a definition its signature is looked for, so a definition with no body is
+// not walked to its end.
+static constexpr u32 signatureReach = 8 * maxSignatureLength;
+
+static bool
+IsComment(TSNode node)
+{
+  return strstr(ts_node_type(node), "comment") != nullptr;
+}
+
+// the definition's text up to its first body (a "body" field, or the node captured as
+// @body), with comments left out and blanks collapsed.
+static void
+Signature(const Source *source, TSNode definition, TSNode body, StrBuf *signature)
+{
+  u32 start = ts_node_start_byte(definition);
+  u32 stop = ts_node_end_byte(definition);
+  if (stop - start > signatureReach) stop = start + signatureReach;
+
+  // the definition's nodes in order, noting comments, until the body.
+  TSTreeCursor cursor = ts_tree_cursor_new(definition);
+  TSNode comments[16];
+  u32 commentCount = 0;
+  bool more = ts_tree_cursor_goto_first_child(&cursor);
+
+  while (more) {
+    TSNode node = ts_tree_cursor_current_node(&cursor);
+    u32 nodeStart = ts_node_start_byte(node);
+    if (nodeStart >= stop) break;
+
+    const char *field = ts_tree_cursor_current_field_name(&cursor);
+    bool isBody = (field && strcmp(field, "body") == 0) || ts_node_eq(node, body);
+
+    if (isBody) {
+      stop = nodeStart;
+      break;
+    }
+
+    bool comment = IsComment(node);
+    if (comment && commentCount < 16) comments[commentCount++] = node;
+
+    // into the node, or on past it.
+    if (!comment && ts_tree_cursor_goto_first_child(&cursor)) continue;
+
+    while (!(more = ts_tree_cursor_goto_next_sibling(&cursor))) {
+      if (!ts_tree_cursor_goto_parent(&cursor)) break;
+    }
+  }
+
+  ts_tree_cursor_delete(&cursor);
+
+  // the text between the comments, from the definition's start to the stop.
+  StrBuf text = {};
+  Place from = StartOf(definition);
+
+  for (u32 index = 0; index <= commentCount; index++) {
+    u32 end = index < commentCount ? ts_node_start_byte(comments[index]) : stop;
+    if (end > stop) end = stop;
+
+    StrBufClear(&text);
+    SourceText(source, from, end, &text);
+    AppendCollapsed(signature, text.data, text.length);
+    if (signature->length > maxSignatureLength || index == commentCount) break;
+
+    // a blank stands in for the comment.
+    AppendCollapsed(signature, " ", 1);
+    from = EndOf(comments[index]);
+  }
+
+  StrBufFree(&text);
+  TrimEnd(signature);
+  Cut(signature);
+}
+
+// one match of a tags query.
+typedef struct Found {
+  TSNode definition;
+  TSNode name;
+  TSNode body;
+  const char *kind;
+  u32 pattern;
+} Found;
+
+static i32
+CompareFound(const void *a, const void *b)
+{
+  const Found *first = a;
+  const Found *second = b;
+  u32 starts[2] = {ts_node_start_byte(first->definition), ts_node_start_byte(second->definition)};
+  if (starts[0] != starts[1]) return starts[0] < starts[1] ? -1 : 1;
+
+  u32 names[2] = {ts_node_start_byte(first->name), ts_node_start_byte(second->name)};
+  if (names[0] != names[1]) return names[0] < names[1] ? -1 : 1;
+
+  if (first->pattern != second->pattern) return first->pattern < second->pattern ? -1 : 1;
+  return 0;
+}
+
+static Position
+PositionOf(TSPoint point)
+{
+  return (Position){point.row, point.column};
+}
+
+// runs a grammar's tags query over a tree and visits its symbols in order.
+// a definition that several patterns match is visited once, for the earliest pattern.
+static void
+VisitSymbols(u32 grammar, TSNode root, const Source *source, HighlightVisit visit, void *context)
+{
+  const Compiled *queries = &compiled[grammar];
+  const Query *query = &queries->tags;
+  TSQueryCursor *cursor = ts_query_cursor_new();
+  ts_query_cursor_exec(cursor, query->query, root);
+
+  Found *found = nullptr;
+  u64 count = 0;
+  u64 capacity = 0;
+  TSQueryMatch match;
+
+  while (ts_query_cursor_next_match(cursor, &match)) {
+    if (!QueryAccepts(query, &match, SourceNodeText, (void *)source)) continue;
+
+    Found item = {.pattern = match.pattern_index};
+
+    for (u32 index = 0; index < match.capture_count; index++) {
+      const TSQueryCapture *capture = &match.captures[index];
+      const char *kind = queries->kinds[capture->index];
+
+      if (kind) {
+        item.definition = capture->node;
+        item.kind = kind;
+      }
+
+      if (capture->index == queries->nameCapture) item.name = capture->node;
+      if (capture->index == queries->bodyCapture) item.body = capture->node;
+    }
+
+    if (!item.kind || ts_node_is_null(item.name)) continue;
+
+    if (count == capacity) {
+      capacity = capacity ? capacity * 2 : 64;
+      found = MemoryResize(found, capacity, sizeof(Found));
+    }
+
+    found[count++] = item;
+  }
+
+  ts_query_cursor_delete(cursor);
+  if (count) qsort(found, count, sizeof(Found), CompareFound);
+
+  StrBuf name = {};
+  StrBuf text = {};
+  StrBuf signature = {};
+
+  for (u64 index = 0; index < count; index++) {
+    const Found *item = &found[index];
+    bool repeated = index > 0 && ts_node_eq(item->definition, found[index - 1].definition) &&
+      ts_node_eq(item->name, found[index - 1].name);
+    if (repeated) continue;
+
+    StrBufClear(&name);
+    StrBufClear(&text);
+    StrBufClear(&signature);
+    SourceNodeText((void *)source, item->name, &text);
+    AppendCollapsed(&name, text.data, text.length);
+    TrimEnd(&name);
+    Signature(source, item->definition, item->body, &signature);
+
+    HighlightSymbol symbol = {
+      .kind = item->kind,
+      .start = PositionOf(ts_node_start_point(item->definition)),
+      .name = {
+        PositionOf(ts_node_start_point(item->name)),
+        PositionOf(ts_node_end_point(item->name))
+      },
+      .nameText = name.data ? name.data : "",
+      .nameLength = name.length,
+      .signature = signature.data ? signature.data : "",
+      .signatureLength = signature.length
+    };
+
+    visit(context, &symbol);
+  }
+
+  StrBufFree(&name);
+  StrBufFree(&text);
+  StrBufFree(&signature);
+  free(found);
+}
+
+// parses the buffer if it changed, returning false when it cannot be parsed in time or is
+// not highlighted at all.
+static bool
+ParsedTree(Highlight *highlight)
+{
+  if (HighlightDisabled(highlight)) return false;
+
+  ParseBuffer(highlight);
+
+  if (highlight->tooSlow) {
+    ForgetTrees(highlight);
+    return false;
+  }
+
+  return highlight->tree != nullptr;
+}
+
+bool
+HighlightSymbols(Highlight *highlight, HighlightVisit visit, void *context)
+{
+  if (!highlight || !CompileTags(highlight->grammar) || !ParsedTree(highlight)) return false;
+
+  Source source = {.buffer = highlight->buffer};
+  TSNode root = ts_tree_root_node(highlight->tree);
+  VisitSymbols(highlight->grammar, root, &source, visit, context);
+  return true;
+}
+
+// hands the parser the rest of a text in one piece.
+static const char *
+ReadText(void *payload, u32 byte, [[maybe_unused]] TSPoint point, u32 *bytesRead)
+{
+  const Source *source = payload;
+  *bytesRead = byte < source->length ? (u32)(source->length - byte) : 0;
+  return *bytesRead ? source->text + byte : "";
+}
+
+bool
+HighlightSymbolsOfText(
+  const char *language,
+  const char *text,
+  u64 length,
+  HighlightVisit visit,
+  void *context
+) {
+  u32 grammar = FindGrammarByName(language);
+  if (grammar == UINT32_MAX || length > maxHighlightSize || !CompileTags(grammar)) return false;
+
+  TSParser *parser = ts_parser_new();
+  ts_parser_set_language(parser, grammars[grammar].language());
+
+  Source source = {.text = text, .length = length};
+  TSInput input = {.payload = &source, .read = ReadText, .encoding = TSInputEncodingUTF8};
+  i64 deadline = Milliseconds() + maxParseTime;
+  TSParseOptions options = {.payload = &deadline, .progress_callback = PastDeadline};
+  TSTree *tree = ts_parser_parse_with_options(parser, nullptr, input, options);
+
+  if (tree) {
+    VisitSymbols(grammar, ts_tree_root_node(tree), &source, visit, context);
+    ts_tree_delete(tree);
+  }
+
+  ts_parser_delete(parser);
+  return tree != nullptr;
+}
+
+// the smallest named node of a tree that holds the bytes from start to end and more.
+static bool
+NodeAround(TSTree *tree, u32 start, u32 end, TSNode *around)
+{
+  TSNode node = ts_node_named_descendant_for_byte_range(ts_tree_root_node(tree), start, end);
+
+  for (; !ts_node_is_null(node); node = ts_node_parent(node)) {
+    u32 nodeStart = ts_node_start_byte(node);
+    u32 nodeEnd = ts_node_end_byte(node);
+    bool holds = nodeStart <= start && nodeEnd >= end;
+    bool more = nodeStart < start || nodeEnd > end;
+
+    if (holds && more && ts_node_is_named(node)) {
+      *around = node;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+static bool
+LayerHolds(const Layer *layer, u32 start, u32 end)
+{
+  for (u32 index = 0; index < layer->rangeCount; index++) {
+    const TSRange *range = &layer->ranges[index];
+    if (range->start_byte <= start && end <= range->end_byte) return true;
+  }
+
+  return false;
+}
+
+bool
+HighlightNodeAround(Highlight *highlight, Range range, Range *outer)
+{
+  if (!highlight || !ParsedTree(highlight)) return false;
+
+  u32 start = (u32)(LineOffset(highlight, range.start.line) + range.start.byte);
+  u32 end = (u32)(LineOffset(highlight, range.end.line) + range.end.byte);
+  TSNode best;
+  bool found = NodeAround(highlight->tree, start, end, &best);
+
+  // an injected language (a fenced code block) may hold a smaller node, when its layer is
+  // parsed and up to date.
+  for (u32 index = 0; index < highlight->layerCount; index++) {
+    const Layer *layer = &highlight->layers[index];
+    if (!layer->tree || layer->dirty || !LayerHolds(layer, start, end)) continue;
+
+    TSNode node;
+    if (!NodeAround(layer->tree, start, end, &node)) continue;
+
+    u32 size = ts_node_end_byte(node) - ts_node_start_byte(node);
+    bool smaller = !found || size < ts_node_end_byte(best) - ts_node_start_byte(best);
+
+    if (smaller) {
+      best = node;
+      found = true;
+    }
+  }
+
+  if (!found) return false;
+
+  outer->start = PositionOf(ts_node_start_point(best));
+  outer->end = PositionOf(ts_node_end_point(best));
+  return true;
 }

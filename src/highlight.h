@@ -50,3 +50,55 @@ HighlightGroup(const u8 *groups, u64 byte)
 // (markdown), and only comments and strings in code.
 bool
 HighlightSpellable(Highlight *highlight, u64 line, u64 byte);
+
+// one symbol a grammar's tags query finds (see ARCHITECTURE.md, "Symbols").
+// the texts are only valid while the visitor runs.
+typedef struct HighlightSymbol {
+  // what the symbol is: "function", "prototype", "type", "struct", "enum", "macro" or
+  // "heading".
+  const char *kind;
+
+  // where its definition starts, and where its name is.
+  Position start;
+  Range name;
+
+  const char *nameText;
+  u64 nameLength;
+
+  // the definition up to its body, without comments and with blanks collapsed, cut to
+  // maxSignatureLength.
+  const char *signature;
+  u64 signatureLength;
+} HighlightSymbol;
+
+typedef void (*HighlightVisit)(void *context, const HighlightSymbol *symbol);
+
+// true when a language (by its display name) has symbols.
+bool
+HighlightHasSymbols(const char *language);
+
+// visits the symbols of the buffer in order of their definitions, parsing it first if it
+// changed.
+// returns false, visiting nothing, when its language has no symbols or the buffer is not
+// highlighted (see HighlightDisabled).
+bool
+HighlightSymbols(Highlight *highlight, HighlightVisit visit, void *context);
+
+// visits the symbols of text in a language, as HighlightSymbols does, parsing it with a
+// parser of its own within maxParseTime.
+// returns false when the language has no symbols or the text is too large or slow to
+// parse.
+bool
+HighlightSymbolsOfText(
+  const char *language,
+  const char *text,
+  u64 length,
+  HighlightVisit visit,
+  void *context
+);
+
+// the smallest syntax node that holds range and more, in the buffer's language or one
+// embedded in it.
+// returns false when there is none or the buffer is not highlighted.
+bool
+HighlightNodeAround(Highlight *highlight, Range range, Range *outer);

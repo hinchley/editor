@@ -73,6 +73,7 @@ BufferSetText(Buffer *buffer, const char *text, u64 length)
   }
 
   buffer->lineCount = count;
+  buffer->revision++;
 }
 
 void
@@ -85,6 +86,8 @@ BufferSwapText(Buffer *buffer, Buffer *other)
   other->lines = swapped.lines;
   other->lineCount = swapped.lineCount;
   other->lineCapacity = swapped.lineCapacity;
+  buffer->revision++;
+  other->revision++;
 }
 
 void
@@ -273,6 +276,8 @@ BufferReplace(Buffer *buffer, Range range, const char *text, u64 length)
   } else {
     newEnd = ReplaceLines(buffer, range, text, length);
   }
+
+  buffer->revision++;
 
   BufferChange change = {
     .start = start,

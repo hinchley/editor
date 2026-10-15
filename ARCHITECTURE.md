@@ -10,6 +10,7 @@ This document describes how the editor is put together.
 | `vendor/tree-sitter/` | Tree-sitter runtime (`include/`, `src/`). Compiled through its `src/lib.c` amalgamation. |
 | `vendor/grammars/<lang>/` | Generated grammar sources (`parser.c`, optional `scanner.c`) and their `tree_sitter/` headers. PHP and XML keep upstream's layout (`php/src/`, `common/scanner.h`) because their scanners include a shared header by a relative path. |
 | `vendor/queries/<lang>/` | `highlights.scm` and, where the grammar embeds other languages, `injections.scm`. |
+| `queries/<lang>/` | The editor's own queries: `tags.scm`, which finds a language's symbols (see Symbols). Not vendored, so they are edited freely. |
 | `data/words.txt` | Spell check word list, one word per line, sorted in byte order (`LC_ALL=C`). |
 | `tools/` | Developer scripts that are not part of the binary: `unicodedata.py` generates `src/unicodedata.c`, and `bindings.py` writes the key binding tables in README.md from `src/keymap.c`. |
 | `build.sh` | The build. Outputs `./editor`, objects go to `build/`. |
@@ -45,7 +46,7 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `strbuf` | Growable byte string. A zeroed `StrBuf` is empty and valid. Allocated data is always nul terminated. |
 | `unicodedata` | Generated Unicode tables: display width, grapheme break property, Extended_Pictographic and simple case folding. |
 | `utf8` | UTF-8 decode and encode, grapheme cluster boundaries, display width and simple case folding, from the Unicode tables. |
-| `buffer` | The text of one buffer as a flat array of lines, and `BufferReplace`, the single edit primitive, which notifies listeners. |
+| `buffer` | The text of one buffer as a flat array of lines, and `BufferReplace`, the single edit primitive, which notifies listeners. A revision counts changes, so a copy of anything computed from the text can tell it is stale. |
 | `file` | Loading a file into a buffer (size and binary checks, line ending detection) and saving it atomically. |
 | `undo` | The undo history of one buffer: groups of recorded changes with the cursors before and after each. |
 | `document` | A buffer with its file, undo history and a view for each side of a split, whether it differs from the file, what it highlights (search matches, unknown words or nothing), and its language and highlighter. |
@@ -65,7 +66,7 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `layout` | How one line sits on screen: grapheme clusters with their display columns and widths (tabs expanded), and the visual rows it wraps into. |
 | `cursor` | The cursor set of a view: anchor, head and desired column per cursor, one of them primary. Following changes, and merging cursors that overlap. |
 | `view` | A window onto a buffer: screen area, gutter, cursors, scroll position, stepping over visual rows and keeping the cursor in sight. |
-| `move` | Cursor movement and selection commands, written once against visual rows. |
+| `move` | Cursor movement and selection commands, written once against visual rows, including growing a selection to the enclosing syntax node (Alt-Up) and shrinking it back (Alt-Down). |
 | `bracket` | Finding the bracket that matches another, and the closest pair around a range. |
 | `multicursor` | Adding cursors: at the next occurrence of the selection (Ctrl-E) and on the row above or below (Ctrl-Alt-Up/Down). |
 | `edit` | Editing commands: typing, line breaks, indentation, comments, deletion, line commands (duplicate, delete, move, join, sort, trim), copy, cut and paste. Each edits at every cursor as one undo step. |
@@ -78,8 +79,10 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `search` | The search commands: Ctrl-F, Alt-N and Alt-P, Ctrl-W, Ctrl-R and Alt-S, and the pattern prompt of project search. |
 | `lang` | The languages by file name, extension or `#!` line: display name and comment markers. |
 | `query` | A compiled tree-sitter query with what the runtime leaves to its user: the text predicates (`#eq?`, `#match?`, `#lua-match?`, `#any-of?` and their `#not-` forms) and the injection settings of `#set!`. Knows nothing about particular languages. |
-| `highlight` | The grammar table and the only place that knows grammars: parsing a buffer (again incrementally after edits), injected languages, and the syntax group of every byte of the lines around the one asked for. Also tells spell check which text it looks at. |
+| `highlight` | The grammar table and the only place that knows grammars: parsing a buffer (again incrementally after edits), injected languages, and the syntax group of every byte of the lines around the one asked for. Also tells spell check which text it looks at, lists the symbols of a buffer or of text read from a file, and finds the syntax node around a range. The trees stay private: other modules ask these questions as functions. |
 | `project` | Project search (Alt-Shift-F, Alt-F): the scope, searching loaded files a slice at a time, the hit list and its preview. |
+| `jump` | Jump history (Alt-Left, Alt-Right): the places the cursor jumped from, by entry serial and position. |
+| `symbols` | The commands that go to symbols in the current buffer: the Alt-O picker, and Alt-] and Alt-[ to the next or previous definition. |
 
 ## Terminal
 
@@ -110,7 +113,7 @@ Each frame clears the back grid, draws everything, and `ScreenFlush` compares it
 
 A buffer is a flat array of lines. Each line is a `StrBuf` holding its bytes without the line break, so joining the lines with `\n` gives the text. There is always at least one line: an empty buffer is one empty line, and text ending in `\n` has a final empty line. A `Position` is a line index plus a byte offset in that line. Display columns are always derived from the bytes, never stored.
 
-Every change is `BufferReplace(range, text)`: insertion is an empty range, deletion is empty text. After each replace the buffer calls its listeners with a `BufferChange` (start, old end, new end, old text, new text). Cursors, views, highlighting and undo all follow edits through listeners, so there is one place where text changes. Undo and redo are inverse replaces. A listener must not change the buffer while it is being notified. Edits inside one line take a fast path that touches only that line. `BufferSetText` replaces everything without notifying, for loading.
+Every change is `BufferReplace(range, text)`: insertion is an empty range, deletion is empty text. After each replace the buffer calls its listeners with a `BufferChange` (start, old end, new end, old text, new text). Cursors, views, highlighting and undo all follow edits through listeners, so there is one place where text changes. Undo and redo are inverse replaces. A listener must not change the buffer while it is being notified. Edits inside one line take a fast path that touches only that line. `BufferSetText` replaces everything without notifying, for loading. Every replace, `BufferSetText` and `BufferSwapText` (a reload) adds one to the buffer's `revision`, so something worked out from the text (the expansions Alt-Down returns through) can tell it is out of date without listening.
 
 ### Text and Unicode
 
@@ -274,6 +277,12 @@ Ctrl-PgUp and Ctrl-PgDn step through open entries in load order, wrapping. Ctrl-
 
 `picker` takes a list of items (text, an optional note, an id) and shows it over every row above the message bar, with a bar naming the list and counting matches. The filter is a text prompt with a change handler, so it edits like any prompt. Up, Down, PageUp, PageDown, Home and End are taken by the picker first, and Enter with no matches does nothing. Each item keeps a case folded copy of its text, so filtering 100,000 paths is a byte search per item. A filter matches anywhere in the item, `^` at its start ties it to the start and `$` at its end to the end, and both ignore case. Long items are shortened in the middle. The Alt-H list is built from the binding table, sorted by description, and Enter runs the picked command.
 
+### Jump history
+
+A jump is a command that sends the cursor somewhere it could not reach with a few keys: Ctrl-L, Ctrl-Home and Ctrl-End (not their Shift forms), opening a project search match, picking a symbol with Alt-O, and Alt-] and Alt-[. Before it moves, the command calls `JumpRecord`, which stores the current entry's serial and the primary cursor's position. `jump` keeps 32 places, the oldest dropped first, and an index into them, much like undo. Alt-Left from the newest place first stores where the cursor is (so Alt-Right can return), then goes to the place before; Alt-Right goes to the next. Recording while back in the history drops the places ahead, and the place gone back to is replaced by where the cursor is now. A place equal to the newest is not stored twice.
+
+Places do not listen to edits. A position is clamped when it is used (a line past the end goes to the end of the buffer, a byte past the end of its line to the line end, and a byte inside a code point back to its start). A place whose entry was closed, or that is where the cursor already is, is passed over. Going to a place in another buffer switches to it as Ctrl-P would, so a split's focused side shows it.
+
 ## Highlighting
 
 ### Languages
@@ -302,6 +311,22 @@ A capture name picks the group that shares its first component (`string.special`
 
 Tree-sitter leaves text predicates to its user. `query` evaluates `#eq?`, `#match?` and `#any-of?` (and `#not-` forms) against the captured text. `#match?` uses POSIX extended regular expressions, with `\d`, `\w` and `\s` rewritten as bracket expressions first, since the queries are written for Rust's regular expressions. `#lua-match?` (Zig) takes a Lua pattern, rewritten as a POSIX one: `%a` style classes become bracket expressions, `%` escapes a character, the lazy `-` becomes `*` (a test only asks whether it matches), and `{`, `}`, `|` and `\` are escaped. An ignored predicate would let its pattern match every node, so Zig would colour every identifier as a constant. The SQL query writes Lua classes inside `#match?` (`"^[-+]?%d+$"`), which match a literal `%d`, so SQL numbers fall through to the string colour of literals. Other predicates (`#is-not? local`, `#offset!`) are ignored.
 
+### Symbols
+
+A grammar row may name a tags query, kept in `queries/<lang>/tags.scm`. These are the editor's own rather than upstream's: upstream's C query captures the `function_declarator`, which leaves out the return type, and the contract below needs whole declarations. The query compiles the first time a buffer's symbols are asked for, separately from the highlight query. C, JavaScript, Go, PHP, Zig, Bash (functions) and Markdown (headings) have one; CSS, HTML, JSON, SQL, XML and YAML have none, so they have no symbols.
+
+The contract: `@name` captures the symbol's name, and `@definition.<kind>` captures the whole declaration, where the kind is one of `function`, `prototype`, `type`, `struct`, `enum`, `macro` and `heading`. A pattern may also capture `@body`. A symbol's signature is the declaration's text up to its first `body` field (at any depth, so `const f = (a) => {` stops at the arrow function's body) or its `@body` node, with comments left out, blanks and line breaks collapsed to single spaces, and cut to `maxSignatureLength` (512 bytes). `@body` is for declarations whose grammar has no `body` field: a Go struct stops at its field list, a Zig container and a Go interface at their `{`, and a setext Markdown heading at its underline. In C, a `typedef struct Name {...} Name;` gives both a `struct` (`struct Name`) and a `type` (`typedef struct Name`), as ctags does, and declarators are matched to two pointers deep (`char **f(void)`). A Go type is its `type_spec`, as one `type (...)` can hold several. A JavaScript function given to a name with `const`, `let` or `var` counts as a function. PHP and JavaScript classes, PHP interfaces and traits, and Go interfaces and other named types are `type`; Zig structs, unions and opaques are `struct`.
+
+`HighlightSymbols` runs the tags query over the buffer's own tree (not injected layers, so code blocks in Markdown add none), parsing first if the buffer changed. Matches are sorted by where the definition starts, and a definition that several patterns match is visited once, for the earliest pattern. `HighlightSymbolsOfText` does the same for text in one piece with a parser of its own under the same `maxParseTime` deadline, for files that are not open, and gives the same symbols as the live buffer (checked over every file in `src/`). A buffer whose highlighting is off has no symbols. Listing the 900 symbols of a 15,000 line C file takes about 20 ms once it is parsed.
+
+Every function, prototype, struct, union, enum and typedef in `src/` is found with the declaration's text as its signature, checked against a ctags-style scan of the sources.
+
+### Syntax selection
+
+`HighlightNodeAround` finds the smallest named node that holds a range and is larger than it, in the buffer's tree or in an injected layer that is parsed and not edited since (so inside a fenced code block the code's own nodes count), taking the smaller of the two. Alt-Up grows every cursor's selection to that node, anchor at its start and head at its end, and merges cursors that meet. Without a tree (no grammar, or highlighting off) it selects inside the closest brackets as Ctrl-M does, collapsing to the primary cursor.
+
+Each Alt-Up pushes a copy of the cursor set before it onto a stack in `move`, and remembers the view, the buffer's revision and the cursors it left. Alt-Down pops the last copy back, but only while all three are unchanged: any movement, edit (including one in the other view of a split) or other command that changes the cursors makes the stack stale, and the next Alt-Up or Alt-Down starts again.
+
 ### Spell check scope
 
 Painting `literal` or `uri` also sets a sticky literal flag that later paints do not clear, so the contents of a code block stay marked as code even though `@none` and the injected language recolour them. A `string.special` capture (a CSS colour, a regular expression, a JSON key) sets a special flag. Spell check passes over literal and special bytes, and otherwise looks at comments and strings in every language, and in prose languages also at uncoloured text and markup (headings, emphasis, link text).
@@ -327,7 +352,7 @@ Ctrl-/ uses the comment markers from `lang`. It first decides for all the lines 
 - Headers use `#pragma once`.
 - C23 features in use: `bool`, `nullptr`, `constexpr`, `[[attributes]]`, `#embed`, `<stdckdint.h>`, digit separators.
 - Data embedded with `#embed` goes into `u8` arrays, not `char`. A `char` array trips `-Wconversion` on every byte above 127. Embed paths are quoted and relative to the including file (`#embed "../data/words.txt"`), so they work without extra flags in gcc and clangd.
-- Vendored code is compiled with `-w` and never edited. Strict warnings (`-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror`) apply to `src/` only.
+- Vendored code is compiled with `-w` and never edited. Queries the editor needs that upstream does not provide in the right form (the tags queries) live in `queries/`, outside `vendor/`. Strict warnings (`-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror`) apply to `src/` only.
 
 ## Vendored versions
 

@@ -7,6 +7,7 @@
 #include "document.h"
 #include "edit.h"
 #include "input.h"
+#include "jump.h"
 #include "keymap.h"
 #include "memory.h"
 #include "move.h"
@@ -20,6 +21,7 @@
 #include "search.h"
 #include "session.h"
 #include "settings.h"
+#include "symbols.h"
 #include "term.h"
 #include "utf8.h"
 #include "view.h"
@@ -168,6 +170,7 @@ GoToAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
     return;
   }
 
+  JumpRecord();
   MoveGoTo(CurrentView(), line - 1, column - 1);
 }
 
@@ -485,6 +488,8 @@ MoveCommand(enum Command command)
   };
 
   if (command <= CommandMoveFileEnd) {
+    // going to either end of the file is a jump, which alt+left comes back from.
+    if (command == CommandMoveFileStart || command == CommandMoveFileEnd) JumpRecord();
     MoveCursors(CurrentView(), moves[command - CommandMoveUp], false);
     return true;
   }
@@ -528,6 +533,35 @@ EditCommand(enum Command command)
   case CommandSortLines: AskSortOrder(); break;
   case CommandJoinLines: Report(EditJoinLines(&edit), "no line below to join"); break;
   case CommandTrimWhitespace: TrimWhitespace(); break;
+  default: return false;
+  }
+
+  return true;
+}
+
+static void
+ExpandSelection(void)
+{
+  Document *document = Current();
+  if (MoveExpandSelection(document->view, document->highlight)) return;
+
+  bool syntax = document->highlight && !HighlightDisabled(document->highlight);
+  StrBufAppendString(&message, syntax ? "no larger syntax node" : "no brackets around");
+}
+
+static bool
+NavigationCommand(enum Command command)
+{
+  switch (command) {
+  case CommandExpandSelection: ExpandSelection(); break;
+  case CommandShrinkSelection:
+    Report(MoveShrinkSelection(CurrentView()), "no expanded selection to shrink");
+    break;
+  case CommandJumpBack: JumpBack(); break;
+  case CommandJumpForward: JumpForward(); break;
+  case CommandFileSymbols: SymbolsPickFile(); break;
+  case CommandNextSymbol: SymbolsStep(false); break;
+  case CommandPreviousSymbol: SymbolsStep(true); break;
   default: return false;
   }
 
@@ -638,7 +672,7 @@ RunCommand(const Binding *binding)
   if (!deleting) UndoBreak(&Current()->undo);
 
   if (MoveCommand(command) || EditCommand(command) || BufferCommand(command)) return;
-  if (SearchCommand(command)) return;
+  if (SearchCommand(command) || NavigationCommand(command)) return;
 
   switch (command) {
   case CommandScrollUp: Scroll(-1); break;
@@ -846,6 +880,8 @@ AppRun(i32 argumentCount, char **arguments)
   WorkspaceInit(&workspace, &displayOptions);
   SearchInit(&workspace, &message);
   ProjectInit(&workspace, &message);
+  JumpInit(&workspace, &message);
+  SymbolsInit(&workspace, &message);
   SessionStart(&workspace, &message, arguments + 1, (u64)argumentCount - 1);
 
   TermStart();

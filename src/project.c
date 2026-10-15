@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "filter.h"
+#include "jump.h"
 #include "layout.h"
 #include "memory.h"
 #include "move.h"
@@ -639,8 +640,13 @@ Picked([[maybe_unused]] void *context, bool picked, u64 id)
   lastOpened = id;
   u64 index = WorkspaceEntryOf(workspace, hits[id].entry);
 
-  if (index == workspaceNone) StrBufAppendString(message, "that buffer has been closed");
-  else if (WorkspaceSwitch(workspace, index, message)) SelectHit(&hits[id]);
+  if (index == workspaceNone) {
+    StrBufAppendString(message, "that buffer has been closed");
+    return;
+  }
+
+  JumpRecord();
+  if (WorkspaceSwitch(workspace, index, message)) SelectHit(&hits[id]);
 }
 
 // lists the hits, leaving out those in closed buffers, with the first hit from position on
