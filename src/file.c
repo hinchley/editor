@@ -61,6 +61,20 @@ StampEqual(FileStamp a, FileStamp b)
     a.seconds == b.seconds && a.nanoseconds == b.nanoseconds;
 }
 
+// true when the version current on disk is not the file's own.
+static bool
+Changed(const File *file, FileStamp current)
+{
+  return current.exists && !StampEqual(file->stamp, current);
+}
+
+bool
+FileChangedOnDisk(const File *file)
+{
+  struct stat status;
+  return stat(file->path.data, &status) == 0 && Changed(file, StampOf(&status));
+}
+
 static void
 AppendError(StrBuf *message, const File *file, const char *what, i32 error)
 {
@@ -348,7 +362,7 @@ CheckTarget(Save *save)
   }
 
   // a file deleted since loading is simply written again.
-  bool changed = current.exists && !StampEqual(file->stamp, current);
+  bool changed = Changed(file, current);
 
   if (changed && !save->overwriteChanged) {
     const char *what = file->stamp.exists ? "changed on disk" : "already exists";
@@ -432,4 +446,97 @@ FileSave(File *file, const Buffer *buffer, bool overwriteChanged, StrBuf *messag
 
   StrBufFree(&save.target);
   return result;
+}
+
+// copies the file at from over to through a temporary file next to it, keeping the
+// permissions, and returns 0 or the error with step set to what failed.
+static i32
+CopyFile(const char *from, const char *to, const char **step)
+{
+  *step = "cannot read";
+  i32 source = open(from, O_RDONLY | O_CLOEXEC);
+  if (source < 0) return errno;
+
+  struct stat status;
+
+  if (fstat(source, &status) != 0) {
+    i32 error = errno;
+    close(source);
+    return error;
+  }
+
+  StrBuf target = {};
+  StrBuf temporary = {};
+  StrBufAppendString(&target, to);
+  TemporaryPath(&target, &temporary);
+  StrBufFree(&target);
+
+  *step = "cannot create a temporary file";
+  i32 descriptor = mkstemp(temporary.data);
+  i32 error = descriptor < 0 ? errno : 0;
+  if (!error && fchmod(descriptor, status.st_mode & 07777) != 0) error = errno;
+
+  char chunk[writeChunkSize];
+
+  while (!error) {
+    *step = "cannot read";
+    i64 count = read(source, chunk, sizeof chunk);
+    if (count < 0 && errno == EINTR) continue;
+    if (count < 0) error = errno;
+    if (count <= 0) break;
+
+    *step = "cannot write";
+
+    for (i64 at = 0; at < count && !error;) {
+      i64 written = write(descriptor, chunk + at, (u64)(count - at));
+      if (written < 0 && errno != EINTR) error = errno;
+      if (written > 0) at += written;
+    }
+  }
+
+  if (!error && fsync(descriptor) != 0) error = errno;
+  if (descriptor >= 0 && close(descriptor) != 0 && !error) error = errno;
+  close(source);
+
+  if (!error && rename(temporary.data, to) != 0) {
+    *step = "cannot replace the file";
+    error = errno;
+  }
+
+  if (error && descriptor >= 0) unlink(temporary.data);
+  StrBufFree(&temporary);
+  return error;
+}
+
+bool
+FileRename(File *file, const char *path, StrBuf *message)
+{
+  struct stat status;
+  bool current = stat(file->path.data, &status) == 0 &&
+    StampEqual(file->stamp, StampOf(&status));
+  i32 error = rename(file->path.data, path) == 0 ? 0 : errno;
+  const char *step = "cannot rename";
+  bool copied = false;
+
+  if (error == EXDEV) {
+    error = CopyFile(file->path.data, path, &step);
+    copied = !error;
+  }
+
+  // once the copy is made the file has moved, even if the original stays behind.
+  if (copied && unlink(file->path.data) != 0) {
+    AppendError(message, file, "copied, but cannot remove the original", errno);
+  }
+
+  if (error == ENOENT && !file->stamp.exists) error = 0;
+
+  if (error) {
+    AppendError(message, file, step, error);
+    return false;
+  }
+
+  StrBufClear(&file->path);
+  StrBufAppendString(&file->path, path);
+  if (current && stat(path, &status) == 0) file->stamp = StampOf(&status);
+  return true;
 }

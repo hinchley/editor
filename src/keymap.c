@@ -107,6 +107,8 @@ const Binding keymapBindings[] = {
   {{KeyTab, control}, CommandLastBuffer, "switch to the last-used buffer"},
   {{'p', control}, CommandPickBuffer, "pick a buffer from a filterable list"},
   {{'u', control}, CommandPickUnsaved, "pick from buffers with unsaved changes"},
+  {{'c', alt}, CommandCloseBuffer, "close the buffer (offers to save changes)"},
+  {{'x', alt}, CommandFileMenu, "rename, copy or delete the file"},
   {{'s', control}, CommandSave, "save the file (prompts for a name if unnamed)"},
   {{'s', control | shift}, CommandSaveAll, "save every buffer with unsaved changes"},
   {{'q', control}, CommandQuit, "quit the editor"},

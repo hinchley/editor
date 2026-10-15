@@ -5,6 +5,10 @@
 // an entry is loaded when it is in the list and open once its document has been read,
 // which happens the first time it is used.
 // documents are allocated one by one, so they never move while the list grows.
+// entries are only ever appended, and removing one keeps the order of the rest, so an
+// entry's index can change but its serial never does.
+// anything outside the workspace that remembers an entry keeps its serial, which simply
+// stops matching once the entry is removed or a folder replaces every entry.
 // the window shows one view, or two side by side when split.
 // each side uses its own slot of every document's views, and the focused view's entry is
 // the current one.
@@ -38,6 +42,9 @@ typedef struct WorkspaceEntry {
 
   // when the entry was last made current, or 0 when it never was.
   u64 used;
+
+  // unique for the whole session, and increasing along the list.
+  u64 serial;
 } WorkspaceEntry;
 
 typedef struct Workspace {
@@ -60,6 +67,9 @@ typedef struct Workspace {
   const DisplayOptions *options;
   u64 clock;
   u32 unnamedCount;
+
+  // the last serial given out, kept when every entry is freed.
+  u64 serials;
 } Workspace;
 
 static constexpr u64 workspaceNone = UINT64_MAX;
@@ -68,6 +78,7 @@ void
 WorkspaceInit(Workspace *workspace, const DisplayOptions *options);
 
 // frees every entry and document and leaves an empty workspace.
+// serials go on from where they were, so none is ever given out twice.
 void
 WorkspaceFree(Workspace *workspace);
 
@@ -89,12 +100,31 @@ WorkspaceAdd(Workspace *workspace, LoaderFile *file);
 u64
 WorkspaceAddUnnamed(Workspace *workspace);
 
+// the index of the entry with serial, or workspaceNone when it was removed.
+u64
+WorkspaceEntryOf(const Workspace *workspace, u64 serial);
+
+// removes an entry, freeing its document.
+// when the current entry is removed, the most recently used one (or else the first one
+// that opens) becomes current; when the other side of a split showed it, that side shows
+// its most recently used entry instead.
+// removing the last entry leaves a new unnamed buffer.
+// problems opening the replacement are appended to message.
+void
+WorkspaceRemove(Workspace *workspace, u64 index, StrBuf *message);
+
+// records that an open entry's document now names another file, as after a rename.
+void
+WorkspaceRenamed(Workspace *workspace, u64 index);
+
 // opens an entry if it is not open yet.
 // returns false, appending the reason to message, when it cannot be opened.
 bool
 WorkspaceOpen(Workspace *workspace, u64 index, StrBuf *message);
 
 // opens an entry and makes it current, shown in the focused view.
+// switching to an entry that was already open notes in message when its file changed on
+// disk since it was loaded or saved.
 // returns false, leaving the current entry alone, when it cannot be opened.
 bool
 WorkspaceSwitch(Workspace *workspace, u64 index, StrBuf *message);

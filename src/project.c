@@ -29,7 +29,7 @@ static constexpr u64 noHit = UINT64_MAX;
 
 static constexpr char invalidSymbol[] = "�";
 
-// a matching line.
+// a matching line, in the entry with the serial entry.
 typedef struct Hit {
   u64 entry;
   u64 line;
@@ -43,7 +43,8 @@ typedef struct Hit {
   u64 shownLength;
 } Hit;
 
-// a file read from disk for the preview, with where each line starts.
+// a file read from disk for the preview (of the entry with the serial entry), with where
+// each line starts.
 typedef struct Lines {
   u64 entry;
   bool readable;
@@ -228,18 +229,19 @@ SearchText(u64 entry, const char *text, u64 length)
   }
 }
 
+// no entry is removed while a search runs, so the queue holds indexes.
 static void
 SearchEntry(u64 index)
 {
   const WorkspaceEntry *entry = &workspace->entries[index];
 
   if (entry->document) {
-    SearchBuffer(index, &entry->document->buffer);
+    SearchBuffer(entry->serial, &entry->document->buffer);
     return;
   }
 
   u64 length;
-  if (ReadFile(TextOf(&entry->path), &length)) SearchText(index, readText, length);
+  if (ReadFile(TextOf(&entry->path), &length)) SearchText(entry->serial, readText, length);
   else skipped++;
 }
 
@@ -337,6 +339,8 @@ ProjectKey(Key key)
   Finish();
 }
 
+// hits remember entries by serial, so they never lead to the wrong file; this only frees
+// them.
 void
 ProjectClear(void)
 {
@@ -445,7 +449,9 @@ ReadPreview(u64 entry)
   preview.entry = entry;
   preview.count = 0;
   u64 length = 0;
-  preview.readable = ReadFile(TextOf(&workspace->entries[entry].path), &length);
+  u64 index = WorkspaceEntryOf(workspace, entry);
+  const char *path = index == workspaceNone ? "" : TextOf(&workspace->entries[index].path);
+  preview.readable = index != workspaceNone && ReadFile(path, &length);
   if (!preview.readable) return;
 
   free(preview.text);
@@ -471,7 +477,9 @@ ReadPreview(u64 entry)
 static bool
 PreviewLine(u64 entry, u64 line, const char **text, u64 *length)
 {
-  const Document *document = workspace->entries[entry].document;
+  u64 index = WorkspaceEntryOf(workspace, entry);
+  bool gone = index == workspaceNone;
+  const Document *document = gone ? nullptr : workspace->entries[index].document;
 
   if (document) {
     if (line >= BufferLineCount(&document->buffer)) return false;
@@ -629,31 +637,60 @@ Picked([[maybe_unused]] void *context, bool picked, u64 id)
   }
 
   lastOpened = id;
-  if (WorkspaceSwitch(workspace, hits[id].entry, message)) SelectHit(&hits[id]);
+  u64 index = WorkspaceEntryOf(workspace, hits[id].entry);
+
+  if (index == workspaceNone) StrBufAppendString(message, "that buffer has been closed");
+  else if (WorkspaceSwitch(workspace, index, message)) SelectHit(&hits[id]);
 }
 
+// lists the hits, leaving out those in closed buffers, with the first hit from position on
+// selected.
 static void
 ShowList(u64 position)
 {
   StrBuf item = {};
   StrBuf note = {};
   PickerBegin();
+  u64 shown = 0;
+  u64 selected = 0;
+  u64 entry = noHit;
+  u64 index = workspaceNone;
 
-  for (u64 index = 0; index < hitCount; index++) {
-    const Hit *hit = &hits[index];
+  for (u64 at = 0; at < hitCount; at++) {
+    const Hit *hit = &hits[at];
+
+    // hits come grouped by entry.
+    if (hit->entry != entry) {
+      entry = hit->entry;
+      index = WorkspaceEntryOf(workspace, entry);
+    }
+
+    if (index == workspaceNone) continue;
+
+    if (at < position) selected = shown + 1;
     StrBufClear(&item);
-    WorkspaceName(workspace, hit->entry, &item);
+    WorkspaceName(workspace, index, &item);
     StrBufAppendFormat(&item, ":%lu", hit->line + 1);
     StrBufClear(&note);
     StrBufAppend(&note, shownTexts.data + hit->shown, hit->shownLength);
-    PickerAdd(item.data, item.length, TextOf(&note), index);
+    PickerAdd(item.data, item.length, TextOf(&note), at);
+    shown++;
+  }
+
+  if (!shown) {
+    StrBufAppendString(message, "every buffer with project search matches has been closed");
+    StrBufFree(&item);
+    StrBufFree(&note);
+    return;
   }
 
   StrBuf title = {};
   DescribeResult(&title);
+  u64 left = hitCount - shown;
+  if (left) StrBufAppendFormat(&title, ", %lu in closed buffers left out", left);
   PickerOpen(title.data, "filter: ", Picked, nullptr);
   PickerShowPreview(DrawPreview, nullptr);
-  PickerSelect(position);
+  PickerSelect(selected < shown ? selected : shown - 1);
   StrBufFree(&title);
   StrBufFree(&item);
   StrBufFree(&note);

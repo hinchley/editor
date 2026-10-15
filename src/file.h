@@ -73,6 +73,22 @@ FileLoad(File *file, Buffer *buffer, StrBuf *message);
 enum FileStatus
 FileSave(File *file, const Buffer *buffer, bool overwriteChanged, StrBuf *message);
 
+// true when something exists at the file's path that is not the version last loaded or
+// saved, so a save would replace changes made by another program.
+// a file deleted since then does not count.
+bool
+FileChangedOnDisk(const File *file);
+
+// moves the file on disk to path, replacing any file there, and gives file that path.
+// across file systems the file is copied, with its permissions, and the original removed.
+// a file not yet created by a save only changes its path.
+// the stamp follows the file only when it was current, so changes made by another program
+// are still noticed.
+// returns false, changing nothing, when the file cannot be moved; problems are appended
+// to message.
+bool
+FileRename(File *file, const char *path, StrBuf *message);
+
 // short name of a line ending for display, "LF" or "CRLF".
 const char *
 FileLineEndingName(enum LineEnding lineEnding);

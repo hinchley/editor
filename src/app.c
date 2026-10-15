@@ -593,6 +593,8 @@ BufferCommand(enum Command command)
   case CommandLastBuffer: SessionLastUsed(); break;
   case CommandPickBuffer: SessionPick(false); break;
   case CommandPickUnsaved: SessionPick(true); break;
+  case CommandCloseBuffer: SessionClose(); break;
+  case CommandFileMenu: SaveFileMenu(&workspace, &message); break;
   case CommandSave: SaveCurrent(&workspace, &message, nullptr); break;
   case CommandSaveAll: SaveAll(&workspace, &message, nullptr); break;
   case CommandQuit: SessionQuit(Quit); break;

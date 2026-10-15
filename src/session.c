@@ -22,6 +22,9 @@ static LoaderList pending;
 // what runs once the unsaved changes are saved or discarded.
 static SaveFinished afterUnsaved;
 
+// the buffer being closed, waiting for the answer about its unsaved changes.
+static u64 closing;
+
 static void
 Switch(u64 index)
 {
@@ -284,6 +287,50 @@ SessionPick(bool unsavedOnly)
   StrBufFree(&name);
   free(order);
   PickerOpen(unsavedOnly ? "unsaved buffers" : "buffers", "buffer: ", Picked, nullptr);
+}
+
+static void
+Close(void)
+{
+  u64 index = WorkspaceEntryOf(workspace, closing);
+  if (index == workspaceNone) return;
+
+  StrBuf name = {};
+  WorkspaceName(workspace, index, &name);
+  WorkspaceRemove(workspace, index, message);
+  if (message->length) StrBufAppendString(message, "; ");
+  StrBufAppendFormat(message, "closed %s", name.data);
+  StrBufFree(&name);
+}
+
+static void
+CloseAnswered(
+  [[maybe_unused]] void *context,
+  const char *answer,
+  [[maybe_unused]] u64 length
+) {
+  if (!answer || *answer == 'c') return;
+
+  if (*answer == 'y') SaveCurrent(workspace, message, Close);
+  else Close();
+}
+
+void
+SessionClose(void)
+{
+  closing = workspace->entries[workspace->current].serial;
+
+  if (!WorkspaceModified(workspace, workspace->current)) {
+    Close();
+    return;
+  }
+
+  StrBuf question = {};
+  StrBufAppendString(&question, "save changes to ");
+  WorkspaceName(workspace, workspace->current, &question);
+  StrBufAppendString(&question, "? (y/n/c)");
+  PromptChoose(question.data, "ync", CloseAnswered, nullptr);
+  StrBufFree(&question);
 }
 
 void

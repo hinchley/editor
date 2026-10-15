@@ -24,7 +24,9 @@ WorkspaceFree(Workspace *workspace)
   }
 
   free(workspace->entries);
+  u64 serials = workspace->serials;
   WorkspaceInit(workspace, workspace->options);
+  workspace->serials = serials;
 }
 
 static WorkspaceEntry *
@@ -37,7 +39,7 @@ Append(Workspace *workspace)
   }
 
   WorkspaceEntry *entry = &workspace->entries[workspace->count++];
-  *entry = (WorkspaceEntry){};
+  *entry = (WorkspaceEntry){.serial = ++workspace->serials};
   return entry;
 }
 
@@ -109,6 +111,32 @@ WorkspaceAddUnnamed(Workspace *workspace)
   return workspace->count - 1;
 }
 
+u64
+WorkspaceEntryOf(const Workspace *workspace, u64 serial)
+{
+  u64 low = 0;
+  u64 high = workspace->count;
+
+  while (low < high) {
+    u64 middle = low + (high - low) / 2;
+    u64 found = workspace->entries[middle].serial;
+    if (found == serial) return middle;
+
+    if (found < serial) low = middle + 1;
+    else high = middle;
+  }
+
+  return workspaceNone;
+}
+
+void
+WorkspaceRenamed(Workspace *workspace, u64 index)
+{
+  WorkspaceEntry *entry = &workspace->entries[index];
+  entry->id = (FileId){};
+  entry->id = EntryId(entry);
+}
+
 static void
 DescribeRefusal(const WorkspaceEntry *entry, StrBuf *message)
 {
@@ -158,10 +186,19 @@ MakeCurrent(Workspace *workspace, u64 index)
 bool
 WorkspaceSwitch(Workspace *workspace, u64 index, StrBuf *message)
 {
+  bool wasOpen = workspace->entries[index].document != nullptr;
   if (!WorkspaceOpen(workspace, index, message)) return false;
 
+  const Document *document = workspace->entries[index].document;
   MakeCurrent(workspace, index);
   DocumentShow(workspace->entries[index].document, workspace->slot);
+
+  if (wasOpen && document->file.path.length && FileChangedOnDisk(&document->file)) {
+    if (message->length) StrBufAppendString(message, "; ");
+    const char *path = document->file.path.data;
+    StrBufAppendFormat(message, "%s: changed on disk (alt+r reloads)", path);
+  }
+
   return true;
 }
 
@@ -255,19 +292,83 @@ WorkspaceNextOpen(const Workspace *workspace, i32 step)
   return workspaceNone;
 }
 
-u64
-WorkspacePreviousUsed(const Workspace *workspace)
+// the most recently used entry other than skip, or workspaceNone.
+static u64
+MostRecent(const Workspace *workspace, u64 skip)
 {
   u64 found = workspaceNone;
   u64 latest = 0;
 
   for (u64 index = 0; index < workspace->count; index++) {
     u64 used = workspace->entries[index].used;
-    if (index == workspace->current || used <= latest) continue;
+    if (index == skip || used <= latest) continue;
 
     latest = used;
     found = index;
   }
 
   return found;
+}
+
+u64
+WorkspacePreviousUsed(const Workspace *workspace)
+{
+  return MostRecent(workspace, workspace->current);
+}
+
+// makes another entry current in place of a removed one: the most recently used, or else
+// the first that opens, or else a new unnamed buffer.
+static void
+ReplaceCurrent(Workspace *workspace, StrBuf *message)
+{
+  u64 index = MostRecent(workspace, workspaceNone);
+  if (index != workspaceNone && WorkspaceSwitch(workspace, index, message)) return;
+
+  for (index = 0; index < workspace->count; index++) {
+    StrBuf reason = {};
+    bool opened = WorkspaceSwitch(workspace, index, &reason);
+    StrBufFree(&reason);
+    if (opened) return;
+  }
+
+  WorkspaceSwitch(workspace, WorkspaceAddUnnamed(workspace), message);
+}
+
+// shows another entry on the unfocused side of the split in place of a removed one,
+// starting where it was last seen.
+static void
+ReplaceOther(Workspace *workspace)
+{
+  u64 index = MostRecent(workspace, workspace->current);
+  if (index == workspaceNone) index = workspace->current;
+
+  Document *document = workspace->entries[index].document;
+  View *view = &document->views[workspace->slot ^ 1];
+  if (view != document->view) ViewCopy(view, document->view);
+  workspace->other = index;
+}
+
+void
+WorkspaceRemove(Workspace *workspace, u64 index, StrBuf *message)
+{
+  WorkspaceEntry *entry = &workspace->entries[index];
+  bool wasCurrent = index == workspace->current;
+  bool wasOther = workspace->split && index == workspace->other;
+
+  StrBufFree(&entry->path);
+
+  if (entry->document) {
+    DocumentFree(entry->document);
+    free(entry->document);
+    workspace->openCount--;
+  }
+
+  u64 after = workspace->count - index - 1;
+  memmove(entry, entry + 1, after * sizeof(WorkspaceEntry));
+  workspace->count--;
+  if (workspace->current > index) workspace->current--;
+  if (workspace->other > index) workspace->other--;
+
+  if (wasCurrent) ReplaceCurrent(workspace, message);
+  if (wasOther) ReplaceOther(workspace);
 }

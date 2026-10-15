@@ -72,6 +72,15 @@ DocumentSave(Document *document, bool overwriteChanged, StrBuf *message)
 }
 
 bool
+DocumentRename(Document *document, const char *path, StrBuf *message)
+{
+  if (!FileRename(&document->file, path, message)) return false;
+
+  DetectLanguage(document, message);
+  return true;
+}
+
+bool
 DocumentReload(Document *document, StrBuf *message)
 {
   // the file is read into a separate buffer, so a failure leaves the text alone.

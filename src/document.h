@@ -64,6 +64,11 @@ DocumentModified(const Document *document);
 enum FileStatus
 DocumentSave(Document *document, bool overwriteChanged, StrBuf *message);
 
+// moves the document's file to path; see FileRename.
+// unsaved changes stay unsaved, and another extension changes the language.
+bool
+DocumentRename(Document *document, const char *path, StrBuf *message);
+
 // replaces the text with the file's current contents, forgets the history and keeps the
 // cursors inside the new text.
 // returns false, changing nothing, when the file cannot be read.
