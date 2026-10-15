@@ -67,6 +67,19 @@ ThemeName(enum ThemeGroup group)
   return themeEntries[group].name;
 }
 
+// first components some grammars' queries use for what the theme colours as another group.
+static const struct {
+  const char *name;
+  enum ThemeGroup group;
+} captureAliases[] = {
+  {"boolean", ThemeConstant},
+  {"character", ThemeString},
+  {"conditional", ThemeKeyword},
+  {"float", ThemeNumber},
+  {"module", ThemeNamespace},
+  {"storageclass", ThemeKeyword}
+};
+
 bool
 ThemeOfCapture(const char *name, enum ThemeGroup *group)
 {
@@ -85,6 +98,15 @@ ThemeOfCapture(const char *name, enum ThemeGroup *group)
 
     if (strlen(candidate) == length && strncmp(candidate, name, length) == 0) {
       *group = (enum ThemeGroup)index;
+      return true;
+    }
+  }
+
+  for (u32 index = 0; index < sizeof captureAliases / sizeof captureAliases[0]; index++) {
+    const char *alias = captureAliases[index].name;
+
+    if (strlen(alias) == length && strncmp(alias, name, length) == 0) {
+      *group = captureAliases[index].group;
       return true;
     }
   }

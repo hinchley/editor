@@ -5,7 +5,7 @@ static void
 DetectLanguage(Document *document, StrBuf *message)
 {
   const char *path = document->file.path.data;
-  const Lang *lang = path ? LangOfPath(path) : nullptr;
+  const Lang *lang = path ? LangOfPath(path, document->scriptLang) : nullptr;
   if (lang == document->lang && (document->highlight || !lang)) return;
 
   HighlightFree(document->highlight);
@@ -36,7 +36,11 @@ DocumentOpen(
 
   document->savedLineEnding = document->file.lineEnding;
   bool read = status == FileStatusOk || status == FileStatusNew;
-  if (read) DetectLanguage(document, message);
+  if (!read) return status;
+
+  const StrBuf *first = BufferLine(&document->buffer, 0);
+  document->scriptLang = LangOfScript(first->data, first->length);
+  DetectLanguage(document, message);
   return status;
 }
 

@@ -34,8 +34,13 @@ typedef struct Document {
   // what the view highlights: search matches, unknown words or nothing.
   enum MatchKind marks;
 
-  // the language from the file's extension, and its highlighter (nullptr without either).
+  // the language from the file's name or extension, and its highlighter (nullptr without
+  // either).
   const Lang *lang;
+
+  // the language a "#!" first line named when the file opened, for a path without an
+  // extension.
+  const Lang *scriptLang;
   Highlight *highlight;
 } Document;
 

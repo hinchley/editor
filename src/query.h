@@ -1,8 +1,8 @@
 #pragma once
 
 // a compiled tree-sitter query together with what the runtime leaves to its user: the
-// text predicates (#eq?, #match?, #any-of? and their #not- forms) and the injection
-// settings made with #set!.
+// text predicates (#eq?, #match?, #lua-match?, #any-of? and their #not- forms) and the
+// injection settings made with #set!.
 // other predicates (#is-not? local, #offset!) are ignored.
 #include <tree_sitter/api.h>
 

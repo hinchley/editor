@@ -63,8 +63,8 @@ ThemeName(enum ThemeGroup group);
 
 // finds the syntax group a tree-sitter capture name is coloured with.
 // a capture uses the group named by its first component ("string.special" is a string),
-// except that any "*.builtin" capture is a builtin and markup captures ("text.title") use
-// their second component.
+// except that any "*.builtin" capture is a builtin, markup captures ("text.title") use
+// their second component, and a few names other groups go by ("boolean" is a constant).
 // returns false for a name with no group, which colours nothing ("none" is a group, and
 // clears the colour).
 bool

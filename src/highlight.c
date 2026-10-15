@@ -11,13 +11,24 @@
 #include "query.h"
 #include "settings.h"
 
+const TSLanguage *tree_sitter_bash(void);
 const TSLanguage *tree_sitter_c(void);
 const TSLanguage *tree_sitter_css(void);
+const TSLanguage *tree_sitter_go(void);
 const TSLanguage *tree_sitter_html(void);
 const TSLanguage *tree_sitter_javascript(void);
 const TSLanguage *tree_sitter_json(void);
 const TSLanguage *tree_sitter_markdown(void);
 const TSLanguage *tree_sitter_markdown_inline(void);
+const TSLanguage *tree_sitter_php(void);
+const TSLanguage *tree_sitter_sql(void);
+const TSLanguage *tree_sitter_xml(void);
+const TSLanguage *tree_sitter_yaml(void);
+const TSLanguage *tree_sitter_zig(void);
+
+static const u8 bashHighlights[] = {
+#embed "../vendor/queries/bash/highlights.scm"
+};
 
 static const u8 cHighlights[] = {
 #embed "../vendor/queries/c/highlights.scm"
@@ -25,6 +36,10 @@ static const u8 cHighlights[] = {
 
 static const u8 cssHighlights[] = {
 #embed "../vendor/queries/css/highlights.scm"
+};
+
+static const u8 goHighlights[] = {
+#embed "../vendor/queries/go/highlights.scm"
 };
 
 static const u8 htmlHighlights[] = {
@@ -63,6 +78,33 @@ static const u8 markdownInlineInjections[] = {
 #embed "../vendor/queries/markdown-inline/injections.scm"
 };
 
+static const u8 phpHighlights[] = {
+#embed "../vendor/queries/php/highlights.scm"
+};
+
+// php keeps the injection of html (into the text outside <?php ?>) in a file of its own.
+static const u8 phpInjections[] = {
+#embed "../vendor/queries/php/injections.scm"
+  , '\n',
+#embed "../vendor/queries/php/injections-text.scm"
+};
+
+static const u8 sqlHighlights[] = {
+#embed "../vendor/queries/sql/highlights.scm"
+};
+
+static const u8 xmlHighlights[] = {
+#embed "../vendor/queries/xml/highlights.scm"
+};
+
+static const u8 yamlHighlights[] = {
+#embed "../vendor/queries/yaml/highlights.scm"
+};
+
+static const u8 zigHighlights[] = {
+#embed "../vendor/queries/zig/highlights.scm"
+};
+
 typedef struct Embedded {
   const u8 *data;
   u64 size;
@@ -72,8 +114,9 @@ typedef struct Grammar {
   // the display name from lang.c, or nullptr for a grammar that is only ever injected.
   const char *name;
 
-  // the lowercase name other grammars inject it by.
-  const char *injectionId;
+  // the lowercase names other grammars inject it by, the first being its own, ending with
+  // nullptr.
+  const char *injectionIds[3];
   const TSLanguage *(*language)(void);
   Embedded highlights;
   Embedded injections;
@@ -84,56 +127,104 @@ typedef struct Grammar {
   // parse again from scratch after an edit, for a grammar whose scanner gives different
   // trees when parsing incrementally (markdown's inline grammar).
   bool freshParse;
+
+  // for captures of the same node, the earlier pattern wins (the tree-sitter cli rule)
+  // rather than the later one (go's query puts the specific patterns first).
+  bool firstPatternWins;
 } Grammar;
 
 static const Grammar grammars[] = {
   {
+    .name = "Bash",
+    .injectionIds = {"bash", "shell"},
+    .language = tree_sitter_bash,
+    .highlights = {bashHighlights, sizeof bashHighlights}
+  },
+  {
     .name = "C",
-    .injectionId = "c",
+    .injectionIds = {"c"},
     .language = tree_sitter_c,
     .highlights = {cHighlights, sizeof cHighlights}
   },
   {
     .name = "CSS",
-    .injectionId = "css",
+    .injectionIds = {"css"},
     .language = tree_sitter_css,
     .highlights = {cssHighlights, sizeof cssHighlights}
   },
   {
+    .name = "Go",
+    .injectionIds = {"go"},
+    .language = tree_sitter_go,
+    .highlights = {goHighlights, sizeof goHighlights},
+    .firstPatternWins = true
+  },
+  {
     .name = "HTML",
-    .injectionId = "html",
+    .injectionIds = {"html"},
     .language = tree_sitter_html,
     .highlights = {htmlHighlights, sizeof htmlHighlights},
     .injections = {htmlInjections, sizeof htmlInjections}
   },
   {
     .name = "JavaScript",
-    .injectionId = "javascript",
+    .injectionIds = {"javascript"},
     .language = tree_sitter_javascript,
     .highlights = {javascriptHighlights, sizeof javascriptHighlights},
     .injections = {javascriptInjections, sizeof javascriptInjections}
   },
   {
     .name = "JSON",
-    .injectionId = "json",
+    .injectionIds = {"json"},
     .language = tree_sitter_json,
     .highlights = {jsonHighlights, sizeof jsonHighlights}
   },
   {
     .name = "Markdown",
-    .injectionId = "markdown",
+    .injectionIds = {"markdown"},
     .language = tree_sitter_markdown,
     .highlights = {markdownHighlights, sizeof markdownHighlights},
     .injections = {markdownInjections, sizeof markdownInjections},
     .prose = true
   },
   {
-    .injectionId = "markdown_inline",
+    .injectionIds = {"markdown_inline"},
     .language = tree_sitter_markdown_inline,
     .highlights = {markdownInlineHighlights, sizeof markdownInlineHighlights},
     .injections = {markdownInlineInjections, sizeof markdownInlineInjections},
     .prose = true,
     .freshParse = true
+  },
+  {
+    .name = "PHP",
+    .injectionIds = {"php"},
+    .language = tree_sitter_php,
+    .highlights = {phpHighlights, sizeof phpHighlights},
+    .injections = {phpInjections, sizeof phpInjections}
+  },
+  {
+    .name = "SQL",
+    .injectionIds = {"sql"},
+    .language = tree_sitter_sql,
+    .highlights = {sqlHighlights, sizeof sqlHighlights}
+  },
+  {
+    .name = "XML",
+    .injectionIds = {"xml"},
+    .language = tree_sitter_xml,
+    .highlights = {xmlHighlights, sizeof xmlHighlights}
+  },
+  {
+    .name = "YAML",
+    .injectionIds = {"yaml"},
+    .language = tree_sitter_yaml,
+    .highlights = {yamlHighlights, sizeof yamlHighlights}
+  },
+  {
+    .name = "Zig",
+    .injectionIds = {"zig"},
+    .language = tree_sitter_zig,
+    .highlights = {zigHighlights, sizeof zigHighlights}
   }
 };
 
@@ -292,8 +383,11 @@ static u32
 FindInjected(const char *name, u64 length)
 {
   for (u32 index = 0; index < grammarCount; index++) {
-    const char *id = grammars[index].injectionId;
-    if (strlen(id) == length && strncasecmp(id, name, length) == 0) return index;
+    const char *const *ids = grammars[index].injectionIds;
+
+    for (u32 at = 0; ids[at]; at++) {
+      if (strlen(ids[at]) == length && strncasecmp(ids[at], name, length) == 0) return index;
+    }
   }
 
   const Lang *lang = LangOfExtension(name, length);
@@ -343,7 +437,7 @@ Compile(u32 index, StrBuf *message)
   if (ready) CompileGroups(grammar);
   else QueryFree(&grammar->highlights);
 
-  const char *name = source->name ? source->name : source->injectionId;
+  const char *name = source->name ? source->name : source->injectionIds[0];
   const char *reason = error.data ? error.data : "";
   if (!ready) StrBufAppendFormat(message, "%s highlighting failed: %s", name, reason);
   StrBufFree(&error);
@@ -663,7 +757,7 @@ ComparePoints(TSPoint a, TSPoint b)
 }
 
 // paints go on in order: by start, enclosing nodes before the nodes inside them, and for
-// the same node the later pattern last, so it wins.
+// the same node the later pattern (by its order, see firstPatternWins) last, so it wins.
 static i32
 ComparePaints(const void *a, const void *b)
 {
@@ -729,11 +823,15 @@ PaintCaptures(
     if (group == noGroup) continue;
     if (!QueryAccepts(&queries->highlights, &match, NodeText, highlight->buffer)) continue;
 
+    // paints of the same node go on in pattern order, so the last one wins.
+    u32 pattern = match.pattern_index;
+    if (grammars[grammar].firstPatternWins) pattern = UINT32_MAX - pattern;
+
     Paint paint = {
       .start = ts_node_start_point(capture->node),
       .end = ts_node_end_point(capture->node),
       .group = group,
-      .pattern = match.pattern_index
+      .pattern = pattern
     };
 
     AddPaint(&list, paint);

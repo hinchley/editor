@@ -38,13 +38,14 @@ fi
 pids=()
 objects=()
 
-# compiles a vendor source when its object is missing or anything in its folder is newer.
+# compiles a vendor source when its object is missing or anything in folder (the grammar's,
+# which may hold headers its scanner includes from elsewhere) is newer.
 compileVendor() {
-  local source=$1 name=$2
+  local source=$1 name=$2 folder=$3
   local object=$vendorDir/$name.o
   objects+=("$object")
 
-  if [[ -f $object && -z $(find "$(dirname "$source")" -newer "$object" -print -quit) ]]; then
+  if [[ -f $object && -z $(find "$folder" -newer "$object" -print -quit) ]]; then
     return
   fi
 
@@ -53,12 +54,15 @@ compileVendor() {
   pids+=($!)
 }
 
-compileVendor vendor/tree-sitter/src/lib.c tree-sitter
+compileVendor vendor/tree-sitter/src/lib.c tree-sitter vendor/tree-sitter/src
+
+# a grammar is its parser.c and optional scanner.c, at the top of its folder or where
+# upstream keeps them (php/php/src). other .c files are included by its scanner (yaml).
 for grammar in vendor/grammars/*/; do
   name=$(basename "$grammar")
-  for source in "$grammar"*.c; do
-    compileVendor "$source" "$name-$(basename "$source" .c)"
-  done
+  while IFS= read -r source; do
+    compileVendor "$source" "$name-$(basename "$source" .c)" "$grammar"
+  done < <(find "$grammar" \( -name parser.c -o -name scanner.c \) | sort)
 done
 
 for source in src/*.c; do

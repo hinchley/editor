@@ -90,11 +90,82 @@ ConvertRegex(const char *source, StrBuf *output)
   }
 }
 
+// the posix class of a lua class letter (%a, %d), or nullptr.
+static const char *
+LuaClass(char letter)
+{
+  switch (letter | 0x20) {
+  case 'a': return "[:alpha:]";
+  case 'c': return "[:cntrl:]";
+  case 'd': return "[:digit:]";
+  case 'l': return "[:lower:]";
+  case 'p': return "[:punct:]";
+  case 's': return "[:space:]";
+  case 'u': return "[:upper:]";
+  case 'w': return "[:alnum:]";
+  case 'x': return "[:xdigit:]";
+  default: return nullptr;
+  }
+}
+
+// rewrites a lua pattern (for #lua-match?) as a posix regular expression: %a style classes
+// (a capital letter is the complement, outside brackets), %x escapes, and the lazy
+// repetition "-", which is "*" for a test that only asks whether it matches.
+// characters special to posix but not to lua ({, }, | and \) are escaped.
+// %b and %f have no equivalent and match their letter.
+static void
+ConvertLuaPattern(const char *source, StrBuf *output)
+{
+  bool inBracket = false;
+
+  for (const char *at = source; *at; at++) {
+    if (*at == '%' && at[1]) {
+      at++;
+      const char *class = LuaClass(*at);
+      bool complement = *at >= 'A' && *at <= 'Z';
+
+      if (!class) {
+        if (!inBracket) StrBufAppendByte(output, '\\');
+        StrBufAppendByte(output, *at);
+      } else if (inBracket) {
+        StrBufAppendString(output, class);
+      } else {
+        StrBufAppendFormat(output, "[%s%s]", complement ? "^" : "", class);
+      }
+
+      continue;
+    }
+
+    if (inBracket) {
+      if (*at == ']') inBracket = false;
+      StrBufAppendByte(output, *at);
+      continue;
+    }
+
+    if (*at == '[') {
+      inBracket = true;
+      StrBufAppendByte(output, *at);
+      if (at[1] == '^') StrBufAppendByte(output, *++at);
+      if (at[1] == ']') StrBufAppendByte(output, *++at);
+      continue;
+    }
+
+    if (*at == '-') {
+      StrBufAppendByte(output, '*');
+      continue;
+    }
+
+    if (*at == '{' || *at == '}' || *at == '|' || *at == '\\') StrBufAppendByte(output, '\\');
+    StrBufAppendByte(output, *at);
+  }
+}
+
 static bool
-CompileRegex(QueryPredicate *predicate, const char *source, StrBuf *error)
+CompileRegex(QueryPredicate *predicate, const char *source, bool lua, StrBuf *error)
 {
   StrBuf converted = {};
-  ConvertRegex(source, &converted);
+  if (lua) ConvertLuaPattern(source, &converted);
+  else ConvertRegex(source, &converted);
   const char *text = converted.data ? converted.data : "";
   i32 status = regcomp(&predicate->regex, text, REG_EXTENDED | REG_NOSUB);
   StrBufFree(&converted);
@@ -105,13 +176,14 @@ CompileRegex(QueryPredicate *predicate, const char *source, StrBuf *error)
 }
 
 static bool
-ParseTest(const char *name, QueryPredicate *predicate)
+ParseTest(const char *name, QueryPredicate *predicate, bool *lua)
 {
   predicate->negate = strncmp(name, "not-", 4) == 0;
   if (predicate->negate) name += 4;
 
+  *lua = strcmp(name, "lua-match?") == 0;
   if (strcmp(name, "eq?") == 0) predicate->test = QueryTestEq;
-  else if (strcmp(name, "match?") == 0) predicate->test = QueryTestMatch;
+  else if (strcmp(name, "match?") == 0 || *lua) predicate->test = QueryTestMatch;
   else if (strcmp(name, "any-of?") == 0) predicate->test = QueryTestAnyOf;
   else return false;
 
@@ -123,7 +195,8 @@ static bool
 ParsePredicate(const Steps *steps, QueryPattern *pattern, StrBuf *error)
 {
   QueryPredicate predicate = {};
-  if (!ParseTest(StepString(steps, 0), &predicate)) return true;
+  bool lua;
+  if (!ParseTest(StepString(steps, 0), &predicate, &lua)) return true;
 
   if (steps->count < 3 || !StepIsCapture(steps, 1)) {
     StrBufAppendFormat(error, "bad #%s predicate", StepString(steps, 0));
@@ -144,7 +217,7 @@ ParsePredicate(const Steps *steps, QueryPattern *pattern, StrBuf *error)
   if (!valid) StrBufAppendFormat(error, "bad #%s predicate", StepString(steps, 0));
 
   if (valid && predicate.test == QueryTestMatch) {
-    valid = CompileRegex(&predicate, predicate.strings[0], error);
+    valid = CompileRegex(&predicate, predicate.strings[0], lua, error);
   }
 
   if (!valid) {
