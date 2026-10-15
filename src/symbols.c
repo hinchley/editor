@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "highlight.h"
 #include "jump.h"
@@ -109,13 +110,39 @@ Picked([[maybe_unused]] void *context, bool picked, u64 id)
   FreeList(&listed);
 }
 
+// the listed symbol named by the word at a position, preferring a definition to a
+// prototype, or listed.count when the word names none.
+static u64
+Named(View *view, Position at)
+{
+  u64 start;
+  u64 end;
+  const StrBuf *line = BufferLine(view->buffer, at.line);
+  if (!MoveWordAround(line, at.byte, &start, &end)) return listed.count;
+
+  u64 found = listed.count;
+
+  for (u64 index = 0; index < listed.count; index++) {
+    const Symbol *symbol = &listed.symbols[index];
+    bool same = symbol->length == end - start &&
+      memcmp(listed.names.data + symbol->text, line->data + start, end - start) == 0;
+    if (!same) continue;
+
+    if (strcmp(symbol->kind, "prototype") != 0) return index;
+    if (found == listed.count) found = index;
+  }
+
+  return found;
+}
+
 void
 SymbolsPickFile(void)
 {
   FreeList(&listed);
   if (!Collect(&listed)) return;
 
-  Position head = CursorSetPrimary(&WorkspaceDocument(workspace)->view->cursors)->head;
+  View *view = WorkspaceDocument(workspace)->view;
+  Position head = CursorSetPrimary(&view->cursors)->head;
   u64 selected = 0;
   u64 width = 0;
 
@@ -124,6 +151,9 @@ SymbolsPickFile(void)
     if (PositionCompare(symbol->start, head) <= 0) selected = index;
     if (symbol->length > width) width = symbol->length;
   }
+
+  u64 named = Named(view, head);
+  if (named < listed.count) selected = named;
 
   // names line up, unless one is very long.
   if (width > 40) width = 40;

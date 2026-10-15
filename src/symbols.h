@@ -11,8 +11,10 @@
 void
 SymbolsInit(Workspace *workspace, StrBuf *message);
 
-// opens a picker of the current buffer's symbols in the order they are defined, with the
-// last one starting at or before the cursor selected, and goes to the name picked.
+// opens a picker of the current buffer's symbols in the order they are defined, and goes
+// to the name picked.
+// the symbol named by the word at the cursor is selected (its definition rather than a
+// prototype), or else the last one starting at or before the cursor.
 void
 SymbolsPickFile(void);
 

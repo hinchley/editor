@@ -82,7 +82,7 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `highlight` | The grammar table and the only place that knows grammars: parsing a buffer (again incrementally after edits), injected languages, and the syntax group of every byte of the lines around the one asked for. Also tells spell check which text it looks at, lists the symbols of a buffer or of text read from a file, and finds the syntax node around a range. The trees stay private: other modules ask these questions as functions. |
 | `project` | Project search (Alt-Shift-F, Alt-F): the scope, searching loaded files a slice at a time, the hit list and its preview. |
 | `jump` | Jump history (Alt-Left, Alt-Right): the places the cursor jumped from, by entry serial and position. |
-| `symbols` | The commands that go to symbols in the current buffer: the Alt-O picker, and Alt-] and Alt-[ to the next or previous definition. |
+| `symbols` | The commands that go to symbols in the current buffer: the Alt-O picker (which starts on the symbol named by the word at the cursor, a definition before a prototype, or else the one the cursor is in), and Alt-] and Alt-[ to the next or previous definition. |
 
 ## Terminal
 
