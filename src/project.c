@@ -19,10 +19,17 @@ static constexpr u64 maxShownLength = 200;
 
 static constexpr u64 noHit = UINT64_MAX;
 
+// the revision of a hit read from a file on disk rather than from an open buffer.
+static constexpr u64 noRevision = UINT64_MAX;
+
 // a matching line, in the entry with the serial entry.
+// hits are in the order of their entries, then their lines.
 typedef struct Hit {
   u64 entry;
   u64 line;
+
+  // the revision of the buffer it was found in, or noRevision.
+  u64 revision;
 
   // its first match, in bytes.
   u64 start;
@@ -59,8 +66,9 @@ static u64 searched;
 static bool stopped;
 static bool capped;
 
-// the hit opened last from the list, or noHit.
-static u64 lastOpened = noHit;
+// the entry and line of the hit opened last from the list, or noHit.
+static u64 openedEntry = noHit;
+static u64 openedLine;
 
 // the hits a replace takes, in list order, and the replacement once it is known.
 static u64 *chosen;
@@ -86,38 +94,46 @@ Plural(u64 count)
   return count == 1 ? "" : "s";
 }
 
+// appends a hit whose text is already at the end of shownTexts.
 static void
-AddHit(u64 entry, u64 line, const char *text, u64 length, PatternMatch match)
+AppendHit(Hit hit)
 {
   if (hitCount == hitCapacity) {
     hitCapacity = hitCapacity ? hitCapacity * 2 : 256;
     hits = MemoryResize(hits, hitCapacity, sizeof(Hit));
   }
 
-  if (!hitCount || hits[hitCount - 1].entry != entry) matchedFiles++;
+  if (!hitCount || hits[hitCount - 1].entry != hit.entry) matchedFiles++;
+  hits[hitCount++] = hit;
+  if (hitCount == maxProjectHits) capped = true;
+}
 
+static void
+AddHit(u64 entry, u64 line, u64 revision, const char *text, u64 length, PatternMatch match)
+{
   // the list shows the line without its indent, cut short on a code point boundary.
   u64 start = 0;
   while (start < length && (text[start] == ' ' || text[start] == '\t')) start++;
   u64 end = length - start > maxShownLength ? start + maxShownLength : length;
   while (end < length && end > start && ((u8)text[end] & 0xC0) == 0x80) end--;
 
-  Hit *hit = &hits[hitCount++];
-  *hit = (Hit){entry, line, match.start, match.end, shownTexts.length, end - start};
+  u64 shown = shownTexts.length;
 
   // a tab would show as a control character.
   for (u64 index = start; index < end; index++) {
     StrBufAppendByte(&shownTexts, text[index] == '\t' ? ' ' : text[index]);
   }
 
-  if (hitCount == maxProjectHits) capped = true;
+  AppendHit((Hit){entry, line, revision, match.start, match.end, shown, end - start});
 }
 
 static void
-SearchLine(u64 entry, u64 line, const char *text, u64 length)
+SearchLine(u64 entry, u64 line, u64 revision, const char *text, u64 length)
 {
   PatternMatch match;
-  if (PatternFind(&pattern, text, length, 0, &match)) AddHit(entry, line, text, length, match);
+  if (!PatternFind(&pattern, text, length, 0, &match)) return;
+
+  AddHit(entry, line, revision, text, length, match);
 }
 
 static void
@@ -127,7 +143,7 @@ SearchBuffer(u64 entry, const Buffer *buffer)
 
   for (u64 line = 0; line < count && !capped; line++) {
     const StrBuf *text = BufferLine(buffer, line);
-    SearchLine(entry, line, TextOf(text), text->length);
+    SearchLine(entry, line, buffer->revision, TextOf(text), text->length);
   }
 }
 
@@ -147,7 +163,7 @@ SearchText(u64 entry, const char *text, u64 length)
     const char *newline = memchr(text + at, '\n', length - at);
     u64 end = newline ? (u64)(newline - text) : length;
     u64 textEnd = newline && end > at && text[end - 1] == '\r' ? end - 1 : end;
-    SearchLine(entry, line, text + at, textEnd - at);
+    SearchLine(entry, line, noRevision, text + at, textEnd - at);
     if (!newline) break;
 
     at = end + 1;
@@ -237,7 +253,7 @@ ProjectClear(void)
 {
   hitCount = 0;
   StrBufClear(&shownTexts);
-  lastOpened = noHit;
+  openedEntry = noHit;
   PreviewForget();
 }
 
@@ -374,7 +390,8 @@ Picked([[maybe_unused]] void *context, bool picked, u64 id)
     return;
   }
 
-  lastOpened = id;
+  openedEntry = hits[id].entry;
+  openedLine = hits[id].line;
   u64 index = WorkspaceEntryOf(workspace, hits[id].entry);
 
   if (index == workspaceNone) {
@@ -579,6 +596,87 @@ ShowList(u64 position)
   StrBufFree(&note);
 }
 
+// the buffer to search the hits of an entry again in, starting with hit, or nullptr when
+// they still describe the text: the entry is not open, or its hits came from its buffer
+// as it still is.
+static const Buffer *
+ChangedBuffer(const Hit *hit)
+{
+  u64 index = WorkspaceEntryOf(workspace, hit->entry);
+  if (index == workspaceNone || !workspace->entries[index].document) return nullptr;
+
+  const Buffer *buffer = &workspace->entries[index].document->buffer;
+  return hit->revision == buffer->revision ? nullptr : buffer;
+}
+
+// finds the hits again in every open buffer that changed since they were found (or that
+// they were read from disk for), so the list follows edits.
+// files without hits are not searched again.
+static void
+RefreshHits(void)
+{
+  bool changed = false;
+
+  for (u64 at = 0; at < hitCount && !changed; at++) {
+    bool first = !at || hits[at].entry != hits[at - 1].entry;
+    changed = first && ChangedBuffer(&hits[at]);
+  }
+
+  if (!changed) return;
+
+  Hit *old = hits;
+  u64 oldCount = hitCount;
+  StrBuf oldTexts = shownTexts;
+  hits = nullptr;
+  hitCount = 0;
+  hitCapacity = 0;
+  shownTexts = (StrBuf){};
+  matchedFiles = 0;
+
+  // a search that stopped at maxProjectHits still did.
+  bool wasCapped = capped;
+  capped = false;
+  u64 at = 0;
+
+  while (at < oldCount && !capped) {
+    u64 end = at + 1;
+    while (end < oldCount && old[end].entry == old[at].entry) end++;
+    const Buffer *buffer = ChangedBuffer(&old[at]);
+
+    if (buffer) {
+      SearchBuffer(old[at].entry, buffer);
+    } else {
+      for (u64 index = at; index < end && !capped; index++) {
+        Hit hit = old[index];
+        hit.shown = shownTexts.length;
+        StrBufAppend(&shownTexts, oldTexts.data + old[index].shown, hit.shownLength);
+        AppendHit(hit);
+      }
+    }
+
+    at = end;
+  }
+
+  capped = capped || wasCapped;
+  free(old);
+  StrBufFree(&oldTexts);
+}
+
+// the first hit after the one opened last, or the last hit when none is after it.
+static u64
+NextHit(void)
+{
+  if (openedEntry == noHit) return 0;
+
+  for (u64 at = 0; at < hitCount; at++) {
+    const Hit *hit = &hits[at];
+    if (hit->entry > openedEntry) return at;
+    if (hit->entry == openedEntry && hit->line > openedLine) return at;
+  }
+
+  return hitCount - 1;
+}
+
 void
 ProjectShow(void)
 {
@@ -587,6 +685,12 @@ ProjectShow(void)
     return;
   }
 
-  u64 next = lastOpened == noHit ? 0 : lastOpened + 1;
-  ShowList(next < hitCount ? next : hitCount - 1);
+  RefreshHits();
+
+  if (!hitCount) {
+    StrBufAppendString(message, "the project search matches no longer match");
+    return;
+  }
+
+  ShowList(NextHit());
 }
