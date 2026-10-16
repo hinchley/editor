@@ -18,6 +18,7 @@
 #include "project.h"
 #include "prompt.h"
 #include "render.h"
+#include "review.h"
 #include "save.h"
 #include "scan.h"
 #include "screen.h"
@@ -592,6 +593,10 @@ NavigationCommand(enum Command command)
   case CommandGoToDefinition: SymbolsGoToDefinition(); break;
   case CommandShowSignature: SymbolsShowSignature(windowSize.width); break;
   case CommandProjectSymbols: SymbolsPickProject(); break;
+  case CommandNextChange: ReviewStep(false); break;
+  case CommandPreviousChange: ReviewStep(true); break;
+  case CommandChangePanel: ReviewTogglePanel(windowSize.width); break;
+  case CommandPickChanged: ReviewPickChanged(); break;
   default: return false;
   }
 
@@ -831,6 +836,7 @@ WaitForInput(void)
 typedef struct Pane {
   StrBuf name;
   StrBuf type;
+  StrBuf changes;
   StatusInfo status;
   MatchSet marks;
 } Pane;
@@ -845,12 +851,21 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
   if (document->lang) StrBufAppendString(&pane->type, document->lang->name);
   if (HighlightDisabled(document->highlight)) StrBufAppendString(&pane->type, " (uncoloured)");
 
+  // the lines changed since the last commit, when there are any.
+  ChangeCounts counts = ChangesCount(document->changes);
+  bool changed = counts.added || counts.changed || counts.removed;
+  if (changed) {
+    StrBuf *text = &pane->changes;
+    StrBufAppendFormat(text, "+%lu ~%lu -%lu", counts.added, counts.changed, counts.removed);
+  }
+
   pane->status = (StatusInfo){
     .name = &pane->name,
     .modified = DocumentModified(document),
     .readOnly = document->file.readOnly,
     .fileType = pane->type.data,
     .lineEnding = FileLineEndingName(document->file.lineEnding),
+    .changes = changed ? pane->changes.data : nullptr,
     .openCount = workspace.openCount,
     .loadedCount = workspace.count
   };
@@ -860,9 +875,16 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
   *framePane = (FramePane){
     .view = view,
     .highlight = document->highlight,
+    .changes = document->changes,
     .marks = &pane->marks,
     .status = &pane->status
   };
+}
+
+static void
+DrawPanel([[maybe_unused]] void *context, i32 column, i32 width, i32 height)
+{
+  ReviewDrawPanel(column, width, height);
 }
 
 static void
@@ -891,11 +913,13 @@ Draw(void)
     }
   }
 
+  if (ReviewPanelOpen()) frame.panel = (FramePanel){DrawPanel, nullptr};
   RenderFrame(&frame);
 
   for (u32 index = 0; index < 2; index++) {
     StrBufFree(&panes[index].name);
     StrBufFree(&panes[index].type);
+    StrBufFree(&panes[index].changes);
   }
 
   // a picker covers the view and its status bar.
@@ -920,6 +944,7 @@ AppRun(i32 argumentCount, char **arguments)
   ProjectInit(&workspace, &message);
   JumpInit(&workspace, &message);
   SymbolsInit(&workspace, &message);
+  ReviewInit(&workspace, &message);
   SessionStart(&workspace, &message, arguments + 1, (u64)argumentCount - 1);
 
   TermStart();

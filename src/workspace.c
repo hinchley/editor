@@ -193,6 +193,9 @@ WorkspaceSwitch(Workspace *workspace, u64 index, StrBuf *message)
   MakeCurrent(workspace, index);
   DocumentShow(workspace->entries[index].document, workspace->slot);
 
+  // a commit made since the entry was last shown changes what its text is compared with.
+  if (wasOpen) ChangesRefresh(document->changes);
+
   if (wasOpen && document->file.path.length && FileChangedOnDisk(&document->file)) {
     if (message->length) StrBufAppendString(message, "; ");
     const char *path = document->file.path.data;

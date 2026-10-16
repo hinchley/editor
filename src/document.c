@@ -1,5 +1,7 @@
 #include "document.h"
 
+#include <string.h>
+
 // picks the language from the path and starts highlighting in it, when it changed.
 static void
 DetectLanguage(Document *document, StrBuf *message)
@@ -11,6 +13,23 @@ DetectLanguage(Document *document, StrBuf *message)
   HighlightFree(document->highlight);
   document->lang = lang;
   document->highlight = lang ? HighlightNew(&document->buffer, lang, message) : nullptr;
+}
+
+// finds the repository of the file again when its path changed, and otherwise reads its
+// committed text again when HEAD moved.
+static void
+DetectChanges(Document *document)
+{
+  const char *path = document->file.path.data;
+  Changes *changes = document->changes;
+
+  if (changes && path && strcmp(ChangesPath(changes), path) == 0) {
+    ChangesRefresh(changes);
+    return;
+  }
+
+  ChangesFree(changes);
+  document->changes = path ? ChangesNew(&document->buffer, path) : nullptr;
 }
 
 enum FileStatus
@@ -41,6 +60,7 @@ DocumentOpen(
   const StrBuf *first = BufferLine(&document->buffer, 0);
   document->scriptLang = LangOfScript(first->data, first->length);
   DetectLanguage(document, message);
+  DetectChanges(document);
   return status;
 }
 
@@ -48,6 +68,7 @@ void
 DocumentFree(Document *document)
 {
   HighlightFree(document->highlight);
+  ChangesFree(document->changes);
   ViewFree(&document->views[0]);
   ViewFree(&document->views[1]);
   UndoFree(&document->undo);
@@ -72,6 +93,7 @@ DocumentSave(Document *document, bool overwriteChanged, StrBuf *message)
   UndoMarkSaved(&document->undo);
   document->savedLineEnding = file->lineEnding;
   DetectLanguage(document, message);
+  DetectChanges(document);
   return status;
 }
 
@@ -81,6 +103,7 @@ DocumentRename(Document *document, const char *path, StrBuf *message)
   if (!FileRename(&document->file, path, message)) return false;
 
   DetectLanguage(document, message);
+  DetectChanges(document);
   return true;
 }
 
@@ -108,6 +131,7 @@ DocumentReload(Document *document, StrBuf *message)
   document->savedLineEnding = loaded.lineEnding;
   UndoClear(&document->undo);
   HighlightReset(document->highlight);
+  ChangesRefresh(document->changes);
   ViewClamp(&document->views[0]);
   ViewClamp(&document->views[1]);
   return true;

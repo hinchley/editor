@@ -14,6 +14,11 @@ static constexpr char tabSymbol[] = "\u2192";
 static constexpr char rulerSymbol[] = "\u2502";
 static constexpr char invalidSymbol[] = "\uFFFD";
 
+// gutter marks for changed lines, and for lines removed above or below.
+static constexpr char changedSymbol[] = "\u258E";
+static constexpr char removedAboveSymbol[] = "\u2594";
+static constexpr char removedBelowSymbol[] = "\u2581";
+
 // the status bar drops fields on the right rather than shorten the name below this.
 static constexpr i32 minNameWidth = 8;
 
@@ -50,6 +55,10 @@ typedef struct Canvas {
   // the syntax group of each byte of the current line, or nullptr when not highlighted.
   Highlight *highlight;
   const u8 *groups;
+
+  // the changes since the last commit, or nullptr, and the mark of the current line.
+  Changes *changes;
+  enum ChangeMark change;
 
   // the matches on the current line, in order, the first one that may still hold the
   // cluster being drawn, and the group they draw with.
@@ -247,16 +256,50 @@ DrawCluster(Canvas *canvas, i32 row, const LayoutCluster *cluster, i64 x)
   }
 }
 
+// draws a change mark in the cell before the line number: a bar beside every row of a
+// changed line, and a line above or below the first row of one that lines were removed
+// beside.
+static void
+DrawChange(const Canvas *canvas, i32 row, bool first)
+{
+  const char *symbol = changedSymbol;
+  enum ThemeGroup group = ThemeChangeModified;
+
+  switch (canvas->change) {
+  case ChangeMarkNone:
+    return;
+  case ChangeMarkAdded:
+    group = ThemeChangeAdded;
+    break;
+  case ChangeMarkModified:
+    break;
+  case ChangeMarkRemovedAbove:
+  case ChangeMarkRemovedBelow:
+    if (!first) return;
+
+    bool above = canvas->change == ChangeMarkRemovedAbove;
+    symbol = above ? removedAboveSymbol : removedBelowSymbol;
+    group = ThemeChangeRemoved;
+    break;
+  }
+
+  PutSymbol(row, canvas->view->column, symbol, ThemeStyle(group));
+}
+
 static void
 DrawGutter(const Canvas *canvas, i32 row, u64 line, bool first)
 {
   i32 width = ViewGutterWidth(canvas->view);
-  if (width == 0 || !first) return;
+  if (width == 0) return;
+
+  DrawChange(canvas, row, first);
+  if (!first) return;
 
   StrBuf number = {};
   StrBufAppendFormat(&number, "%*lu ", width - 1, line + 1);
+  // the first cell is the change mark's, already blank or drawn.
   Style style = ThemeStyle(ThemeGutter);
-  ScreenPutText(row, canvas->view->column, number.data, number.length, style);
+  ScreenPutText(row, canvas->view->column + 1, number.data + 1, number.length - 1, style);
   StrBufFree(&number);
 }
 
@@ -272,6 +315,7 @@ DrawLine(Canvas *canvas, u64 line, u64 firstRow, i32 row)
   canvas->text = text->data;
   FindSelection(canvas, line, text->length);
   FindMatches(canvas, line);
+  canvas->change = ChangesMarkOf(canvas->changes, line);
 
   // drawing starts at the first row shown, or (without soft wrap) at the first column
   // shown, so the text before it is passed over without reading its clusters.
@@ -330,12 +374,13 @@ DrawRuler(const Canvas *canvas)
 }
 
 static void
-DrawView(View *view, Highlight *highlight, const MatchSet *marks)
+DrawView(View *view, Highlight *highlight, Changes *changes, const MatchSet *marks)
 {
   const DisplayOptions *options = view->options;
   Canvas canvas = {
     .view = view,
     .highlight = highlight,
+    .changes = changes,
     .marks = marks,
     .matchGroup = marks->kind == MatchKindSpell ? ThemeMisspelt : ThemeMatch,
     .textColumn = view->column + ViewGutterWidth(view),
@@ -405,6 +450,7 @@ DescribePosition(View *view, const StatusInfo *info, bool full, StrBuf *right)
   }
 
   if (full) {
+    if (info->changes) AppendField(right, info->changes);
     AppendField(right, view->options->softWrap ? "wrap" : "nowrap");
     if (info->fileType) AppendField(right, info->fileType);
     AppendField(right, info->lineEnding);
@@ -463,7 +509,7 @@ DrawPane(const FramePane *pane, bool focused, i32 column, i32 width, i32 height)
   View *view = pane->view;
   ViewSetArea(view, 0, column, width, height);
   ViewScrollToCursor(view);
-  DrawView(view, pane->highlight, pane->marks);
+  DrawView(view, pane->highlight, pane->changes, pane->marks);
   DrawStatus(view, pane->status, focused, height);
 }
 
@@ -481,15 +527,20 @@ RenderFrame(const Frame *frame)
   const FramePane *focused = &frame->panes[frame->focused];
   i32 height = frame->height - 2;
 
-  if (frame->paneCount == 2 && frame->width >= minSplitWidth) {
-    // the panes share the width either side of a one column separator.
-    i32 leftWidth = (frame->width - 1) / 2;
-    i32 rightColumn = leftWidth + 1;
-    i32 rightWidth = frame->width - rightColumn;
+  // two sides share the width either side of a one column separator.
+  i32 leftWidth = (frame->width - 1) / 2;
+  i32 rightColumn = leftWidth + 1;
+  i32 rightWidth = frame->width - rightColumn;
+  bool wide = frame->width >= minSplitWidth;
+  Style separator = ThemeStyle(ThemeGutter);
+
+  if (frame->panel.draw && wide) {
+    DrawPane(focused, true, 0, leftWidth, height);
+    frame->panel.draw(frame->panel.context, rightColumn, rightWidth, height + 1);
+    for (i32 row = 0; row <= height; row++) PutSymbol(row, leftWidth, rulerSymbol, separator);
+  } else if (frame->paneCount == 2 && wide) {
     DrawPane(&frame->panes[0], frame->focused == 0, 0, leftWidth, height);
     DrawPane(&frame->panes[1], frame->focused == 1, rightColumn, rightWidth, height);
-
-    Style separator = ThemeStyle(ThemeGutter);
     for (i32 row = 0; row <= height; row++) PutSymbol(row, leftWidth, rulerSymbol, separator);
   } else {
     DrawPane(focused, true, 0, frame->width, height);

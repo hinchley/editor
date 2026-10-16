@@ -9,6 +9,7 @@
 // a document must not move in memory once opened, because its history and views listen to
 // its buffer through pointers.
 #include "buffer.h"
+#include "changes.h"
 #include "file.h"
 #include "highlight.h"
 #include "lang.h"
@@ -42,6 +43,10 @@ typedef struct Document {
   // extension.
   const Lang *scriptLang;
   Highlight *highlight;
+
+  // how the text differs from the file in the last commit of its git repository, or
+  // nullptr when it is not in one.
+  Changes *changes;
 } Document;
 
 // opens path, or an unnamed empty document when path is nullptr.

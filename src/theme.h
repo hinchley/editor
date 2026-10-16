@@ -35,6 +35,15 @@ enum ThemeGroup {
   ThemeReference,
 
   ThemeGutter,
+
+  // gutter marks for lines added, modified or removed since the last commit, and the old
+  // and new lines in the change panel.
+  ThemeChangeAdded,
+  ThemeChangeModified,
+  ThemeChangeRemoved,
+  ThemeDiffOld,
+  ThemeDiffNew,
+
   ThemeWhitespace,
   ThemeControl,
   ThemeRuler,

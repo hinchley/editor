@@ -182,6 +182,16 @@ const Binding keymapBindings[] = {
   {{'k', alt}, CommandShowSignature, "show the signature of the name or call at the cursor"},
   {{'o', alt | shift}, CommandProjectSymbols, "pick a symbol of the loaded files"},
 
+  // changes since the last git commit.
+  {{']', alt | shift}, CommandNextChange, "go to the next change since the last commit"},
+  {{'[', alt | shift}, CommandPreviousChange, "go to the previous change since the last commit"},
+  {
+    {'g', alt | shift},
+    CommandChangePanel,
+    "show or hide the change at the cursor beside the buffer"
+  },
+  {{'u', alt}, CommandPickChanged, "pick from files changed since the last commit"},
+
   // display and settings.
   {{'t', alt}, CommandToggleExpandTab, "toggle expand tab to spaces"},
   {{'w', alt}, CommandToggleSoftWrap, "toggle soft wrap"},

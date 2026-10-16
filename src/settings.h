@@ -71,3 +71,10 @@ static constexpr i32 minSplitWidth = 80;
 // smallest window the editor will draw into.
 static constexpr i32 minWindowWidth = 20;
 static constexpr i32 minWindowHeight = 5;
+
+// change marks against the last git commit are left out for buffers larger than this.
+static constexpr u64 maxDiffSize = 16ull * 1024 * 1024;
+
+// the most line edits a diff looks for in one part before it reports the part as one
+// change, which keeps comparing unrelated texts quick.
+static constexpr u64 maxDiffCost = 1024;
