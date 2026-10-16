@@ -17,7 +17,7 @@ static constexpr u64 noNote = UINT64_MAX;
 static constexpr char separatorSymbol[] = "\u2502";
 
 // the marker before a marked item, and the cells the marker column takes.
-static constexpr char markSymbol[] = "\u25CF";
+static constexpr char markSymbol[] = "\u00B7";
 static constexpr i32 markWidth = 2;
 
 // an item's strings live in the shared buffers below, by offset.
@@ -327,8 +327,8 @@ static void
 DrawItem(const Item *item, i32 row, i32 width, bool isSelected, bool notes)
 {
   Style style = isSelected ? ThemeStyle(ThemeSelection) : styleDefault;
-  Style noteStyle = ThemeStyle(ThemeGutter);
-  noteStyle.background = style.background;
+  Style faint = ThemeStyle(ThemeGutter);
+  faint.background = style.background;
   ScreenFill(row, 0, width, style);
 
   const char *note = item->note == noNote || !notes ? nullptr : texts.data + item->note;
@@ -338,7 +338,7 @@ DrawItem(const Item *item, i32 row, i32 width, bool isSelected, bool notes)
   i32 column = 1;
 
   if (marking) {
-    if (item->marked) ScreenPutCluster(row, column, markSymbol, strlen(markSymbol), 1, style);
+    if (item->marked) ScreenPutCluster(row, column, markSymbol, strlen(markSymbol), 1, faint);
     column += markWidth;
   }
 
@@ -346,7 +346,7 @@ DrawItem(const Item *item, i32 row, i32 width, bool isSelected, bool notes)
   i32 textWidth = width - 1 - column - noteWidth;
   LayoutShorten(texts.data + item->text, item->length, textWidth, &shown);
   column = ScreenPutText(row, column, shown.data, shown.length, style);
-  if (note) ScreenPutString(row, column + 1, note, noteStyle);
+  if (note) ScreenPutString(row, column + 1, note, faint);
   StrBufFree(&shown);
 }
 
