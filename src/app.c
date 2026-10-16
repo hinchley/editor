@@ -712,7 +712,9 @@ RunCommand(const Binding *binding)
   case CommandSelectBrackets: Report(MoveSelectBrackets(view), "no brackets around"); break;
   case CommandJumpBracket: Report(MoveToMatchingBracket(view), "no matching bracket"); break;
   case CommandCancel: Cancel(); break;
-  case CommandAddCursorWord: MultiCursorAddNext(view, &message); break;
+  case CommandAddCursorWord: MultiCursorAddNext(view, SearchMarks(Current()), &message); break;
+  case CommandSkipCursorWord: MultiCursorSkip(view, SearchMarks(Current()), &message); break;
+  case CommandAddCursorAll: MultiCursorAddAll(view, SearchMarks(Current()), &message); break;
   case CommandAddCursorAbove: Report(MultiCursorAddRow(view, true), "no line above"); break;
   case CommandAddCursorBelow: Report(MultiCursorAddRow(view, false), "no line below"); break;
   case CommandReload: AskToReload(); break;

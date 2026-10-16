@@ -114,8 +114,14 @@ const Binding keymapBindings[] = {
   {
     {'e', control},
     CommandAddCursorWord,
-    "select the word, then add a cursor at each next occurrence"
+    "select the word, then add a cursor at each next occurrence (or search match)"
   },
+  {
+    {'e', control | shift},
+    CommandSkipCursorWord,
+    "move the newest cursor on to the next occurrence, skipping this one"
+  },
+  {{'e', control | alt}, CommandAddCursorAll, "add a cursor at every occurrence"},
   {{KeyUp, control | alt}, CommandAddCursorAbove, "add a cursor on the line above"},
   {{KeyDown, control | alt}, CommandAddCursorBelow, "add a cursor on the line below"},
 

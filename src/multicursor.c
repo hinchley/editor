@@ -43,33 +43,56 @@ IsWholeWord(const Buffer *buffer, Range range)
   return found && start == range.start.byte && end == range.end.byte;
 }
 
+// true when a match shares text with what a cursor holds (or a cursor sits inside it).
 static bool
-OverlapsAny(const CursorSet *set, Range range)
+RangesOverlap(Range match, Range held)
+{
+  bool before = PositionCompare(match.end, held.start) <= 0;
+  bool after = PositionCompare(match.start, held.end) >= 0;
+  return !before && !after;
+}
+
+// true when range overlaps a cursor other than the one at index skip.
+static bool
+OverlapsAny(const CursorSet *set, Range range, u32 skip)
 {
   for (u32 index = 0; index < set->count; index++) {
-    Range held = CursorRange(&set->cursors[index]);
-    bool before = PositionCompare(range.end, held.start) <= 0;
-    bool after = PositionCompare(range.start, held.end) >= 0;
-    if (!before && !after) return true;
+    if (index != skip && RangesOverlap(range, CursorRange(&set->cursors[index]))) return true;
   }
 
   return false;
 }
 
-void
-MultiCursorAddNext(View *view, StrBuf *message)
-{
-  CursorSet *set = &view->cursors;
-  Range selection = CursorRange(CursorSetPrimary(set));
+// what counts as an occurrence of the primary selection: the matches the document
+// highlights when the selection is one of them, or else the selected text, matching case
+// and as a whole word when it is one.
+typedef struct Occurrences {
+  MatchSet set;
 
-  if (!CursorHasSelection(CursorSetPrimary(set))) {
-    if (!SelectWords(view)) StrBufAppendString(message, "no word under the cursor");
-    return;
+  // the pattern of the selected text, which set points to when it is used.
+  Pattern pattern;
+} Occurrences;
+
+static bool
+FindOccurrences(View *view, MatchSet marks, Occurrences *occurrences, StrBuf *message)
+{
+  Range selection = CursorRange(CursorSetPrimary(&view->cursors));
+  bool oneLine = selection.start.line == selection.end.line;
+  PatternMatch match;
+
+  if (marks.kind != MatchKindNone && oneLine) {
+    u64 line = selection.start.line;
+    bool found = MatchInLine(&marks, view->buffer, line, selection.start.byte, &match);
+
+    if (found && match.start == selection.start.byte && match.end == selection.end.byte) {
+      occurrences->set = marks;
+      return true;
+    }
   }
 
-  if (selection.start.line != selection.end.line) {
+  if (!oneLine) {
     StrBufAppendString(message, "the selection spans more than one line");
-    return;
+    return false;
   }
 
   const StrBuf *line = BufferLine(view->buffer, selection.start.line);
@@ -77,47 +100,158 @@ MultiCursorAddNext(View *view, StrBuf *message)
   u64 length = selection.end.byte - selection.start.byte;
   PatternEscape(line->data + selection.start.byte, length, &source);
 
-  Pattern pattern = {};
   PatternOptions options = {
     .caseSensitive = true,
     .wholeWord = IsWholeWord(view->buffer, selection)
   };
 
-  PatternSet(&pattern, source.data, source.length, options);
-  MatchSet matches = {.kind = MatchKindSearch, .pattern = &pattern};
+  PatternSet(&occurrences->pattern, source.data, source.length, options);
+  occurrences->set = (MatchSet){.kind = MatchKindSearch, .pattern = &occurrences->pattern};
+  StrBufFree(&source);
+  return true;
+}
 
-  // matches held by other cursors are passed over, until the search comes back round to
-  // the primary selection.
+// finds the next occurrence after the primary selection that no cursor but the primary
+// one holds, going round the end of the buffer until the search comes back to the primary
+// selection.
+static bool
+NextOccurrence(View *view, const MatchSet *set, Range *found, bool *wrapped)
+{
+  const CursorSet *cursors = &view->cursors;
+  Range selection = CursorRange(&cursors->cursors[cursors->primary]);
   Position from = selection.end;
   bool passedEnd = false;
-  bool added = false;
   Range match;
-  bool wrapped;
 
-  while (MatchFind(&matches, view->buffer, from, false, &match, &wrapped)) {
+  while (MatchFind(set, view->buffer, from, false, &match, wrapped)) {
     // a second time round would mean the selection itself no longer matches.
-    if (passedEnd && wrapped) break;
+    if (passedEnd && *wrapped) break;
 
-    passedEnd = passedEnd || wrapped;
+    passedEnd = passedEnd || *wrapped;
     if (passedEnd && PositionCompare(match.start, selection.start) >= 0) break;
 
-    if (!OverlapsAny(set, match)) {
-      Cursor cursor = {match.start, match.end, 0};
-      cursor.desiredColumn = ViewRowColumn(view, match.end);
-      CursorSetAdd(set, cursor);
-      CursorSetMerge(set);
-      ViewScrollToCursor(view);
-      added = true;
-      if (passedEnd) StrBufAppendString(message, "wrapped to the start");
-      break;
+    if (!OverlapsAny(cursors, match, cursors->primary)) {
+      *found = match;
+      *wrapped = passedEnd;
+      return true;
     }
 
     from = match.end;
   }
 
-  if (!added) StrBufAppendString(message, "no other occurrence");
-  PatternFree(&pattern);
-  StrBufFree(&source);
+  return false;
+}
+
+// with no selection at the primary cursor, selects the word at every cursor first.
+// returns false when the primary cursor has no word.
+static bool
+SelectFirst(View *view, StrBuf *message)
+{
+  if (CursorHasSelection(CursorSetPrimary(&view->cursors)) || SelectWords(view)) return true;
+
+  StrBufAppendString(message, "no word under the cursor");
+  return false;
+}
+
+void
+MultiCursorAddNext(View *view, MatchSet marks, StrBuf *message)
+{
+  // the first press only selects the word.
+  if (!CursorHasSelection(CursorSetPrimary(&view->cursors))) {
+    SelectFirst(view, message);
+    return;
+  }
+
+  Occurrences occurrences = {};
+  if (!FindOccurrences(view, marks, &occurrences, message)) return;
+
+  Range match;
+  bool wrapped;
+
+  if (NextOccurrence(view, &occurrences.set, &match, &wrapped)) {
+    Cursor cursor = {match.start, match.end, ViewRowColumn(view, match.end)};
+    CursorSetAdd(&view->cursors, cursor);
+    CursorSetMerge(&view->cursors);
+    ViewScrollToCursor(view);
+    if (wrapped) StrBufAppendString(message, "wrapped to the start");
+  } else {
+    StrBufAppendString(message, "no other occurrence");
+  }
+
+  PatternFree(&occurrences.pattern);
+}
+
+void
+MultiCursorSkip(View *view, MatchSet marks, StrBuf *message)
+{
+  if (!SelectFirst(view, message)) return;
+
+  Occurrences occurrences = {};
+  if (!FindOccurrences(view, marks, &occurrences, message)) return;
+
+  Range match;
+  bool wrapped;
+
+  if (NextOccurrence(view, &occurrences.set, &match, &wrapped)) {
+    // the primary cursor moves to the occurrence, and stays primary.
+    Cursor *primary = CursorSetPrimary(&view->cursors);
+    *primary = (Cursor){match.start, match.end, ViewRowColumn(view, match.end)};
+    CursorSetMerge(&view->cursors);
+    ViewScrollToCursor(view);
+    if (wrapped) StrBufAppendString(message, "wrapped to the start");
+  } else {
+    StrBufAppendString(message, "no other occurrence");
+  }
+
+  PatternFree(&occurrences.pattern);
+}
+
+void
+MultiCursorAddAll(View *view, MatchSet marks, StrBuf *message)
+{
+  if (!SelectFirst(view, message)) return;
+
+  Occurrences occurrences = {};
+  if (!FindOccurrences(view, marks, &occurrences, message)) return;
+
+  // the cursors are sorted and apart once merged, and the matches come in order, so one
+  // walk through both passes over the matches that a cursor holds.
+  CursorSet *set = &view->cursors;
+  CursorSetMerge(set);
+  u32 existing = set->count;
+  u32 primary = set->primary;
+  u32 next = 0;
+  u64 count = BufferLineCount(view->buffer);
+  PatternMatch found;
+
+  for (u64 line = 0; line < count; line++) {
+    u64 from = 0;
+
+    while (MatchInLine(&occurrences.set, view->buffer, line, from, &found)) {
+      Range match = {{line, found.start}, {line, found.end}};
+      from = found.end;
+
+      // cursors that end before the match end before every later one too.
+      while (next < existing) {
+        Range held = CursorRange(&set->cursors[next]);
+        if (PositionCompare(held.end, match.start) > 0) break;
+        next++;
+      }
+
+      if (next < existing && RangesOverlap(match, CursorRange(&set->cursors[next]))) continue;
+
+      CursorSetAdd(set, (Cursor){match.start, match.end, ViewRowColumn(view, match.end)});
+    }
+  }
+
+  u32 added = set->count - existing;
+  set->primary = primary;
+  CursorSetMerge(set);
+  ViewScrollToCursor(view);
+
+  if (added) StrBufAppendFormat(message, "%u cursors", set->count);
+  else StrBufAppendString(message, "no other occurrence");
+  PatternFree(&occurrences.pattern);
 }
 
 bool

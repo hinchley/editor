@@ -67,6 +67,8 @@ enum Command {
   CommandLowerCase,
   CommandSpellCheck,
   CommandAddCursorWord,
+  CommandSkipCursorWord,
+  CommandAddCursorAll,
   CommandAddCursorAbove,
   CommandAddCursorBelow,
   CommandNewBuffer,
