@@ -50,6 +50,18 @@ const Binding keymapBindings[] = {
     "extend selection to the enclosing syntax node (or brackets)"
   },
   {{KeyDown, alt}, CommandShrinkSelection, "shrink selection back to before alt+up"},
+  {{KeyUp, alt | shift}, CommandSelectionTopUp, "grow selection by a line above"},
+  {{KeyDown, alt | shift}, CommandSelectionBottomDown, "grow selection by a line below"},
+  {
+    {KeyDown, control | alt | shift},
+    CommandSelectionTopDown,
+    "shrink selection by a line at the top"
+  },
+  {
+    {KeyUp, control | alt | shift},
+    CommandSelectionBottomUp,
+    "shrink selection by a line at the bottom"
+  },
   {{KeyEscape, 0}, CommandCancel, "clear the selection, or collapse to a single cursor"},
 
   // editing.

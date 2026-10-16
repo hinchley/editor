@@ -66,7 +66,7 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `layout` | How one line sits on screen: grapheme clusters with their display columns and widths (tabs expanded), and the visual rows it wraps into. |
 | `cursor` | The cursor set of a view: anchor, head and desired column per cursor, one of them primary. Following changes, and merging cursors that overlap. |
 | `view` | A window onto a buffer: screen area, gutter, cursors, scroll position, stepping over visual rows and keeping the cursor in sight. |
-| `move` | Cursor movement and selection commands, written once against visual rows, including growing a selection to the enclosing syntax node (Alt-Up) and shrinking it back (Alt-Down). |
+| `move` | Cursor movement and selection commands, written once against visual rows, including growing a selection to the enclosing syntax node (Alt-Up) and shrinking it back (Alt-Down), and moving either edge of a selection by a line. |
 | `bracket` | Finding the bracket that matches another, and the closest pair around a range. |
 | `multicursor` | Adding cursors: at the next occurrence of the selection (Ctrl-E) and on the row above or below (Ctrl-Alt-Up/Down). |
 | `edit` | Editing commands: typing, line breaks, indentation, comments, deletion, line commands (duplicate, delete, move, join, sort, trim), case conversion, copy, cut and paste. Each edits at every cursor as one undo step. |
@@ -363,6 +363,10 @@ Every call to a project function in `src/*.c` (3,872 call sites) goes where a ct
 `HighlightNodeAround` finds the smallest named node that holds a range and is larger than it, in the buffer's tree or in an injected layer that is parsed and not edited since (so inside a fenced code block the code's own nodes count), taking the smaller of the two. Alt-Up grows every cursor's selection to that node, anchor at its start and head at its end, and merges cursors that meet. Without a tree (no grammar, or highlighting off) it selects inside the closest brackets as Ctrl-M does, collapsing to the primary cursor.
 
 Each Alt-Up pushes a copy of the cursor set before it onto a stack in `move`, and remembers the view, the buffer's revision and the cursors it left. Alt-Down pops the last copy back, but only while all three are unchanged: any movement, edit (including one in the other view of a split) or other command that changes the cursors makes the stack stale, and the next Alt-Up or Alt-Down starts again.
+
+### Selection edges
+
+Alt-Shift-Up and Alt-Shift-Down move the top or bottom edge of every selection outward by a line, and Ctrl-Alt-Shift-Down and Ctrl-Alt-Shift-Up move them inward (`MoveSelectionEdge`). They work on logical lines, not visual rows, because the edges are line boundaries: the top edge only ever lands on a line start and the bottom edge on a line end, and each press takes an edge to the next such boundary. So the first press of an edge in the middle of a line goes to that line's start or end, which is what trims the brace lines from a Ctrl-M selection. Each selection keeps its direction (a cursor with no selection ends with its head at the bottom). An edge never passes the other one, so a shrink that would leave nothing leaves that cursor alone, and growing stops at the ends of the buffer. Cursors that meet are merged.
 
 ### Spell check scope
 

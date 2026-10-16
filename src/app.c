@@ -572,6 +572,18 @@ NavigationCommand(enum Command command)
   case CommandShrinkSelection:
     Report(MoveShrinkSelection(CurrentView()), "no expanded selection to shrink");
     break;
+  case CommandSelectionTopUp:
+    Report(MoveSelectionEdge(CurrentView(), MoveEdgeTop, true), "no line above");
+    break;
+  case CommandSelectionBottomDown:
+    Report(MoveSelectionEdge(CurrentView(), MoveEdgeBottom, false), "no line below");
+    break;
+  case CommandSelectionTopDown:
+    Report(MoveSelectionEdge(CurrentView(), MoveEdgeTop, false), "no line to drop");
+    break;
+  case CommandSelectionBottomUp:
+    Report(MoveSelectionEdge(CurrentView(), MoveEdgeBottom, true), "no line to drop");
+    break;
   case CommandJumpBack: JumpBack(); break;
   case CommandJumpForward: JumpForward(); break;
   case CommandFileSymbols: SymbolsPickFile(); break;

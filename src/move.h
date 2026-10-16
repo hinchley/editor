@@ -55,6 +55,21 @@ MoveToMatchingBracket(View *view);
 bool
 MoveSelectBrackets(View *view);
 
+enum MoveEdge {
+  MoveEdgeTop,
+  MoveEdgeBottom
+};
+
+// moves the top or bottom edge of every cursor's selection up or down a line, keeping
+// each selection's direction.
+// the top edge lands on line starts and the bottom edge on line ends: a press takes an
+// edge to the next such boundary, so the first press of one inside a line goes to that
+// line's start or end.
+// an edge never passes the other one or the ends of the buffer.
+// returns false, changing nothing, when no edge could move.
+bool
+MoveSelectionEdge(View *view, enum MoveEdge edge, bool up);
+
 // collapses to the primary cursor at a line and display column (both from 0), clamped to
 // the buffer.
 // a column inside a tab or wide character lands on its start.

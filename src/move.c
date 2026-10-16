@@ -269,6 +269,75 @@ MoveSelectBrackets(View *view)
   return true;
 }
 
+// where an edge of a selection from top to bottom goes, or false when it cannot move.
+static bool
+EdgeTarget(
+  const Buffer *buffer,
+  Position top,
+  Position bottom,
+  enum MoveEdge edge,
+  bool up,
+  Position *to
+) {
+  if (edge == MoveEdgeTop && up) {
+    if (top.byte == 0 && top.line == 0) return false;
+    *to = (Position){top.byte ? top.line : top.line - 1, 0};
+    return true;
+  }
+
+  if (edge == MoveEdgeTop) {
+    if (top.line >= bottom.line) return false;
+    *to = (Position){top.line + 1, 0};
+    return PositionCompare(*to, bottom) < 0;
+  }
+
+  if (!up) {
+    u64 line = bottom.line;
+
+    if (bottom.byte == BufferLine(buffer, line)->length) {
+      if (line + 1 == BufferLineCount(buffer)) return false;
+      line++;
+    }
+
+    *to = (Position){line, BufferLine(buffer, line)->length};
+    return true;
+  }
+
+  if (bottom.line <= top.line) return false;
+  *to = (Position){bottom.line - 1, BufferLine(buffer, bottom.line - 1)->length};
+  return PositionCompare(top, *to) < 0;
+}
+
+bool
+MoveSelectionEdge(View *view, enum MoveEdge edge, bool up)
+{
+  CursorSet *set = &view->cursors;
+  bool moved = false;
+
+  for (u32 index = 0; index < set->count; index++) {
+    Cursor *cursor = &set->cursors[index];
+    Range range = CursorRange(cursor);
+    Position to;
+    if (!EdgeTarget(view->buffer, range.start, range.end, edge, up, &to)) continue;
+
+    if (edge == MoveEdgeTop) range.start = to;
+    else range.end = to;
+
+    // the head stays at the end it was at; a cursor with no selection ends at the bottom.
+    bool forward = PositionCompare(cursor->anchor, cursor->head) <= 0;
+    cursor->anchor = forward ? range.start : range.end;
+    cursor->head = forward ? range.end : range.start;
+    cursor->desiredColumn = ViewRowColumn(view, cursor->head);
+    moved = true;
+  }
+
+  if (!moved) return false;
+
+  CursorSetMerge(set);
+  ViewScrollToCursor(view);
+  return true;
+}
+
 void
 MoveGoTo(View *view, u64 line, u64 column)
 {
