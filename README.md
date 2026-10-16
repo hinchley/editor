@@ -248,7 +248,7 @@ Alt-H lists every binding, filterable, and runs the one picked. The tables below
 
 The editor needs the kitty keyboard protocol, so that keys like Ctrl-M, Ctrl-H, Ctrl-J and Ctrl-Shift-S reach it as themselves. At startup it asks the terminal whether the protocol is there and exits with an error if it is not (as in the Linux console, or inside tmux). It works in foot, alacritty and ghostty with their default configurations, except for the keys below.
 
-The bindings follow the spec, with one change: project search is **Alt-Shift-F** rather than Ctrl-Shift-F, because alacritty and ghostty use Ctrl-Shift-F for their own search and never pass it on. Alt-Shift-F pairs with Alt-F, which reopens the results.
+As mentioned above, project search is **Alt-Shift-F** rather than Ctrl-Shift-F, because alacritty and ghostty use Ctrl-Shift-F for their own search and never pass it on. Alt-Shift-F pairs with Alt-F, which reopens the results.
 
 ### Ghostty
 
