@@ -29,11 +29,11 @@ typedef struct UnicodeRange {
   u8 value;
 } UnicodeRange;
 
-// a simple (one to one) case folding.
-typedef struct UnicodeFold {
+// a simple (one to one) case mapping.
+typedef struct UnicodeMapping {
   u32 from;
   u32 to;
-} UnicodeFold;
+} UnicodeMapping;
 
 // unicode version the tables were generated from.
 extern const char unicodeVersion[];
@@ -53,5 +53,11 @@ extern const UnicodeRange unicodePictographics[];
 extern const u32 unicodePictographicCount;
 
 // simple case folding used for case insensitive search.
-extern const UnicodeFold unicodeFolds[];
+extern const UnicodeMapping unicodeFolds[];
 extern const u32 unicodeFoldCount;
+
+// simple upper and lower case mappings (UnicodeData.txt fields 12 and 13).
+extern const UnicodeMapping unicodeUppers[];
+extern const u32 unicodeUpperCount;
+extern const UnicodeMapping unicodeLowers[];
+extern const u32 unicodeLowerCount;

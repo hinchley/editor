@@ -86,6 +86,16 @@ const Binding keymapBindings[] = {
   {{'q', alt}, CommandSortLines, "sort the selected lines (or every line)"},
   {{'j', alt}, CommandJoinLines, "join the selected lines (or this line and the next)"},
   {{'t', alt | shift}, CommandTrimWhitespace, "trim trailing whitespace from every line"},
+  {
+    {'u', alt | shift},
+    CommandUpperCase,
+    "convert the selection (or the whole file) to upper case"
+  },
+  {
+    {'l', alt | shift},
+    CommandLowerCase,
+    "convert the selection (or the whole file) to lower case"
+  },
   {{'s', alt}, CommandSpellCheck, "spell check the current document"},
 
   // multiple cursors.

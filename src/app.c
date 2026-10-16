@@ -308,19 +308,18 @@ SortAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]
 {
   if (!answer) return;
 
-  enum SortOrder order;
+  // a capital letter ignores case.
+  char letter = *answer;
+  bool ignoreCase = letter >= 'A' && letter <= 'Z';
+  if (ignoreCase) letter += 32;
 
-  switch (*answer) {
-  case 'A': order = SortOrderAscendingIgnoreCase; break;
-  case 'd': order = SortOrderDescending; break;
-  case 'D': order = SortOrderDescendingIgnoreCase; break;
-  case 'u': order = SortOrderUnique; break;
-  case 'U': order = SortOrderUniqueIgnoreCase; break;
-  default: order = SortOrderAscending; break;
-  }
+  SortOptions options = {.ignoreCase = ignoreCase};
+  options.key = letter == 's' || letter == 'l' ? SortKeyLength : SortKeyText;
+  options.descending = letter == 'd' || letter == 'l';
+  options.unique = letter == 'u';
 
   EditContext edit = Editing();
-  SortResult result = EditSortLines(&edit, order);
+  SortResult result = EditSortLines(&edit, options);
   const char *plural = result.lines == 1 ? "" : "s";
   StrBufAppendFormat(&message, "sorted %lu line%s", result.lines, plural);
 
@@ -333,9 +332,9 @@ SortAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]
 static void
 AskSortOrder(void)
 {
-  // a capital letter ignores case.
-  const char *question = "sort: (a)scending (d)escending (u)nique; capital ignores case";
-  PromptChoose(question, "aAdDuU", SortAnswered, nullptr);
+  const char *question =
+    "sort: (a)sc (d)esc (u)nique (s)hortest (l)ongest; capital ignores case";
+  PromptChoose(question, "aAdDuUsSlL", SortAnswered, nullptr);
 }
 
 static void
@@ -346,6 +345,17 @@ TrimWhitespace(void)
 
   if (count) StrBufAppendFormat(&message, "trimmed %lu line%s", count, count == 1 ? "" : "s");
   else StrBufAppendString(&message, "no trailing whitespace");
+}
+
+static void
+ChangeCase(bool upper)
+{
+  EditContext edit = Editing();
+  u64 count = EditChangeCase(&edit, upper);
+  const char *done = upper ? "uppercased" : "lowercased";
+
+  if (count) StrBufAppendFormat(&message, "%s %lu line%s", done, count, count == 1 ? "" : "s");
+  else StrBufAppendString(&message, "no change");
 }
 
 static void
@@ -535,6 +545,8 @@ EditCommand(enum Command command)
   case CommandSortLines: AskSortOrder(); break;
   case CommandJoinLines: Report(EditJoinLines(&edit), "no line below to join"); break;
   case CommandTrimWhitespace: TrimWhitespace(); break;
+  case CommandUpperCase: ChangeCase(true); break;
+  case CommandLowerCase: ChangeCase(false); break;
   default: return false;
   }
 

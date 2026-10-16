@@ -814,9 +814,13 @@ EditMoveLines(const EditContext *edit, bool up)
 }
 
 // how a sort compares two lines.
+// widths, when sorting by length, holds the display width of each line from first on.
 typedef struct Sorting {
   const StrBuf *lines;
+  const u64 *widths;
+  u64 first;
   bool ignoreCase;
+  bool descending;
 } Sorting;
 
 static i32
@@ -824,7 +828,7 @@ CompareBytes(const StrBuf *a, const StrBuf *b)
 {
   u64 length = a->length < b->length ? a->length : b->length;
   i32 order = length ? memcmp(a->data, b->data, length) : 0;
-  if (order) return order;
+  if (order) return order < 0 ? -1 : 1;
   return (a->length > b->length) - (a->length < b->length);
 }
 
@@ -866,13 +870,23 @@ CompareFolded(const StrBuf *a, const StrBuf *b)
   return (first < a->length) - (second < b->length);
 }
 
+// descending applies to the key: lines of equal width stay in ascending text order.
 static i32
 CompareLines(const Sorting *sorting, u64 a, u64 b)
 {
+  i32 direction = sorting->descending ? -1 : 1;
+
+  if (sorting->widths) {
+    u64 x = sorting->widths[a - sorting->first];
+    u64 y = sorting->widths[b - sorting->first];
+    if (x != y) return x < y ? -direction : direction;
+    direction = 1;
+  }
+
   const StrBuf *first = &sorting->lines[a];
   const StrBuf *second = &sorting->lines[b];
   i32 order = sorting->ignoreCase ? CompareFolded(first, second) : 0;
-  return order ? order : CompareBytes(first, second);
+  return direction * (order ? order : CompareBytes(first, second));
 }
 
 // a stable merge sort of line indexes, with insertion sort for short runs.
@@ -950,7 +964,7 @@ KeepUnique(const Sorting *sorting, u64 *items, u64 count)
 }
 
 SortResult
-EditSortLines(const EditContext *edit, enum SortOrder order)
+EditSortLines(const EditContext *edit, SortOptions options)
 {
   View *view = edit->view;
   Buffer *buffer = view->buffer;
@@ -959,25 +973,32 @@ EditSortLines(const EditContext *edit, enum SortOrder order)
   LineBlock block = SortBlock(buffer, cursor);
   u64 count = block.last - block.first + 1;
 
-  bool ignoreCase = order == SortOrderAscendingIgnoreCase ||
-    order == SortOrderDescendingIgnoreCase || order == SortOrderUniqueIgnoreCase;
-  Sorting sorting = {buffer->lines, ignoreCase};
+  // widths are measured once here, not in every comparison.
+  u64 *widths = nullptr;
+
+  if (options.key == SortKeyLength) {
+    widths = MemoryAllocate(count * sizeof(u64));
+
+    for (u64 index = 0; index < count; index++) {
+      const StrBuf *line = BufferLine(buffer, block.first + index);
+      widths[index] = LayoutColumn(line->data, line->length, line->length);
+    }
+  }
+
+  Sorting sorting = {
+    .lines = buffer->lines,
+    .widths = widths,
+    .first = block.first,
+    .ignoreCase = options.ignoreCase,
+    .descending = options.descending
+  };
   u64 *items = MemoryAllocate(count * sizeof(u64));
   u64 *scratch = MemoryAllocate(count * sizeof(u64));
   for (u64 index = 0; index < count; index++) items[index] = block.first + index;
   MergeSort(&sorting, items, scratch, count);
 
   u64 kept = count;
-  bool unique = order == SortOrderUnique || order == SortOrderUniqueIgnoreCase;
-  if (unique) kept = KeepUnique(&sorting, items, count);
-
-  if (order == SortOrderDescending || order == SortOrderDescendingIgnoreCase) {
-    for (u64 index = 0; index < count / 2; index++) {
-      u64 swap = items[index];
-      items[index] = items[count - 1 - index];
-      items[count - 1 - index] = swap;
-    }
-  }
+  if (options.unique && options.key == SortKeyText) kept = KeepUnique(&sorting, items, count);
 
   StrBuf text = {};
   bool changed = kept != count;
@@ -1006,6 +1027,7 @@ EditSortLines(const EditContext *edit, enum SortOrder order)
   StrBufFree(&text);
   free(scratch);
   free(items);
+  free(widths);
   return (SortResult){kept, count - kept};
 }
 
@@ -1134,6 +1156,141 @@ EditTrimTrailingWhitespace(const EditContext *edit)
 
   End(edit);
   return trimmed;
+}
+
+// the number of code points before byte in line.
+static u64
+CodePointsBefore(const StrBuf *line, u64 byte)
+{
+  u64 count = 0;
+  u64 index = 0;
+
+  while (index < byte) {
+    u32 codepoint;
+    index += Utf8Decode(line->data + index, line->length - index, &codepoint);
+    count++;
+  }
+
+  return count;
+}
+
+// the byte offset of code point number count in line.
+static u64
+ByteOfCodePoint(const StrBuf *line, u64 count)
+{
+  u64 index = 0;
+
+  while (count-- > 0 && index < line->length) {
+    u32 codepoint;
+    index += Utf8Decode(line->data + index, line->length - index, &codepoint);
+  }
+
+  return index;
+}
+
+// converts the case of text and gives the edit as the bytes from the first code point that
+// changes to the end of the last one, replaced by their converted form in output.
+// code points without a mapping, invalid bytes among them, are copied unchanged.
+static LineEdit
+ChangeCaseOf(const char *text, u64 length, bool upper, StrBuf *output)
+{
+  LineEdit lineEdit = {};
+  bool changed = false;
+  u64 index = 0;
+  output->length = 0;
+
+  while (index < length) {
+    u32 codepoint;
+    u32 used = Utf8Decode(text + index, length - index, &codepoint);
+    u32 mapped = upper ? Utf8Upper(codepoint) : Utf8Lower(codepoint);
+
+    if (mapped != codepoint) {
+      if (!changed) lineEdit.at = index;
+      char encoded[4];
+      StrBufAppend(output, encoded, Utf8Encode(mapped, encoded));
+      changed = true;
+      lineEdit.removed = index + used - lineEdit.at;
+      lineEdit.length = output->length;
+    } else if (changed) {
+      StrBufAppend(output, text + index, used);
+    }
+
+    index += used;
+  }
+
+  lineEdit.text = output->data;
+  return lineEdit;
+}
+
+// where a cursor end was, as a line and a code point within it, which case conversion
+// keeps even when byte lengths change.
+typedef struct CodePointPosition {
+  u64 line;
+  u64 codepoint;
+} CodePointPosition;
+
+u64
+EditChangeCase(const EditContext *edit, bool upper)
+{
+  View *view = edit->view;
+  Buffer *buffer = view->buffer;
+  CursorSet *set = &view->cursors;
+  CursorSetMerge(set);
+
+  CodePointPosition *ends = MemoryAllocate(2 * set->count * sizeof(CodePointPosition));
+
+  for (u32 index = 0; index < set->count; index++) {
+    Position positions[2] = {set->cursors[index].anchor, set->cursors[index].head};
+
+    for (u32 end = 0; end < 2; end++) {
+      const StrBuf *line = BufferLine(buffer, positions[end].line);
+      u64 codepoint = CodePointsBefore(line, positions[end].byte);
+      ends[2 * index + end] = (CodePointPosition){positions[end].line, codepoint};
+    }
+  }
+
+  bool selections = AnySelection(set);
+  u64 lastLine = BufferLineCount(buffer) - 1;
+  Range whole = {{0, 0}, {lastLine, BufferLine(buffer, lastLine)->length}};
+  StrBuf output = {};
+  u64 changed = 0;
+  u64 counted = UINT64_MAX;
+  Begin(edit, UndoKindOther);
+
+  // from the last selection and line back, so the offsets still to convert stay put.
+  for (u32 index = selections ? set->count : 1; index-- > 0;) {
+    Range range = selections ? CursorRange(&set->cursors[index]) : whole;
+
+    for (u64 line = range.end.line + 1; line-- > range.start.line;) {
+      const StrBuf *text = BufferLine(buffer, line);
+      u64 from = line == range.start.line ? range.start.byte : 0;
+      u64 to = line == range.end.line ? range.end.byte : text->length;
+      LineEdit lineEdit = ChangeCaseOf(text->data + from, to - from, upper, &output);
+      if (!lineEdit.removed) continue;
+
+      u64 at = from + lineEdit.at;
+      Range piece = {{line, at}, {line, at + lineEdit.removed}};
+      BufferReplace(buffer, piece, lineEdit.text, lineEdit.length);
+      if (line != counted) changed++;
+      counted = line;
+    }
+  }
+
+  for (u32 index = 0; index < set->count; index++) {
+    Cursor *cursor = &set->cursors[index];
+    Position *positions[2] = {&cursor->anchor, &cursor->head};
+
+    for (u32 end = 0; end < 2; end++) {
+      CodePointPosition was = ends[2 * index + end];
+      u64 byte = ByteOfCodePoint(BufferLine(buffer, was.line), was.codepoint);
+      *positions[end] = (Position){was.line, byte};
+    }
+  }
+
+  End(edit);
+  StrBufFree(&output);
+  free(ends);
+  return changed;
 }
 
 bool

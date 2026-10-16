@@ -77,18 +77,26 @@ EditDeleteLines(const EditContext *edit);
 bool
 EditMoveLines(const EditContext *edit, bool up);
 
-// how sort orders lines.
-// the orders compare bytes, or code points after simple case folding with byte order
-// breaking ties; the unique orders then keep one of each run of equal lines, and the
-// descending orders reverse the ascending ones.
-enum SortOrder {
-  SortOrderAscending,
-  SortOrderAscendingIgnoreCase,
-  SortOrderDescending,
-  SortOrderDescendingIgnoreCase,
-  SortOrderUnique,
-  SortOrderUniqueIgnoreCase
+// what sort orders lines by: their text, or their display width (tabs to the next tab
+// stop, wide characters as two columns) with text order breaking ties.
+enum SortKey {
+  SortKeyText,
+  SortKeyLength
 };
+
+// how sort orders lines.
+// text compares bytes, or with ignoreCase code points after simple case folding with byte
+// order breaking ties.
+// descending reverses the order of the key only, so lines of equal width stay in ascending
+// text order.
+// unique, for the text key only, keeps one of each run of equal lines (equal ignoring
+// case with ignoreCase).
+typedef struct SortOptions {
+  enum SortKey key;
+  bool descending;
+  bool unique;
+  bool ignoreCase;
+} SortOptions;
 
 // what a sort did: the number of lines sorted and how many duplicates it removed.
 typedef struct SortResult {
@@ -101,7 +109,7 @@ typedef struct SortResult {
 // the lines are replaced in one go, so cursors of another view inside them move to their
 // start.
 SortResult
-EditSortLines(const EditContext *edit, enum SortOrder order);
+EditSortLines(const EditContext *edit, SortOptions options);
 
 // joins the selected lines, or the line with the next one, and returns false when there
 // is no next line.
@@ -124,6 +132,14 @@ EditCut(const EditContext *edit, StrBuf *text);
 // removes spaces and tabs from the end of every line and returns how many lines changed.
 u64
 EditTrimTrailingWhitespace(const EditContext *edit);
+
+// converts each selection, or without any selection the whole buffer, to upper or lower
+// case with the simple one to one mappings of Utf8Upper and Utf8Lower, and returns how many
+// lines changed.
+// only the changed part of each line is replaced, and each cursor stays on the same code
+// points (with its direction) even when a conversion changes their byte length.
+u64
+EditChangeCase(const EditContext *edit, bool upper);
 
 // undo and redo return false when there is nothing to undo or redo.
 bool

@@ -1,6 +1,7 @@
 #pragma once
 
-// utf-8 decoding and encoding, grapheme clusters, display width and case folding.
+// utf-8 decoding and encoding, grapheme clusters, display width, case folding and case
+// mapping.
 // text is any byte sequence: an invalid byte is treated as one U+FFFD code point, so
 // every byte belongs to exactly one code point and text is never altered.
 #include "types.h"
@@ -51,6 +52,13 @@ Utf8ClusterWidth(const char *text, u64 length);
 // simple case folding of one code point, used for case insensitive comparison.
 u32
 Utf8Fold(u32 codepoint);
+
+// simple upper and lower case mappings of one code point (no special casing: ß stays ß,
+// there is no final sigma and i maps to I in every language).
+u32
+Utf8Upper(u32 codepoint);
+u32
+Utf8Lower(u32 codepoint);
 
 // true for a code point that is part of a word: an ascii letter or digit, "_", or any
 // non-ascii character.

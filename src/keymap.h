@@ -59,6 +59,8 @@ enum Command {
   CommandSortLines,
   CommandJoinLines,
   CommandTrimWhitespace,
+  CommandUpperCase,
+  CommandLowerCase,
   CommandSpellCheck,
   CommandAddCursorWord,
   CommandAddCursorAbove,

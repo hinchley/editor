@@ -274,22 +274,44 @@ Utf8ClusterWidth(const char *text, u64 length)
   return width;
 }
 
+// the mapping of codepoint in a sorted table, or codepoint itself when it has none.
+static u32
+MapOf(const UnicodeMapping *mappings, u32 count, u32 codepoint)
+{
+  u32 low = 0;
+  u32 high = count;
+
+  while (low < high) {
+    u32 middle = low + (high - low) / 2;
+    const UnicodeMapping *mapping = &mappings[middle];
+    if (codepoint < mapping->from) high = middle;
+    else if (codepoint > mapping->from) low = middle + 1;
+    else return mapping->to;
+  }
+
+  return codepoint;
+}
+
 u32
 Utf8Fold(u32 codepoint)
 {
   if (codepoint >= 'A' && codepoint <= 'Z') return codepoint + 32;
   if (codepoint < 0x80) return codepoint;
+  return MapOf(unicodeFolds, unicodeFoldCount, codepoint);
+}
 
-  u32 low = 0;
-  u32 high = unicodeFoldCount;
+u32
+Utf8Upper(u32 codepoint)
+{
+  if (codepoint >= 'a' && codepoint <= 'z') return codepoint - 32;
+  if (codepoint < 0x80) return codepoint;
+  return MapOf(unicodeUppers, unicodeUpperCount, codepoint);
+}
 
-  while (low < high) {
-    u32 middle = low + (high - low) / 2;
-    const UnicodeFold *fold = &unicodeFolds[middle];
-    if (codepoint < fold->from) high = middle;
-    else if (codepoint > fold->from) low = middle + 1;
-    else return fold->to;
-  }
-
-  return codepoint;
+u32
+Utf8Lower(u32 codepoint)
+{
+  if (codepoint >= 'A' && codepoint <= 'Z') return codepoint + 32;
+  if (codepoint < 0x80) return codepoint;
+  return MapOf(unicodeLowers, unicodeLowerCount, codepoint);
 }
