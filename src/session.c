@@ -435,7 +435,16 @@ EntryNote(u64 index)
   const WorkspaceEntry *entry = &workspace->entries[index];
   if (entry->refusal == WorkspaceRefusalBinary) return "(binary)";
   if (entry->refusal == WorkspaceRefusalTooLarge) return "(too large)";
-  return WorkspaceModified(workspace, index) ? "[+]" : nullptr;
+  return nullptr;
+}
+
+// "+" for an entry with unsaved changes (which is always open), "·" for any other open one,
+// or nullptr.
+static const char *
+EntryMark(u64 index)
+{
+  if (WorkspaceModified(workspace, index)) return "+";
+  return workspace->entries[index].document ? "\u00B7" : nullptr;
 }
 
 static void
@@ -468,7 +477,8 @@ SessionPick(bool unsavedOnly)
     StrBufClear(&name);
     WorkspaceName(workspace, order[index], &name);
     PickerAdd(name.data, name.length, EntryNote(order[index]), order[index]);
-    if (workspace->entries[order[index]].document) PickerMark();
+    const char *mark = EntryMark(order[index]);
+    if (mark) PickerMark(mark);
   }
 
   StrBufFree(&name);

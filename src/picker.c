@@ -12,12 +12,12 @@
 #include "utf8.h"
 
 static constexpr u64 noNote = UINT64_MAX;
+static constexpr u64 noMark = UINT64_MAX;
 
 // the line between the list and its preview.
 static constexpr char separatorSymbol[] = "\u2502";
 
-// the marker before a marked item, and the cells the marker column takes.
-static constexpr char markSymbol[] = "\u00B7";
+// the cells the marker column takes: the mark and a space.
 static constexpr i32 markWidth = 2;
 
 // an item's strings live in the shared buffers below, by offset.
@@ -31,7 +31,9 @@ typedef struct Item {
 
   u64 note;
   u64 id;
-  bool marked;
+
+  // the item's mark in texts, or noMark.
+  u64 mark;
 } Item;
 
 static StrBuf texts;
@@ -116,7 +118,13 @@ PickerAdd(const char *text, u64 length, const char *note, u64 id)
   }
 
   Item *item = &items[itemCount++];
-  *item = (Item){.text = texts.length, .length = length, .note = noNote, .id = id};
+  *item = (Item){
+    .text = texts.length,
+    .length = length,
+    .note = noNote,
+    .id = id,
+    .mark = noMark
+  };
   StrBufAppend(&texts, text, length);
 
   item->folded = foldedTexts.length;
@@ -130,9 +138,10 @@ PickerAdd(const char *text, u64 length, const char *note, u64 id)
 }
 
 void
-PickerMark(void)
+PickerMark(const char *mark)
 {
-  items[itemCount - 1].marked = true;
+  items[itemCount - 1].mark = texts.length;
+  StrBufAppend(&texts, mark, strlen(mark) + 1);
   marking = true;
 }
 
@@ -338,7 +347,7 @@ DrawItem(const Item *item, i32 row, i32 width, bool isSelected, bool notes)
   i32 column = 1;
 
   if (marking) {
-    if (item->marked) ScreenPutCluster(row, column, markSymbol, strlen(markSymbol), 1, faint);
+    if (item->mark != noMark) ScreenPutString(row, column, texts.data + item->mark, faint);
     column += markWidth;
   }
 
