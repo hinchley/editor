@@ -30,6 +30,13 @@ SessionNew(void);
 void
 SessionOpen(void);
 
+// walks the folders the buffers were loaded from again (at startup or by Ctrl-O) and adds
+// the files that appeared in them since, leaving the current buffer alone.
+// files that were already found by the last walk are not added again, so a closed buffer
+// stays closed.
+void
+SessionLoadNew(void);
+
 // switches to the next (step 1) or previous (step -1) open buffer in load order.
 void
 SessionCycle(i32 step);

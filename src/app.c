@@ -640,6 +640,7 @@ BufferCommand(enum Command command)
   switch (command) {
   case CommandNewBuffer: SessionNew(); break;
   case CommandOpen: SessionOpen(); break;
+  case CommandLoadNewFiles: SessionLoadNew(); break;
   case CommandNextBuffer: SessionCycle(1); break;
   case CommandPreviousBuffer: SessionCycle(-1); break;
   case CommandLastBuffer: SessionLastUsed(); break;

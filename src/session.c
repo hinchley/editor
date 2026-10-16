@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "complete.h"
 #include "fatal.h"
@@ -17,14 +18,93 @@
 static Workspace *workspace;
 static StrBuf *message;
 
-// a folder opened with Ctrl-O, waiting for the answer about unsaved changes.
+// a folder opened with Ctrl-O, waiting for the answer about unsaved changes, and its path.
 static LoaderList pending;
+static StrBuf pendingFolder;
+
+// a list of paths, each allocated on its own.
+typedef struct Paths {
+  char **paths;
+  u64 count;
+  u64 capacity;
+} Paths;
+
+// the folders the buffers were loaded from, as given, which Alt-Shift-R walks again.
+static Paths folders;
+
+// every path the last walk of those folders found, sorted, so Alt-Shift-R only adds files
+// that are new to the folders, not ones closed since.
+static Paths known;
 
 // what runs once the unsaved changes are saved or discarded.
 static SaveFinished afterUnsaved;
 
 // the buffer being closed, waiting for the answer about its unsaved changes.
 static u64 closing;
+
+static void
+PathsFree(Paths *paths)
+{
+  for (u64 index = 0; index < paths->count; index++) free(paths->paths[index]);
+  free(paths->paths);
+  *paths = (Paths){};
+}
+
+static void
+PathsAdd(Paths *paths, const char *path, u64 length)
+{
+  if (paths->count == paths->capacity) {
+    paths->capacity = paths->capacity ? paths->capacity * 2 : 64;
+    paths->paths = MemoryResize(paths->paths, paths->capacity, sizeof(char *));
+  }
+
+  char *copy = MemoryAllocate(length + 1);
+  memcpy(copy, path, length);
+  copy[length] = 0;
+  paths->paths[paths->count++] = copy;
+}
+
+static i32
+ComparePaths(const void *a, const void *b)
+{
+  return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+static void
+PathsSort(Paths *paths)
+{
+  if (paths->count) qsort(paths->paths, paths->count, sizeof(char *), ComparePaths);
+}
+
+static bool
+PathsHas(const Paths *paths, const char *path)
+{
+  if (!paths->count) return false;
+  return bsearch(&path, paths->paths, paths->count, sizeof(char *), ComparePaths);
+}
+
+// remembers which of paths are folders, and every file of list when there are any.
+static void
+RememberFolders(char *const *paths, u64 pathCount, const LoaderList *list)
+{
+  PathsFree(&folders);
+  PathsFree(&known);
+
+  for (u64 index = 0; index < pathCount; index++) {
+    struct stat status;
+    bool folder = stat(paths[index], &status) == 0 && S_ISDIR(status.st_mode);
+    if (folder) PathsAdd(&folders, paths[index], strlen(paths[index]));
+  }
+
+  if (!folders.count) return;
+
+  for (u64 index = 0; index < list->count; index++) {
+    const StrBuf *path = &list->files[index].path;
+    PathsAdd(&known, path->data, path->length);
+  }
+
+  PathsSort(&known);
+}
 
 static void
 Switch(u64 index)
@@ -91,6 +171,7 @@ SessionStart(Workspace *newWorkspace, StrBuf *newMessage, char *const *paths, u6
   bool pick = pathCount > 1 || list.folders;
   bool empty = !list.count;
   u64 unreadable = list.unreadable;
+  RememberFolders(paths, pathCount, &list);
   WorkspaceAddList(workspace, &list);
   SwitchToFirst(!pick);
   if (empty) StrBufAppendString(message, "no files to load");
@@ -155,6 +236,7 @@ ReplaceAll(void)
   u64 unreadable = pending.unreadable;
   ProjectClear();
   SymbolsClear();
+  RememberFolders(&pendingFolder.data, 1, &pending);
   WorkspaceFree(workspace);
   WorkspaceAddList(workspace, &pending);
   SwitchToFirst(false);
@@ -194,6 +276,8 @@ OpenAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
     LoaderFree(&pending);
     pending = list;
     list = (LoaderList){};
+    StrBufClear(&pendingFolder);
+    StrBufAppend(&pendingFolder, path.data, path.length);
     AskAboutUnsaved(ReplaceAll);
   } else if (status == LoaderStatusOk) {
     OpenFile(&list.files[0]);
@@ -214,6 +298,103 @@ SessionOpen(void)
 {
   PromptAsk("open: ", "", OpenAnswered, nullptr);
   PromptHandle(nullptr, CompleteOpen);
+}
+
+// true when the file is one of the loaded entries, by file or by path (a save replaces
+// the file, so its file id changes).
+static bool
+Loaded(const LoaderFile *file)
+{
+  LoaderFile byPath = {.path = file->path};
+  if (WorkspaceFind(workspace, file) != workspaceNone) return true;
+  return WorkspaceFind(workspace, &byPath) != workspaceNone;
+}
+
+void
+SessionLoadNew(void)
+{
+  if (!folders.count) {
+    StrBufAppendString(message, "no folder is open");
+    return;
+  }
+
+  // a folder that is gone would be listed as a new file, so it is left out.
+  char **present = MemoryAllocate(folders.count * sizeof(char *));
+  u64 count = 0;
+
+  for (u64 index = 0; index < folders.count; index++) {
+    struct stat status;
+    char *folder = folders.paths[index];
+    if (stat(folder, &status) == 0 && S_ISDIR(status.st_mode)) {
+      present[count++] = folder;
+      continue;
+    }
+
+    if (message->length) StrBufAppendString(message, "; ");
+    StrBufAppendFormat(message, "%s: folder not found", folder);
+  }
+
+  if (!count) {
+    free(present);
+    return;
+  }
+
+  LoaderList list = {};
+  StrBuf error = {};
+  enum LoaderStatus status = LoaderLoad(&list, present, count, maxFileCount, &error);
+  free(present);
+
+  if (status != LoaderStatusOk) {
+    if (status == LoaderStatusTooMany) {
+      StrBufAppendFormat(message, "more than %lu files to load", maxFileCount);
+    } else {
+      StrBufAppend(message, error.data, error.length);
+    }
+
+    StrBufFree(&error);
+    LoaderFree(&list);
+    return;
+  }
+
+  // the walk becomes the known list, apart from new files there was no room for, so a
+  // later Alt-Shift-R offers them again.
+  Paths found = {};
+  u64 added = 0;
+  u64 first = workspaceNone;
+  bool full = false;
+
+  for (u64 index = 0; index < list.count; index++) {
+    LoaderFile *file = &list.files[index];
+    bool fresh = !PathsHas(&known, file->path.data) && !Loaded(file);
+
+    if (fresh && !full && Full()) full = true;
+    if (fresh && full) continue;
+
+    PathsAdd(&found, file->path.data, file->path.length);
+    if (!fresh) continue;
+
+    u64 entry = WorkspaceAdd(workspace, file);
+    if (first == workspaceNone) first = entry;
+    added++;
+  }
+
+  PathsFree(&known);
+  known = found;
+  PathsSort(&known);
+
+  if (message->length && (added || !full)) StrBufAppendString(message, "; ");
+  if (!added) {
+    if (!full) StrBufAppendString(message, "no new files");
+  } else if (added == 1) {
+    const StrBuf *path = WorkspacePath(workspace, first);
+    StrBufAppendFormat(message, "added %.*s", (i32)path->length, path->data);
+  } else {
+    StrBufAppendFormat(message, "added %lu files (ctrl+p lists them)", added);
+  }
+
+  ReportUnreadable(list.unreadable);
+  StrBufFree(&error);
+  LoaderFree(&list);
 }
 
 void

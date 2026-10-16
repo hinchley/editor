@@ -111,6 +111,11 @@ const Binding keymapBindings[] = {
   {{'n', control}, CommandNewBuffer, "create a new empty buffer"},
   {{'o', control}, CommandOpen, "open a file (new buffer) or folder (replaces all)"},
   {{'r', alt}, CommandReload, "reload the file from disk (discards changes)"},
+  {
+    {'r', alt | shift},
+    CommandLoadNewFiles,
+    "load files added to the open folder since it was read"
+  },
   {{'e', alt}, CommandToggleLineEndings, "toggle line endings between LF and CRLF"},
   {{'c', alt | shift}, CommandCopyPath, "copy the file's path to the clipboard"},
   {
