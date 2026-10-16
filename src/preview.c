@@ -168,6 +168,23 @@ DrawLine(const PreviewRow *place, const char *text, u64 length)
   }
 }
 
+// names the entry and the line on the row above the lines.
+static void
+DrawHeader(u64 serial, u64 line, i32 column, i32 width)
+{
+  u64 index = WorkspaceEntryOf(workspace, serial);
+  if (index == workspaceNone) return;
+
+  StrBuf place = {};
+  WorkspaceName(workspace, index, &place);
+  StrBufAppendFormat(&place, ":%lu", line + 1);
+  StrBuf shown = {};
+  LayoutShorten(place.data, place.length, width - 2, &shown);
+  ScreenPutText(0, column + 1, shown.data, shown.length, ThemeStyle(ThemeGutter));
+  StrBufFree(&shown);
+  StrBufFree(&place);
+}
+
 void
 PreviewDraw(
   u64 serial,
@@ -179,12 +196,17 @@ PreviewDraw(
   i32 width,
   i32 height
 ) {
+  // the header takes the first row, and the lines the rows below it.
+  DrawHeader(serial, line, column, width);
+  height--;
+  if (height < 1) return;
+
   u64 first = line > (u64)(height - 1) / 2 ? line - (u64)(height - 1) / 2 : 0;
   const char *text;
   u64 length;
 
   if (!LineOf(serial, line, &text, &length)) {
-    ScreenPutString(0, column + 1, "the line is no longer there", ThemeStyle(ThemeGutter));
+    ScreenPutString(1, column + 1, "the line is no longer there", ThemeStyle(ThemeGutter));
     return;
   }
 
@@ -215,10 +237,10 @@ PreviewDraw(
     StrBuf number = {};
     StrBufAppendFormat(&number, "%*lu", digits, shown + 1);
     Style gutter = shown == line ? styleDefault : ThemeStyle(ThemeGutter);
-    ScreenPutText(row, column + 1, number.data, number.length, gutter);
+    ScreenPutText(row + 1, column + 1, number.data, number.length, gutter);
     StrBufFree(&number);
 
-    place.row = row;
+    place.row = row + 1;
     place.hit = shown == line ? (PatternMatch){hitStart, hitEnd} : (PatternMatch){};
     DrawLine(&place, text, length);
   }
