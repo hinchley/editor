@@ -468,6 +468,7 @@ SessionPick(bool unsavedOnly)
     StrBufClear(&name);
     WorkspaceName(workspace, order[index], &name);
     PickerAdd(name.data, name.length, EntryNote(order[index]), order[index]);
+    if (workspace->entries[order[index]].document) PickerMark();
   }
 
   StrBufFree(&name);

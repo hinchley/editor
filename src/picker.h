@@ -28,6 +28,12 @@ PickerBegin(void);
 void
 PickerAdd(const char *text, u64 length, const char *note, u64 id);
 
+// marks the item added last, as the buffer list marks open buffers.
+// a list with a marked item draws a marker column before every item, which filtering
+// leaves out.
+void
+PickerMark(void);
+
 // opens the list built since PickerBegin, with the first item selected.
 // title names the list in the bar above the filter, and label starts the filter prompt.
 void

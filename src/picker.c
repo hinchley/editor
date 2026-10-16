@@ -16,6 +16,10 @@ static constexpr u64 noNote = UINT64_MAX;
 // the line between the list and its preview.
 static constexpr char separatorSymbol[] = "\u2502";
 
+// the marker before a marked item, and the cells the marker column takes.
+static constexpr char markSymbol[] = "\u25CF";
+static constexpr i32 markWidth = 2;
+
 // an item's strings live in the shared buffers below, by offset.
 typedef struct Item {
   u64 text;
@@ -27,6 +31,7 @@ typedef struct Item {
 
   u64 note;
   u64 id;
+  bool marked;
 } Item;
 
 static StrBuf texts;
@@ -34,6 +39,9 @@ static StrBuf foldedTexts;
 static Item *items;
 static u64 itemCount;
 static u64 itemCapacity;
+
+// whether any item is marked, which gives the list a marker column.
+static bool marking;
 
 // the items that pass the filter, as indexes into items, in list order.
 static u64 *matches;
@@ -95,6 +103,7 @@ PickerBegin(void)
   StrBufClear(&texts);
   StrBufClear(&foldedTexts);
   itemCount = 0;
+  marking = false;
 }
 
 void
@@ -118,6 +127,13 @@ PickerAdd(const char *text, u64 length, const char *note, u64 id)
     item->note = texts.length;
     StrBufAppend(&texts, note, strlen(note) + 1);
   }
+}
+
+void
+PickerMark(void)
+{
+  items[itemCount - 1].marked = true;
+  marking = true;
 }
 
 static bool
@@ -318,10 +334,18 @@ DrawItem(const Item *item, i32 row, i32 width, bool isSelected, bool notes)
   const char *note = item->note == noNote || !notes ? nullptr : texts.data + item->note;
   i32 noteWidth = note ? (i32)LayoutColumn(note, strlen(note), strlen(note)) + 1 : 0;
 
-  // a space either side, and the note after the text.
+  // a space either side, the marker column before the text and the note after it.
+  i32 column = 1;
+
+  if (marking) {
+    if (item->marked) ScreenPutCluster(row, column, markSymbol, strlen(markSymbol), 1, style);
+    column += markWidth;
+  }
+
   StrBuf shown = {};
-  LayoutShorten(texts.data + item->text, item->length, width - 2 - noteWidth, &shown);
-  i32 column = ScreenPutText(row, 1, shown.data, shown.length, style);
+  i32 textWidth = width - 1 - column - noteWidth;
+  LayoutShorten(texts.data + item->text, item->length, textWidth, &shown);
+  column = ScreenPutText(row, column, shown.data, shown.length, style);
   if (note) ScreenPutString(row, column + 1, note, noteStyle);
   StrBufFree(&shown);
 }
@@ -341,7 +365,8 @@ PickerDraw(i32 width, i32 height)
 
   if (previewing) {
     i32 half = (width - 1) / 2;
-    listWidth = widest + 2 < (u64)half ? (i32)widest + 2 : half;
+    u64 wanted = widest + 2 + (marking ? markWidth : 0);
+    listWidth = wanted < (u64)half ? (i32)wanted : half;
   }
 
   for (i32 row = 0; row < listRows; row++) {
