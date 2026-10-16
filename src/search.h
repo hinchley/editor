@@ -16,8 +16,8 @@ void
 SearchInit(Workspace *workspace, StrBuf *message);
 
 // incremental find: each change to the typed text shows the first match from the cursor.
-// up and down (or ctrl+p and ctrl+n) step between matches, and ctrl+t toggles matching
-// case.
+// up and down (or ctrl+p and ctrl+n) step between matches, ctrl+t toggles matching case
+// and ctrl+r regular expressions (in every search prompt, for the session).
 // enter keeps the match, and escape puts the cursors, scroll position and highlights back
 // as they were.
 void
@@ -28,8 +28,8 @@ SearchFind(void);
 void
 SearchStep(bool backward);
 
-// searches for the whole word under the cursor, matching case, and selects its next
-// occurrence.
+// searches for the whole word under the cursor, matching case (and literally), and selects
+// its next occurrence.
 void
 SearchWord(void);
 
@@ -51,8 +51,8 @@ typedef void (*SearchProjectDone)(const Pattern *pattern);
 void
 SearchProject(SearchProjectDone done);
 
-// receives the replacement text with its escapes replaced, or nullptr when the prompt was
-// cancelled.
+// receives the replacement as typed (PatternExpand replaces its escapes and groups), or
+// nullptr when the prompt was cancelled.
 typedef void (*SearchReplacementDone)(const StrBuf *replacement);
 
 // asks what to replace pattern with, as replace does (up or down recalls the last

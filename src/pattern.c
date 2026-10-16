@@ -53,9 +53,20 @@ PatternSet(Pattern *pattern, const char *source, u64 length, PatternOptions opti
   StrBufClear(&pattern->source);
   StrBufAppend(&pattern->source, source, length);
   StrBufClear(&pattern->text);
+  StrBufClear(&pattern->error);
   pattern->options = options;
   pattern->lineStart = length && source[0] == '^';
   pattern->lineEnd = false;
+
+  if (options.regex) {
+    pattern->lineStart = false;
+    pattern->foldedCount = 0;
+    bool ignoreCase = !options.caseSensitive;
+    Regex *regex = &pattern->regex;
+    bool compiled = length && RegexCompile(regex, source, length, ignoreCase, &pattern->error);
+    pattern->impossible = !compiled;
+    return;
+  }
 
   for (u64 at = pattern->lineStart; at < length; at++) {
     char escaped = source[at] == '\\' && at + 1 < length ? Escaped(source[at + 1]) : '\0';
@@ -91,6 +102,8 @@ PatternFree(Pattern *pattern)
 {
   StrBufFree(&pattern->source);
   StrBufFree(&pattern->text);
+  StrBufFree(&pattern->error);
+  RegexFree(&pattern->regex);
   free(pattern->folded);
   *pattern = (Pattern){};
 }
@@ -220,6 +233,24 @@ FindExact(const Pattern *pattern, const char *text, u64 length, u64 from, Patter
   return false;
 }
 
+// a match the regular expression finds may still fail the checks of Accepts, and then
+// the search goes on from the code point after its start.
+static bool
+FindRegex(const Pattern *pattern, const char *text, u64 length, u64 from, PatternMatch *match)
+{
+  RegexSpan span;
+
+  for (u64 at = from; RegexFind(&pattern->regex, text, length, at, false, &span, 1);) {
+    *match = (PatternMatch){span.start, span.end};
+    if (Accepts(pattern, text, length, *match)) return true;
+
+    u32 codepoint;
+    at = span.start + Utf8Decode(text + span.start, length - span.start, &codepoint);
+  }
+
+  return false;
+}
+
 bool
 PatternFind(
   const Pattern *pattern,
@@ -231,17 +262,56 @@ PatternFind(
   if (pattern->impossible || from >= length) return false;
   if (pattern->lineStart && from > 0) return false;
 
+  if (pattern->options.regex) return FindRegex(pattern, text, length, from, match);
   if (pattern->options.caseSensitive) return FindExact(pattern, text, length, from, match);
   return FindFolded(pattern, text, length, from, match);
 }
 
 void
-PatternUnescape(const char *source, u64 length, StrBuf *output)
-{
-  for (u64 at = 0; at < length; at++) {
-    char escaped = source[at] == '\\' && at + 1 < length ? Escaped(source[at + 1]) : '\0';
-    StrBufAppendByte(output, escaped ? escaped : source[at]);
-    at += escaped != '\0';
+PatternExpand(
+  const Pattern *pattern,
+  const char *text,
+  u64 length,
+  PatternMatch match,
+  const StrBuf *replacement,
+  StrBuf *output
+) {
+  const char *source = replacement->data ? replacement->data : "";
+  u64 size = replacement->length;
+  bool regex = pattern->options.regex;
+
+  // the groups are found again, by matching at the start of the match, the first time the
+  // replacement names one.
+  RegexSpan groups[regexGroups];
+  bool grouped = false;
+
+  for (u64 at = 0; at < size; at++) {
+    char next = at + 1 < size ? source[at + 1] : '\0';
+    char escaped = source[at] == '\\' ? Escaped(next) : '\0';
+    bool group = regex && source[at] == '\\' && next >= '0' && next <= '9';
+
+    if (!group) {
+      StrBufAppendByte(output, escaped ? escaped : source[at]);
+      at += escaped != '\0';
+      continue;
+    }
+
+    RegexSpan span = {match.start, match.end};
+
+    if (next > '0') {
+      if (!grouped) {
+        const Regex *compiled = &pattern->regex;
+        bool found = RegexFind(compiled, text, length, match.start, true, groups, regexGroups);
+        RegexSpan unset = {regexUnset, regexUnset};
+        for (u32 index = 0; index < regexGroups && !found; index++) groups[index] = unset;
+        grouped = true;
+      }
+
+      span = groups[next - '0'];
+    }
+
+    if (span.start != regexUnset) StrBufAppend(output, text + span.start, span.end - span.start);
+    at++;
   }
 }
 
@@ -256,7 +326,6 @@ PatternReplaceLine(
   StrBuf *rebuilt,
   u64 *count
 ) {
-  const char *with = replacement->data ? replacement->data : "";
   PatternMatch hit = first;
   u64 copied = hit.start;
   StrBufClear(rebuilt);
@@ -265,7 +334,7 @@ PatternReplaceLine(
   // matched again.
   do {
     StrBufAppend(rebuilt, text + copied, hit.start - copied);
-    StrBufAppend(rebuilt, with, replacement->length);
+    PatternExpand(pattern, text, length, hit, replacement, rebuilt);
     copied = hit.end;
     (*count)++;
   } while (PatternFind(pattern, text, length, copied, &hit) && hit.start < limit);

@@ -1,11 +1,13 @@
 #pragma once
 
 // the search pattern shared by find, replace and the match commands.
-// a pattern is literal text: there are no wildcards.
-// the escapes \t, \r, \n, \\, \^ and \$ stand for a tab, a carriage return, a line break,
-// a backslash and the two anchor characters, and any other backslash is literal.
-// a "^" at the start ties a match to the start of a line, and a "$" at the end to its end.
-// a match never crosses a line break, so a pattern holding one never matches.
+// a pattern is literal text, or a regular expression (see regex.h) when its options say so.
+// in literal text the escapes \t, \r, \n, \\, \^ and \$ stand for a tab, a carriage return,
+// a line break, a backslash and the two anchor characters, and any other backslash is
+// literal; a "^" at the start ties a match to the start of a line, and a "$" at the end to
+// its end.
+// a match never crosses a line break, so a literal pattern holding one never matches.
+#include "regex.h"
 #include "strbuf.h"
 #include "types.h"
 
@@ -14,12 +16,19 @@ typedef struct PatternOptions {
 
   // a match must not have a word character just before or after it.
   bool wholeWord;
+
+  // the pattern is a regular expression.
+  bool regex;
 } PatternOptions;
 
 typedef struct Pattern {
   // the text as typed, and how it is matched.
   StrBuf source;
   PatternOptions options;
+
+  // the compiled regular expression, or why it would not compile.
+  Regex regex;
+  StrBuf error;
 
   // the literal text, and its code points case folded.
   StrBuf text;
@@ -30,7 +39,7 @@ typedef struct Pattern {
   bool lineStart;
   bool lineEnd;
 
-  // empty, or holding a line break, so it never matches.
+  // empty, holding a line break or not compiling, so it never matches.
   bool impossible;
 } Pattern;
 
@@ -58,8 +67,22 @@ PatternFind(
   PatternMatch *match
 );
 
+// appends what replaces match, in a line of text: replacement as typed, with its escapes
+// replaced (\n becomes a line break here).
+// for a regular expression, \0 stands for the match and \1 to \9 for its groups (nothing
+// for a group that took no part).
+void
+PatternExpand(
+  const Pattern *pattern,
+  const char *text,
+  u64 length,
+  PatternMatch match,
+  const StrBuf *replacement,
+  StrBuf *output
+);
+
 // replaces first, a match in a line of text, and every match after it that starts before
-// limit, all at once.
+// limit, all at once, each as PatternExpand gives it.
 // rebuilt is set to what replaces the text from first.start up to the returned end of the
 // last match, and the number of matches replaced is added to count.
 u64
@@ -78,8 +101,3 @@ PatternReplaceLine(
 // the anchor characters where they would act as anchors.
 void
 PatternEscape(const char *text, u64 length, StrBuf *source);
-
-// appends source with its escapes replaced, for replacement text.
-// \n becomes a line break here.
-void
-PatternUnescape(const char *source, u64 length, StrBuf *output);

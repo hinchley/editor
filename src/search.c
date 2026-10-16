@@ -41,10 +41,15 @@ typedef struct Replacing {
 static Workspace *workspace;
 static StrBuf *message;
 
-// the last search, and whether a new one matches case (ctrl+t), for the whole session.
+// the last search, and whether a new one matches case (ctrl+t) and is a regular
+// expression (ctrl+r), for the whole session.
 static Pattern last;
 static bool caseSensitive;
+static bool regex;
 static StrBuf lastReplacement;
+
+// the text of the open prompt, compiled to find out whether it is a valid pattern.
+static Pattern typed;
 
 static enum SearchPrompt prompt;
 static SearchProjectDone projectDone;
@@ -87,7 +92,8 @@ SearchMarks(const Document *document)
 static void
 SetPattern(const char *source, u64 length)
 {
-  PatternSet(&last, source, length, (PatternOptions){.caseSensitive = caseSensitive});
+  PatternOptions options = {.caseSensitive = caseSensitive, .regex = regex};
+  PatternSet(&last, source, length, options);
 }
 
 static void
@@ -101,6 +107,8 @@ ReportNoMatch(const MatchSet *set)
 {
   if (set->kind == MatchKindSpell) {
     StrBufAppendString(message, "no unknown words");
+  } else if (last.error.length) {
+    StrBufAppendFormat(message, "bad pattern: %s", last.error.data);
   } else if (last.impossible && last.text.length) {
     StrBufAppendString(message, "a match cannot cross a line break");
   } else {
@@ -108,19 +116,35 @@ ReportNoMatch(const MatchSet *set)
   }
 }
 
-// labels the open prompt with a verb and, in brackets, the state of the search.
-static void
-Label(const char *verb)
+// true when the text of the open prompt is a regular expression that does not compile.
+static bool
+BadPattern(void)
 {
-  const char *notes[3];
+  const StrBuf *text = PromptText();
+  if (!regex || !text->length) return false;
+
+  PatternOptions options = {.caseSensitive = caseSensitive, .regex = true};
+  PatternSet(&typed, text->data, text->length, options);
+  return typed.error.length;
+}
+
+// labels the open prompt with what it does and, in brackets, the state of the search.
+static void
+Label(void)
+{
+  const char *notes[4];
   u32 count = 0;
-  bool typed = PromptText()->length;
+  bool find = prompt == SearchPromptFind;
+  bool bad = BadPattern();
   if (caseSensitive) notes[count++] = "match case";
-  if (prompt == SearchPromptFind && typed && !found) notes[count++] = "no match";
-  if (prompt == SearchPromptFind && found && wrapped) notes[count++] = "wrapped";
+  if (regex) notes[count++] = bad ? "regex, bad pattern" : "regex";
+  if (find && PromptText()->length && !found && !bad) notes[count++] = "no match";
+  if (find && found && wrapped) notes[count++] = "wrapped";
 
   StrBuf label = {};
-  StrBufAppendString(&label, verb);
+  if (find) StrBufAppendString(&label, "find");
+  else if (prompt == SearchPromptProject) StrBufAppendString(&label, "search files");
+  else StrBufAppendString(&label, "replace");
 
   for (u32 index = 0; index < count; index++) {
     StrBufAppendString(&label, index ? ", " : " [");
@@ -149,7 +173,17 @@ ShowFirst(void)
   found = MatchFind(&set, &Current()->buffer, origin, false, &current, &wrapped);
   if (found) Select(current);
   else RestoreView();
-  Label("find");
+  Label();
+}
+
+// relabels the replace and project search prompts as their text changes.
+static void
+Relabel(
+  [[maybe_unused]] void *context,
+  [[maybe_unused]] const char *text,
+  [[maybe_unused]] u64 length
+) {
+  Label();
 }
 
 static void
@@ -168,7 +202,7 @@ FindStep(bool backward)
   Position from = backward ? current.start : current.end;
   MatchFind(&set, &Current()->buffer, from, backward, &current, &wrapped);
   Select(current);
-  Label("find");
+  Label();
 }
 
 static void
@@ -211,7 +245,7 @@ SearchFind(void)
   prompt = SearchPromptFind;
   PromptAsk("find: ", "", FindDone, nullptr);
   PromptHandle(FindChanged, nullptr);
-  Label("find");
+  Label();
 }
 
 void
@@ -403,14 +437,19 @@ Chosen([[maybe_unused]] void *context, const char *answer, [[maybe_unused]] u64 
 {
   char choice = answer ? *answer : 'q';
   Range match = replacing.match;
-  const char *text = replacing.text.data ? replacing.text.data : "";
 
   switch (choice) {
-  case 'y':
-    Apply(match, text, replacing.text.length);
+  case 'y': {
+    const StrBuf *line = BufferLine(&Current()->buffer, match.start.line);
+    PatternMatch hit = {match.start.byte, match.end.byte};
+    StrBuf with = {};
+    PatternExpand(&last, TextOf(line), line->length, hit, &replacing.text, &with);
+    Apply(match, TextOf(&with), with.length);
+    StrBufFree(&with);
     replacing.replaced++;
     replacing.decided++;
     break;
+  }
   case 'n':
     replacing.next = match.end;
     replacing.decided++;
@@ -450,7 +489,7 @@ ReplacementAnswered([[maybe_unused]] void *context, const char *answer, u64 leng
   StrBufClear(&lastReplacement);
   StrBufAppend(&lastReplacement, answer, length);
   StrBufClear(&replacing.text);
-  PatternUnescape(answer, length, &replacing.text);
+  StrBufAppend(&replacing.text, answer, length);
 
   // every replacement until the run ends is one undo step.
   Document *document = Current();
@@ -496,7 +535,8 @@ SearchReplace(void)
   CursorSetCollapse(&Current()->view->cursors);
   prompt = SearchPromptPattern;
   PromptAsk("replace: ", "", PatternAnswered, nullptr);
-  Label("replace");
+  PromptHandle(Relabel, nullptr);
+  Label();
 }
 
 static void
@@ -515,7 +555,8 @@ SearchProject(SearchProjectDone done)
   projectDone = done;
   prompt = SearchPromptProject;
   PromptAsk("search files: ", "", ProjectAnswered, nullptr);
-  Label("search files");
+  PromptHandle(Relabel, nullptr);
+  Label();
 }
 
 static void
@@ -530,10 +571,7 @@ ProjectReplacementAnswered([[maybe_unused]] void *context, const char *answer, u
 
   StrBufClear(&lastReplacement);
   StrBufAppend(&lastReplacement, answer, length);
-  StrBuf text = {};
-  PatternUnescape(answer, length, &text);
-  replacementDone(&text);
-  StrBufFree(&text);
+  replacementDone(&lastReplacement);
 }
 
 void
@@ -572,19 +610,20 @@ Recall(void)
   if (text->length) PromptSetText(text->data, text->length);
 }
 
+// switches case matching or regular expressions, searching again in find.
 static void
-ToggleCase(void)
+Toggle(bool *option)
 {
-  caseSensitive = !caseSensitive;
+  *option = !*option;
 
   if (prompt == SearchPromptFind) {
     const StrBuf *text = PromptText();
-    SetPattern(text->data ? text->data : "", text->length);
+    SetPattern(TextOf(text), text->length);
     ShowFirst();
     return;
   }
 
-  Label(prompt == SearchPromptProject ? "search files" : "replace");
+  Label();
 }
 
 void
@@ -608,7 +647,12 @@ SearchKey(Key key)
   bool replacement = prompt == SearchPromptReplacement || prompt == SearchPromptProjectReplacement;
 
   if (control && key.code == 't' && !replacement) {
-    ToggleCase();
+    Toggle(&caseSensitive);
+    return;
+  }
+
+  if (control && key.code == 'r' && !replacement) {
+    Toggle(&regex);
     return;
   }
 
