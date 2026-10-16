@@ -9,6 +9,7 @@
 #include "input.h"
 #include "jump.h"
 #include "keymap.h"
+#include "lang.h"
 #include "memory.h"
 #include "move.h"
 #include "multicursor.h"
@@ -895,6 +896,8 @@ i32
 AppRun(i32 argumentCount, char **arguments)
 {
   // files are loaded before the terminal changes, so argument errors leave it untouched.
+  // the languages come first, as opening a file picks one.
+  LangLoadAll(&message);
   WorkspaceInit(&workspace, &displayOptions);
   SearchInit(&workspace, &message);
   ScanInit(&workspace, &message);

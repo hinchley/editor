@@ -52,6 +52,9 @@ SwitchToFirst(bool explain)
   for (u64 index = 0; index < workspace->count; index++) {
     StrBuf opened = {};
     bool ok = WorkspaceSwitch(workspace, index, &opened);
+
+    // the message may already say something (a bad language package).
+    if (ok && message->length && opened.length) StrBufAppendString(message, "; ");
     StrBufAppend(ok ? message : &reasons, opened.data ? opened.data : "", opened.length);
     StrBufFree(&opened);
 

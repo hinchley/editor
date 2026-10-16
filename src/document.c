@@ -10,7 +10,7 @@ DetectLanguage(Document *document, StrBuf *message)
 
   HighlightFree(document->highlight);
   document->lang = lang;
-  document->highlight = lang ? HighlightNew(&document->buffer, lang->name, message) : nullptr;
+  document->highlight = lang ? HighlightNew(&document->buffer, lang, message) : nullptr;
 }
 
 enum FileStatus

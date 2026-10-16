@@ -1,0 +1,4 @@
+# only injected, into markdown's paragraphs and headings.
+inject = markdown_inline
+prose = yes
+fresh-parse = yes

@@ -7,13 +7,16 @@ It targets Wayland and the foot, alacritty and ghostty terminals, and requires t
 ## Build
 
 ```sh
-./build.sh           # optimised build, produces ./editor
-./build.sh --debug   # unoptimised build with address and undefined behaviour sanitizers
+./build.sh                         # optimised build, produces ./editor
+./build.sh --debug                 # unoptimised build with address and undefined behaviour sanitizers
+./build.sh --languages --install   # also builds the language packages and installs them
 ```
 
 Requirements: gcc 15 or newer (for C23 `#embed`), bash, and `wl-clipboard` at runtime for system clipboard support.
 
-The build compiles the vendored tree-sitter sources once into `build/vendor` and only recompiles them when they change. The editor sources are rebuilt every time. The build fails if `data/words.txt` is not sorted in byte order.
+The build compiles the vendored tree-sitter runtime once into `build/vendor` and only recompiles it when it changes. The editor sources are rebuilt every time. The build fails if `data/words.txt` is not sorted in byte order.
+
+Languages are not built into the editor: each one is a package in `~/.config/editor/languages/<id>/` (or under `$XDG_CONFIG_HOME`), read when the editor starts. `--languages` builds a package for each vendored grammar into `build/languages` (compiling a grammar again only when its sources change), and `--install` copies them to the config folder, replacing packages of the same name and leaving any others alone. Until they are installed, nothing is highlighted, Ctrl-/ does not know any comment markers and there are no symbols. Run `./build.sh --languages --install` again after updating the vendored grammars or queries; an editor already running keeps the packages it started with.
 
 ## Usage
 
@@ -48,7 +51,7 @@ Files over 100 MB, files with a nul byte in their first 4 KB, and anything that 
 - Editing: typing, Enter (keeps the indentation, adds a level after `{`, `[` or `(`, and opens a block between a pair), Tab (spaces up to the next tab stop, or indents every selected line), Shift-Tab (dedents the line or the selected lines), Backspace (deletes back to the previous tab stop in leading spaces), Delete, Ctrl-Backspace (previous word), Ctrl-D (duplicate lines), Ctrl-K (delete lines), Ctrl-Shift-Up and Ctrl-Shift-Down (move lines), Alt-J (join the selected lines, or the line and the next; each line break and the next line's leading blanks become one space, or nothing when either side is empty, the line ends in a blank or the next line starts with a closing bracket), Alt-Shift-T (trim trailing whitespace from every line).
 - Case: Alt-Shift-U converts every selection to upper case, and Alt-Shift-L to lower case. Without a selection they convert the whole file. They use Unicode's simple one to one mappings, so `ß` stays `ß` (not `SS`), capital sigma always becomes `σ` (never the final `ς`), and `I` becomes `i` in every language. Selections stay selected and cursors stay on the same characters, and each conversion is one undo step.
 - Sort: Alt-Q sorts the lines the selection touches, or every line, and selects them. It asks how (`sort: (a)sc (d)esc (u)nique (s)hortest (l)ongest; capital ignores case`): `a` ascending (as `LC_ALL=C sort`), `d` descending (as `sort -r`), `u` unique, ascending with one of each duplicate line kept (as `sort -u`), `s` shortest first or `l` longest first. Length is the width on screen: a tab counts up to its tab stop and a wide character as two columns. Lines of the same length stay in ascending order. The capital letters `A`, `D`, `U`, `S` and `L` do the same ignoring case: they compare simply case folded characters, lines that are then equal go in byte order (reversed by `D`), and `U` keeps the first in byte order of lines that differ only in case. It is one undo step. Cursors of the other view of a split inside the sorted lines move to their start.
-- Comments: Ctrl-/ comments out every line touched by a cursor or selection, or uncomments them when they are all commented already. The markers line up at the smallest indentation of each block, and blank lines are left alone. C, Go, JavaScript, PHP and Zig use `//`, Bash and YAML `#`, SQL `--`, CSS `/* */`, and HTML, Markdown and XML `<!-- -->`. JSON has no comments.
+- Comments: Ctrl-/ comments out every line touched by a cursor or selection, or uncomments them when they are all commented already. The markers line up at the smallest indentation of each block, and blank lines are left alone. The markers come from the language's package: in the default packages C, Go, JavaScript, PHP and Zig use `//`, Bash and YAML `#`, SQL `--`, CSS `/* */`, and HTML, Markdown and XML `<!-- -->`. JSON has no comments.
 - Multiple cursors: Ctrl-E selects the word under the cursor, and each further press adds a cursor at the next occurrence of the selection (matching case, and as a whole word when the selection is one), going round the end of the file. Ctrl-Alt-Up and Ctrl-Alt-Down add a cursor on the row above the first cursor or below the last one. Typing, Enter, Tab, Shift-Tab, the deletes, movement and Shift selection act at every cursor, and each edit is one undo step. Cursors that meet merge. Ctrl-D, Ctrl-K, moving lines, joining, sorting, Ctrl-L, Ctrl-M, Alt-M and the search commands first collapse to the newest cursor. With more than one cursor, every cursor is drawn as a block and the status bar shows how many there are.
 - Undo and redo: Ctrl-Z and Ctrl-Y. Consecutive typing, backspaces or deletes are one step until the cursor moves or another command runs. A paste is one step. Undoing back to the saved text clears `[+]`.
 - Clipboard: Ctrl-C, Ctrl-X and Ctrl-V use `wl-copy` and `wl-paste`, and fall back to an in-editor clipboard without a Wayland session. With no selection, copy and cut take the whole line, and pasting that text again inserts it as a line above the cursor. With several cursors, copy joins the selections (or the cursors' lines) with line breaks, and a paste with as many lines as there are cursors gives each cursor one line. Pasted `\r\n` becomes `\n`.
@@ -262,8 +265,43 @@ If changing the ghostty config is not an option, rebind them in `src/keymap.c` i
 
 ## Adding a language
 
-1. Get the grammar's generated `src/parser.c` (and `src/scanner.c` if it has one) from the grammar repository (or its npm package, when the repository does not commit them), or run `tree-sitter generate` in it, and put them in `vendor/grammars/<lang>/` with the grammar's `src/tree_sitter/` headers and any other files its scanner includes. When the scanner includes a header by a relative path outside `src/` (as PHP's and XML's do), keep upstream's layout instead. Copy its `queries/highlights.scm` (and `queries/injections.scm`, if it embeds other languages) to `vendor/queries/<lang>/`. For symbols (Alt-O, Alt-], Alt-[, Alt-D, Alt-K and Alt-Shift-O), write `queries/<lang>/tags.scm` to the contract in ARCHITECTURE.md ("Symbols"): adapt upstream's `tags.scm` if it has one, so that `@definition.<kind>` captures the whole declaration. `build.sh` compiles each grammar's `parser.c` and `scanner.c`, wherever they are in its folder.
-2. In `src/highlight.c`, declare its `tree_sitter_<lang>()` entry point beside the others, add a `u8` array that `#embed`s each query file, and add a row to `grammars[]`: the display name, the injection ids (the lowercase names other grammars inject it by, such as `c`), the entry point and the queries (with `tags` when there is a tags query). Set `prose` for a language whose text should be spell checked outside code (like Markdown). Read the query to see which pattern it expects to win when two capture the same node: most put general patterns first and specific ones after (the default), but some put specific ones first (Go), which needs `firstPatternWins`. Check that its capture names map to theme groups (see ARCHITECTURE.md), and that any predicates it uses are among those `query` supports, as an unknown one is ignored and lets its pattern match everything.
-3. In `src/lang.c`, add a row to `langTable`: the display name (the same as in its `grammars[]` row), its extensions, any whole file names for files without an extension (like `PKGBUILD`), and its comment start and end (end empty for line comments, start `nullptr` for a language without comments).
+A language is a folder in `~/.config/editor/languages/` (or `$XDG_CONFIG_HOME/editor/languages/`), named by its id:
 
-A Markdown code block can name the new language by its injection id or by any of its extensions straight away.
+```
+languages/go/
+  language         # what the language is (below); the only file required
+  parser.so        # the tree-sitter grammar, for highlighting and symbols
+  highlights.scm   # required with parser.so
+  injections.scm   # optional: languages embedded in this one
+  tags.scm         # optional: symbols (Alt-O, Alt-], Alt-[, Alt-D, Alt-K, Alt-Shift-O)
+```
+
+`language` holds one `key = value` per line. A line starting with `#` is a comment (there are no comments after a value, since `#` can be a comment marker):
+
+| Key | Value |
+| --- | --- |
+| `name` | The display name, shown in the status bar. Required with `extensions`, `files` or `interpreters`, and left out for a grammar that is only embedded in others (`markdown-inline`). |
+| `extensions` | Extensions without the dot, separated by spaces, matched ignoring case. |
+| `files` | Whole file names for files without an extension, matching case (`PKGBUILD .bashrc`). |
+| `interpreters` | Programs a `#!` first line may name, directly or through `env`, for files without an extension (`sh bash`). |
+| `comment` | What Ctrl-/ puts before a line (`//`). Left out, the language has no comments. |
+| `comment-end` | What it puts after a line, for block comments (`-->`). |
+| `inject` | The names other grammars embed it by, such as `bash shell`. The default is the id. Markdown fences also find a language by its extensions. |
+| `symbol` | The function of `parser.so` that gives the grammar. The default is `tree_sitter_` and the id with `-` as `_`. |
+| `prose` | `yes` to spell check all text outside code, as in Markdown, rather than only comments and strings. |
+| `fresh-parse` | `yes` to parse from scratch after every edit, for a grammar whose scanner gives different trees when parsing incrementally (Markdown's inline grammar). |
+| `first-pattern-wins` | `yes` when the highlight query puts its specific patterns first (Go's does): for captures of the same node, the earlier pattern wins rather than the later one. |
+
+Without `parser.so` a language still has its files and comment markers, just no colours or symbols. A package whose `language` file is wrong is left out, and the problem is shown when the editor starts. A `parser.so` that does not load (a missing entry point, or a tree-sitter ABI other than 13 to 15) or a query that does not compile is reported when a file of that language first opens, and that language is left uncoloured. Packages are read only at startup, so a new or changed package takes effect the next time the editor starts. Removing a language is deleting its folder.
+
+To make a package from a grammar repository:
+
+```sh
+tools/language.sh ~/src/tree-sitter-lua lua
+```
+
+This compiles the repository's `src/parser.c` (and `src/scanner.c`, if it has one) into `parser.so`, copies its `queries/highlights.scm` and `queries/injections.scm`, and writes a `language` file to correct unless the package already has one. For a repository holding several grammars, name the folder of the one wanted (`tree-sitter-php/php`). Repositories that do not commit `src/parser.c` need `tree-sitter generate` first. Then check that the query's capture names map to theme groups (see ARCHITECTURE.md, "Colouring lines"), that any predicates it uses are among those the editor supports (an unknown one is ignored and lets its pattern match everything), and which pattern it expects to win when two capture the same node (most put general patterns first, the default). For symbols, write `tags.scm` to the contract in ARCHITECTURE.md ("Symbols"): adapt upstream's `tags.scm` if it has one, so that `@definition.<kind>` captures the whole declaration.
+
+A `parser.so` runs inside the editor with your privileges, so only install grammars you would run as a program. Packages are only ever read from the config folder, never from a project being edited.
+
+To add a language to the default packages instead, put its generated `src/parser.c` and `src/scanner.c` in `vendor/grammars/<id>/` with the grammar's `src/tree_sitter/` headers and any other files its scanner includes (when the scanner includes a header by a relative path outside `src/`, as PHP's and XML's do, keep upstream's layout), its queries in `vendor/queries/<id>/`, and the editor's own files (`language`, and `tags.scm` when it has symbols) in `languages/<id>/`. `./build.sh --languages` builds every folder in `vendor/grammars`.

@@ -1,24 +1,26 @@
 #pragma once
 
-// syntax highlighting with tree-sitter, and the only module that knows the grammars.
+// syntax highlighting with tree-sitter, and the only module that loads the grammars (from
+// the language packages lang.c reads).
 // a highlighter parses its buffer, parses it again incrementally after edits, and colours
 // lines on demand by running the highlight queries over a window of lines around the one
 // asked for.
 // languages embedded in others (code blocks and inline text in markdown, scripts and
 // styles in html) are parsed as separate layers over just their ranges.
 #include "buffer.h"
+#include "lang.h"
 #include "strbuf.h"
 #include "theme.h"
 #include "types.h"
 
 typedef struct Highlight Highlight;
 
-// a highlighter for a buffer in a language (by its display name, as in lang.c), or nullptr
-// when there is no grammar for it.
+// a highlighter for a buffer in a language, or nullptr when it has no grammar.
 // it follows the buffer's changes until HighlightFree.
-// a grammar whose queries fail to compile is reported in message.
+// a grammar that fails to load, or whose queries fail to compile, is reported in message
+// the first time.
 Highlight *
-HighlightNew(Buffer *buffer, const char *language, StrBuf *message);
+HighlightNew(Buffer *buffer, const Lang *lang, StrBuf *message);
 
 void
 HighlightFree(Highlight *highlight);
@@ -73,9 +75,9 @@ typedef struct HighlightSymbol {
 
 typedef void (*HighlightVisit)(void *context, const HighlightSymbol *symbol);
 
-// true when a language (by its display name) has symbols.
+// true when a language has symbols.
 bool
-HighlightHasSymbols(const char *language);
+HighlightHasSymbols(const Lang *lang);
 
 // visits the symbols of the buffer in order of their definitions, parsing it first if it
 // changed.
@@ -90,7 +92,7 @@ HighlightSymbols(Highlight *highlight, HighlightVisit visit, void *context);
 // parse.
 bool
 HighlightSymbolsOfText(
-  const char *language,
+  const Lang *lang,
   const char *text,
   u64 length,
   HighlightVisit visit,

@@ -77,7 +77,7 @@ Collect(SymbolList *list)
   Document *document = WorkspaceDocument(workspace);
   const Lang *lang = document->lang;
 
-  if (!lang || !HighlightHasSymbols(lang->name)) {
+  if (!lang || !HighlightHasSymbols(lang)) {
     if (lang) StrBufAppendFormat(message, "%s has no symbols", lang->name);
     else StrBufAppendString(message, "no symbols for this file type");
     return false;
@@ -521,7 +521,7 @@ PathLang(const StrBuf *path)
 {
   const Lang *lang = LangOfPath(TextOf(path), &noExtension);
   if (lang == &noExtension) return lang;
-  return lang && HighlightHasSymbols(lang->name) ? lang : nullptr;
+  return lang && HighlightHasSymbols(lang) ? lang : nullptr;
 }
 
 // brings the open documents up to date from their buffers, and drops the files of
@@ -540,7 +540,7 @@ Refresh(void)
     if (!document) continue;
 
     const Lang *lang = document->lang;
-    bool has = lang && HighlightHasSymbols(lang->name);
+    bool has = lang && HighlightHasSymbols(lang);
     IndexFile *file = FileOf(entry->serial);
 
     // a rename may have given the document a language without symbols.
@@ -585,7 +585,7 @@ Visit([[maybe_unused]] void *context, const ScanItem *item)
     const char *newline = memchr(item->text, '\n', item->length);
     u64 length = newline ? (u64)(newline - item->text) : item->length;
     lang = LangOfScript(item->text, length);
-    if (lang && !HighlightHasSymbols(lang->name)) lang = nullptr;
+    if (lang && !HighlightHasSymbols(lang)) lang = nullptr;
   }
 
   // a file with nothing to find is kept too, so it is not read again until it changes.
@@ -594,7 +594,7 @@ Visit([[maybe_unused]] void *context, const ScanItem *item)
   file->stamp = item->stamp;
   file->lang = lang;
   Adding adding = Renew(file);
-  if (lang) HighlightSymbolsOfText(lang->name, item->text, item->length, AddSymbol, &adding);
+  if (lang) HighlightSymbolsOfText(lang, item->text, item->length, AddSymbol, &adding);
   return true;
 }
 

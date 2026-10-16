@@ -1,0 +1,4 @@
+name = CSS
+extensions = css
+comment = /*
+comment-end = */

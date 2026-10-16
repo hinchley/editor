@@ -1,0 +1,4 @@
+name = HTML
+extensions = html htm
+comment = <!--
+comment-end = -->

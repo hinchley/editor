@@ -1,273 +1,16 @@
 #include "highlight.h"
 
+#include <dlfcn.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <time.h>
 #include <tree_sitter/api.h>
 
+#include "file.h"
 #include "lang.h"
 #include "memory.h"
 #include "query.h"
 #include "settings.h"
-
-const TSLanguage *tree_sitter_bash(void);
-const TSLanguage *tree_sitter_c(void);
-const TSLanguage *tree_sitter_css(void);
-const TSLanguage *tree_sitter_go(void);
-const TSLanguage *tree_sitter_html(void);
-const TSLanguage *tree_sitter_javascript(void);
-const TSLanguage *tree_sitter_json(void);
-const TSLanguage *tree_sitter_markdown(void);
-const TSLanguage *tree_sitter_markdown_inline(void);
-const TSLanguage *tree_sitter_php(void);
-const TSLanguage *tree_sitter_sql(void);
-const TSLanguage *tree_sitter_xml(void);
-const TSLanguage *tree_sitter_yaml(void);
-const TSLanguage *tree_sitter_zig(void);
-
-static const u8 bashHighlights[] = {
-#embed "../vendor/queries/bash/highlights.scm"
-};
-
-static const u8 cHighlights[] = {
-#embed "../vendor/queries/c/highlights.scm"
-};
-
-static const u8 cssHighlights[] = {
-#embed "../vendor/queries/css/highlights.scm"
-};
-
-static const u8 goHighlights[] = {
-#embed "../vendor/queries/go/highlights.scm"
-};
-
-static const u8 htmlHighlights[] = {
-#embed "../vendor/queries/html/highlights.scm"
-};
-
-static const u8 htmlInjections[] = {
-#embed "../vendor/queries/html/injections.scm"
-};
-
-static const u8 javascriptHighlights[] = {
-#embed "../vendor/queries/javascript/highlights.scm"
-};
-
-static const u8 javascriptInjections[] = {
-#embed "../vendor/queries/javascript/injections.scm"
-};
-
-static const u8 jsonHighlights[] = {
-#embed "../vendor/queries/json/highlights.scm"
-};
-
-static const u8 markdownHighlights[] = {
-#embed "../vendor/queries/markdown/highlights.scm"
-};
-
-static const u8 markdownInjections[] = {
-#embed "../vendor/queries/markdown/injections.scm"
-};
-
-static const u8 markdownInlineHighlights[] = {
-#embed "../vendor/queries/markdown-inline/highlights.scm"
-};
-
-static const u8 markdownInlineInjections[] = {
-#embed "../vendor/queries/markdown-inline/injections.scm"
-};
-
-static const u8 phpHighlights[] = {
-#embed "../vendor/queries/php/highlights.scm"
-};
-
-// php keeps the injection of html (into the text outside <?php ?>) in a file of its own.
-static const u8 phpInjections[] = {
-#embed "../vendor/queries/php/injections.scm"
-  , '\n',
-#embed "../vendor/queries/php/injections-text.scm"
-};
-
-static const u8 sqlHighlights[] = {
-#embed "../vendor/queries/sql/highlights.scm"
-};
-
-static const u8 xmlHighlights[] = {
-#embed "../vendor/queries/xml/highlights.scm"
-};
-
-static const u8 yamlHighlights[] = {
-#embed "../vendor/queries/yaml/highlights.scm"
-};
-
-static const u8 zigHighlights[] = {
-#embed "../vendor/queries/zig/highlights.scm"
-};
-
-// the tags queries are the editor's own (see ARCHITECTURE.md, "Symbols").
-static const u8 bashTags[] = {
-#embed "../queries/bash/tags.scm"
-};
-
-static const u8 cTags[] = {
-#embed "../queries/c/tags.scm"
-};
-
-static const u8 goTags[] = {
-#embed "../queries/go/tags.scm"
-};
-
-static const u8 javascriptTags[] = {
-#embed "../queries/javascript/tags.scm"
-};
-
-static const u8 markdownTags[] = {
-#embed "../queries/markdown/tags.scm"
-};
-
-static const u8 phpTags[] = {
-#embed "../queries/php/tags.scm"
-};
-
-static const u8 zigTags[] = {
-#embed "../queries/zig/tags.scm"
-};
-
-typedef struct Embedded {
-  const u8 *data;
-  u64 size;
-} Embedded;
-
-typedef struct Grammar {
-  // the display name from lang.c, or nullptr for a grammar that is only ever injected.
-  const char *name;
-
-  // the lowercase names other grammars inject it by, the first being its own, ending with
-  // nullptr.
-  const char *injectionIds[3];
-  const TSLanguage *(*language)(void);
-  Embedded highlights;
-  Embedded injections;
-
-  // the symbols, optional.
-  Embedded tags;
-
-  // prose is spell checked outside code; other languages only in comments and strings.
-  bool prose;
-
-  // parse again from scratch after an edit, for a grammar whose scanner gives different
-  // trees when parsing incrementally (markdown's inline grammar).
-  bool freshParse;
-
-  // for captures of the same node, the earlier pattern wins (the tree-sitter cli rule)
-  // rather than the later one (go's query puts the specific patterns first).
-  bool firstPatternWins;
-} Grammar;
-
-static const Grammar grammars[] = {
-  {
-    .name = "Bash",
-    .injectionIds = {"bash", "shell"},
-    .language = tree_sitter_bash,
-    .highlights = {bashHighlights, sizeof bashHighlights},
-    .tags = {bashTags, sizeof bashTags}
-  },
-  {
-    .name = "C",
-    .injectionIds = {"c"},
-    .language = tree_sitter_c,
-    .highlights = {cHighlights, sizeof cHighlights},
-    .tags = {cTags, sizeof cTags}
-  },
-  {
-    .name = "CSS",
-    .injectionIds = {"css"},
-    .language = tree_sitter_css,
-    .highlights = {cssHighlights, sizeof cssHighlights}
-  },
-  {
-    .name = "Go",
-    .injectionIds = {"go"},
-    .language = tree_sitter_go,
-    .highlights = {goHighlights, sizeof goHighlights},
-    .tags = {goTags, sizeof goTags},
-    .firstPatternWins = true
-  },
-  {
-    .name = "HTML",
-    .injectionIds = {"html"},
-    .language = tree_sitter_html,
-    .highlights = {htmlHighlights, sizeof htmlHighlights},
-    .injections = {htmlInjections, sizeof htmlInjections}
-  },
-  {
-    .name = "JavaScript",
-    .injectionIds = {"javascript"},
-    .language = tree_sitter_javascript,
-    .highlights = {javascriptHighlights, sizeof javascriptHighlights},
-    .tags = {javascriptTags, sizeof javascriptTags},
-    .injections = {javascriptInjections, sizeof javascriptInjections}
-  },
-  {
-    .name = "JSON",
-    .injectionIds = {"json"},
-    .language = tree_sitter_json,
-    .highlights = {jsonHighlights, sizeof jsonHighlights}
-  },
-  {
-    .name = "Markdown",
-    .injectionIds = {"markdown"},
-    .language = tree_sitter_markdown,
-    .highlights = {markdownHighlights, sizeof markdownHighlights},
-    .tags = {markdownTags, sizeof markdownTags},
-    .injections = {markdownInjections, sizeof markdownInjections},
-    .prose = true
-  },
-  {
-    .injectionIds = {"markdown_inline"},
-    .language = tree_sitter_markdown_inline,
-    .highlights = {markdownInlineHighlights, sizeof markdownInlineHighlights},
-    .injections = {markdownInlineInjections, sizeof markdownInlineInjections},
-    .prose = true,
-    .freshParse = true
-  },
-  {
-    .name = "PHP",
-    .injectionIds = {"php"},
-    .language = tree_sitter_php,
-    .highlights = {phpHighlights, sizeof phpHighlights},
-    .tags = {phpTags, sizeof phpTags},
-    .injections = {phpInjections, sizeof phpInjections}
-  },
-  {
-    .name = "SQL",
-    .injectionIds = {"sql"},
-    .language = tree_sitter_sql,
-    .highlights = {sqlHighlights, sizeof sqlHighlights}
-  },
-  {
-    .name = "XML",
-    .injectionIds = {"xml"},
-    .language = tree_sitter_xml,
-    .highlights = {xmlHighlights, sizeof xmlHighlights}
-  },
-  {
-    .name = "YAML",
-    .injectionIds = {"yaml"},
-    .language = tree_sitter_yaml,
-    .highlights = {yamlHighlights, sizeof yamlHighlights}
-  },
-  {
-    .name = "Zig",
-    .injectionIds = {"zig"},
-    .language = tree_sitter_zig,
-    .highlights = {zigHighlights, sizeof zigHighlights},
-    .tags = {zigTags, sizeof zigTags}
-  }
-};
-
-static constexpr u32 grammarCount = sizeof grammars / sizeof grammars[0];
 
 // a byte's group sits in the low bits.
 // the literal bit marks code inside prose (fenced code, code spans, urls), which spell
@@ -295,8 +38,15 @@ static constexpr u32 maxDepth = 4;
 // injected layers kept when they are not in sight.
 static constexpr u32 maxLayers = 512;
 
-// the queries of a grammar, compiled on first use and shared by every highlighter.
+// a language's grammar and queries, loaded and compiled on first use and shared by every
+// highlighter.
 typedef struct Compiled {
+  // the grammar from parser.so, or nullptr with why it could not be loaded in failure
+  // (left empty for a package without parser.so, which is not a problem).
+  bool loadTried;
+  const TSLanguage *language;
+  StrBuf failure;
+
   bool tried;
   bool ready;
   Query highlights;
@@ -317,7 +67,8 @@ typedef struct Compiled {
   u32 bodyCapture;
 } Compiled;
 
-static Compiled compiled[grammarCount];
+// one for each language, by Lang.index.
+static Compiled *compiled;
 
 // a language injected over some ranges of the buffer.
 typedef struct Layer {
@@ -415,33 +166,6 @@ typedef struct SiteList {
   u32 capacity;
 } SiteList;
 
-static u32
-FindGrammarByName(const char *name)
-{
-  for (u32 index = 0; index < grammarCount; index++) {
-    if (grammars[index].name && strcmp(grammars[index].name, name) == 0) return index;
-  }
-
-  return UINT32_MAX;
-}
-
-// an injection names a grammar by its id or, failing that, by a file extension, so a
-// fenced code block can say "js" as well as "javascript".
-static u32
-FindInjected(const char *name, u64 length)
-{
-  for (u32 index = 0; index < grammarCount; index++) {
-    const char *const *ids = grammars[index].injectionIds;
-
-    for (u32 at = 0; ids[at]; at++) {
-      if (strlen(ids[at]) == length && strncasecmp(ids[at], name, length) == 0) return index;
-    }
-  }
-
-  const Lang *lang = LangOfExtension(name, length);
-  return lang ? FindGrammarByName(lang->name) : UINT32_MAX;
-}
-
 static void
 CompileGroups(Compiled *grammar)
 {
@@ -459,35 +183,155 @@ CompileGroups(Compiled *grammar)
   }
 }
 
-// compiles a grammar's queries the first time it is used.
+// makes room for the state of every language, before any is used.
+static void
+Prepare(void)
+{
+  if (!compiled) compiled = MemoryAllocateZeroed(LangCount() ? LangCount() : 1, sizeof(Compiled));
+}
+
+// loads a language's grammar from its parser.so the first time it is asked for.
+// the handle is never closed, as trees and queries point into the grammar.
+static const TSLanguage *
+Load(u32 index)
+{
+  Prepare();
+  Compiled *grammar = &compiled[index];
+  if (grammar->loadTried) return grammar->language;
+
+  grammar->loadTried = true;
+  const Lang *lang = LangAt(index);
+  if (!lang->hasParser) return nullptr;
+
+  StrBuf path = {};
+  StrBufAppendFormat(&path, "%s/parser.so", lang->folder);
+  void *handle = dlopen(path.data, RTLD_NOW | RTLD_LOCAL);
+  StrBufFree(&path);
+  StrBuf *failure = &grammar->failure;
+
+  if (!handle) {
+    StrBufAppendString(failure, dlerror());
+    return nullptr;
+  }
+
+  void *symbol = dlsym(handle, lang->symbol);
+
+  if (!symbol) {
+    StrBufAppendFormat(failure, "parser.so has no %s", lang->symbol);
+    return nullptr;
+  }
+
+  // posix allows a function pointer to be read from what dlsym gives.
+  const TSLanguage *(*make)(void);
+  memcpy(&make, &symbol, sizeof make);
+  const TSLanguage *language = make();
+  u32 abi = ts_language_abi_version(language);
+  u32 newest = TREE_SITTER_LANGUAGE_VERSION;
+  u32 oldest = TREE_SITTER_MIN_COMPATIBLE_LANGUAGE_VERSION;
+
+  if (abi < oldest || abi > newest) {
+    const char *age = abi > newest ? "newer" : "older";
+    StrBufAppendFormat(failure, "parser.so has ABI %u, %s than the editor supports (%u to %u)",
+      abi, age, oldest, newest);
+    return nullptr;
+  }
+
+  grammar->language = language;
+  return language;
+}
+
+// reads a query file of a language's package into text.
+// returns false, saying why in error, when it exists but cannot be read; a missing file
+// leaves text empty and sets missing.
+static bool
+ReadQuery(const Lang *lang, const char *name, StrBuf *text, bool *missing, StrBuf *error)
+{
+  StrBuf path = {};
+  StrBufAppendFormat(&path, "%s/%s", lang->folder, name);
+  FileStamp stamp;
+  enum FileStatus status = FileRead(path.data, text, &stamp, nullptr);
+  StrBufFree(&path);
+  *missing = status == FileStatusNew;
+  if (status == FileStatusOk || *missing) return true;
+
+  StrBufAppendFormat(error, "%s cannot be read", name);
+  return false;
+}
+
+// compiles one query file of a language's package, which must exist unless optional.
+// error names the file when the query is wrong.
+static bool
+CompileQuery(
+  const Lang *lang,
+  const TSLanguage *language,
+  const char *name,
+  bool optional,
+  Query *query,
+  StrBuf *error
+) {
+  StrBuf text = {};
+  bool missing;
+  bool ready = ReadQuery(lang, name, &text, &missing, error);
+
+  if (ready && missing && !optional) {
+    StrBufAppendFormat(error, "%s is missing", name);
+    ready = false;
+  }
+
+  if (ready && !missing) {
+    StrBuf reason = {};
+    ready = QueryInit(query, language, (const u8 *)text.data, text.length, &reason);
+    if (!ready) StrBufAppendFormat(error, "%s: %s", name, reason.data ? reason.data : "");
+    StrBufFree(&reason);
+  }
+
+  StrBufFree(&text);
+  return ready;
+}
+
+static void
+Report(StrBuf *message, const char *name, const char *reason)
+{
+  if (message->length) StrBufAppendString(message, "; ");
+  StrBufAppendFormat(message, "%s highlighting failed: %s", name, reason);
+}
+
+// loads a language's grammar and compiles its queries the first time it is used.
 static bool
 Compile(u32 index, StrBuf *message)
 {
+  Prepare();
   Compiled *grammar = &compiled[index];
   if (grammar->tried) return grammar->ready;
 
   grammar->tried = true;
-  const Grammar *source = &grammars[index];
-  const TSLanguage *language = source->language();
-  StrBuf error = {};
-  const Embedded *highlights = &source->highlights;
-  const Embedded *injections = &source->injections;
-  Query *query = &grammar->highlights;
-  bool ready = QueryInit(query, language, highlights->data, highlights->size, &error);
+  const Lang *lang = LangAt(index);
+  const char *name = lang->name ? lang->name : lang->id;
+  const TSLanguage *language = Load(index);
 
-  if (ready && injections->data) {
-    query = &grammar->injections;
-    ready = QueryInit(query, language, injections->data, injections->size, &error);
-    grammar->contentCapture = QueryCapture(query, "injection.content");
-    grammar->languageCapture = QueryCapture(query, "injection.language");
+  if (!language) {
+    const StrBuf *failure = &grammar->failure;
+    if (failure->length) Report(message, name, failure->data);
+    return false;
+  }
+
+  StrBuf error = {};
+  bool ready = CompileQuery(lang, language, "highlights.scm", false, &grammar->highlights, &error);
+
+  if (ready) {
+    Query *query = &grammar->injections;
+    ready = CompileQuery(lang, language, "injections.scm", true, query, &error);
+
+    if (ready && query->query) {
+      grammar->contentCapture = QueryCapture(query, "injection.content");
+      grammar->languageCapture = QueryCapture(query, "injection.language");
+    }
   }
 
   if (ready) CompileGroups(grammar);
   else QueryFree(&grammar->highlights);
 
-  const char *name = source->name ? source->name : source->injectionIds[0];
-  const char *reason = error.data ? error.data : "";
-  if (!ready) StrBufAppendFormat(message, "%s highlighting failed: %s", name, reason);
+  if (!ready) Report(message, name, error.data);
   StrBufFree(&error);
   grammar->ready = ready;
   return ready;
@@ -638,10 +482,10 @@ CheckSize(Highlight *highlight)
 }
 
 Highlight *
-HighlightNew(Buffer *buffer, const char *language, StrBuf *message)
+HighlightNew(Buffer *buffer, const Lang *lang, StrBuf *message)
 {
-  u32 grammar = FindGrammarByName(language);
-  if (grammar == UINT32_MAX || !Compile(grammar, message)) return nullptr;
+  u32 grammar = lang->index;
+  if (!Compile(grammar, message)) return nullptr;
 
   Highlight *highlight = MemoryAllocateZeroed(1, sizeof(Highlight));
   highlight->buffer = buffer;
@@ -734,7 +578,7 @@ static TSTree *
 Parse(Highlight *highlight, u32 grammar, TSTree *old, const TSRange *ranges, u32 count)
 {
   TSParser *parser = highlight->parser;
-  ts_parser_set_language(parser, grammars[grammar].language());
+  ts_parser_set_language(parser, compiled[grammar].language);
   ts_parser_set_included_ranges(parser, ranges, count);
 
   TSInput input = {
@@ -873,7 +717,7 @@ PaintCaptures(
 
     // paints of the same node go on in pattern order, so the last one wins.
     u32 pattern = match.pattern_index;
-    if (grammars[grammar].firstPatternWins) pattern = UINT32_MAX - pattern;
+    if (LangAt(grammar)->firstPatternWins) pattern = UINT32_MAX - pattern;
 
     Paint paint = {
       .start = ts_node_start_point(capture->node),
@@ -953,7 +797,8 @@ InjectedGrammar(Highlight *highlight, u32 grammar, const TSQueryMatch *match)
     name = text.data;
   }
 
-  u32 injected = name ? FindInjected(name, strlen(name)) : UINT32_MAX;
+  const Lang *lang = name ? LangOfInjection(name, strlen(name)) : nullptr;
+  u32 injected = lang ? lang->index : UINT32_MAX;
   StrBufFree(&text);
   return injected;
 }
@@ -1048,7 +893,7 @@ LayerTree(Highlight *highlight, Site *site)
     return layer->tree;
   }
 
-  TSTree *old = grammars[site->grammar].freshParse ? nullptr : layer->tree;
+  TSTree *old = LangAt(site->grammar)->freshParse ? nullptr : layer->tree;
   TSTree *tree = Parse(highlight, site->grammar, old, site->ranges, site->rangeCount);
   if (layer->tree) ts_tree_delete(layer->tree);
   free(layer->ranges);
@@ -1226,7 +1071,7 @@ HighlightSpellable(Highlight *highlight, u64 line, u64 byte)
   if (group == ThemeComment || group == ThemeString) return true;
 
   bool markup = group == ThemeNone || (group >= ThemeTitle && group <= ThemeReference);
-  return grammars[highlight->grammar].prose && markup;
+  return LangAt(highlight->grammar)->prose && markup;
 }
 
 // compiles a grammar's tags query the first time symbols are asked for.
@@ -1235,17 +1080,18 @@ HighlightSpellable(Highlight *highlight, u64 line, u64 byte)
 static bool
 CompileTags(u32 index)
 {
+  Prepare();
   Compiled *grammar = &compiled[index];
   if (grammar->tagsTried) return grammar->tagsReady;
 
   grammar->tagsTried = true;
-  const Embedded *tags = &grammars[index].tags;
-  if (!tags->data) return false;
+  const Lang *lang = LangAt(index);
+  const TSLanguage *language = lang->hasTags ? Load(index) : nullptr;
+  if (!language) return false;
 
   StrBuf error = {};
-  const TSLanguage *language = grammars[index].language();
   Query *query = &grammar->tags;
-  grammar->tagsReady = QueryInit(query, language, tags->data, tags->size, &error);
+  grammar->tagsReady = CompileQuery(lang, language, "tags.scm", false, query, &error);
   StrBufFree(&error);
   if (!grammar->tagsReady) return false;
 
@@ -1267,10 +1113,9 @@ CompileTags(u32 index)
 }
 
 bool
-HighlightHasSymbols(const char *language)
+HighlightHasSymbols(const Lang *lang)
 {
-  u32 grammar = FindGrammarByName(language);
-  return grammar != UINT32_MAX && CompileTags(grammar);
+  return CompileTags(lang->index);
 }
 
 // where the text of a tree comes from: a buffer, or text held in one piece.
@@ -1603,17 +1448,17 @@ ReadText(void *payload, u32 byte, [[maybe_unused]] TSPoint point, u32 *bytesRead
 
 bool
 HighlightSymbolsOfText(
-  const char *language,
+  const Lang *lang,
   const char *text,
   u64 length,
   HighlightVisit visit,
   void *context
 ) {
-  u32 grammar = FindGrammarByName(language);
-  if (grammar == UINT32_MAX || length > maxHighlightSize || !CompileTags(grammar)) return false;
+  u32 grammar = lang->index;
+  if (length > maxHighlightSize || !CompileTags(grammar)) return false;
 
   TSParser *parser = ts_parser_new();
-  ts_parser_set_language(parser, grammars[grammar].language());
+  ts_parser_set_language(parser, compiled[grammar].language);
 
   Source source = {.text = text, .length = length};
   TSInput input = {.payload = &source, .read = ReadText, .encoding = TSInputEncodingUTF8};
