@@ -2,6 +2,7 @@
 
 #include "move.h"
 #include "prompt.h"
+#include "spell.h"
 #include "utf8.h"
 
 // which search prompt is open.
@@ -56,6 +57,10 @@ static SearchProjectDone projectDone;
 static SearchReplacementDone replacementDone;
 static SearchSaved saved;
 static Replacing replacing;
+
+// the word alt+shift+s asks about, and whether it is to be added to the word list.
+static StrBuf spellWord;
+static bool spellAdd;
 
 // where incremental find starts, and the match it shows.
 static Position origin;
@@ -317,6 +322,8 @@ SearchWord(void)
 void
 SearchSpell(void)
 {
+  if (!SpellReady(message)) return;
+
   Document *document = Current();
   document->marks = MatchKindSpell;
   MatchSet set = SearchMarks(document);
@@ -336,6 +343,41 @@ SearchSpell(void)
   MatchFind(&set, &document->buffer, from, false, &match, &around);
   Select(match);
   StrBufAppendFormat(message, "%lu unknown word%s", count, count == 1 ? "" : "s");
+}
+
+static void
+SpellWordAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]] u64 length)
+{
+  if (!answer || *answer != 'y') return;
+  if (!SpellChange(spellWord.data, spellWord.length, spellAdd, message)) return;
+
+  const char *done = spellAdd ? "added \"%s\" to" : "removed \"%s\" from";
+  StrBufAppendFormat(message, done, spellWord.data);
+  StrBufAppendString(message, " the word list");
+}
+
+void
+SearchSpellWord(void)
+{
+  if (!SpellReady(message)) return;
+
+  Document *document = Current();
+  Position head = CursorSetPrimary(&document->view->cursors)->head;
+  const StrBuf *line = BufferLine(&document->buffer, head.line);
+  u64 start;
+  u64 end;
+
+  if (!SpellWordAt(TextOf(line), line->length, head.byte, &start, &end)) {
+    StrBufAppendString(message, "no word to check at the cursor");
+    return;
+  }
+
+  spellAdd = !SpellEntry(line->data, start, end, &spellWord);
+  StrBuf question = {};
+  StrBufAppendFormat(&question, spellAdd ? "add \"%s\" to" : "remove \"%s\" from", spellWord.data);
+  StrBufAppendString(&question, " the word list? (y/n)");
+  PromptChoose(question.data, "yn", SpellWordAnswered, nullptr);
+  StrBufFree(&question);
 }
 
 // the next match of the replace, or false once it has come round to where it started.

@@ -1,12 +1,10 @@
 #include "spell.h"
 
-#include "memory.h"
-#include "utf8.h"
+#include <stdlib.h>
+#include <string.h>
 
-// one word per line, sorted in byte order (build.sh checks it).
-static const u8 words[] = {
-#embed "../data/words.txt"
-};
+#include "file.h"
+#include "utf8.h"
 
 // longest word looked up, in bytes; anything longer is unknown.
 static constexpr u64 maxWordSize = 96;
@@ -16,58 +14,104 @@ static constexpr u64 linkReach = 256;
 
 static constexpr u32 rightQuote = 0x2019;
 
-// where each entry of the list starts, built on first use.
-static u32 *entries;
-static u32 entryCount;
+// the word list, one word per line, read on first use and again when it changes on disk.
+// its lines are kept in byte order, and the empty line after a final line break is left
+// out of the search.
+static File wordsFile;
+static Buffer words;
+static bool loaded;
 
-static void
-IndexWords(void)
+// orders two words by their bytes, a shorter word before a longer one it starts.
+static i32
+CompareWords(const char *a, u64 aLength, const char *b, u64 bLength)
 {
-  u64 count = 1;
-  for (u64 at = 0; at < sizeof words; at++) count += words[at] == '\n';
+  // an empty line's data may be nullptr, which memcmp must not be given.
+  u64 shorter = aLength < bLength ? aLength : bLength;
+  i32 order = shorter ? memcmp(a, b, shorter) : 0;
+  if (order) return order;
+  return aLength < bLength ? -1 : aLength > bLength;
+}
 
-  entries = MemoryAllocate(count * sizeof(u32));
-  u64 start = 0;
+static i32
+CompareLines(const void *a, const void *b)
+{
+  const StrBuf *first = a;
+  const StrBuf *second = b;
+  return CompareWords(first->data, first->length, second->data, second->length);
+}
 
-  for (u64 at = 0; at <= sizeof words; at++) {
-    if (at < sizeof words && words[at] != '\n') continue;
-    if (at > start) entries[entryCount++] = (u32)start;
-    start = at + 1;
+// the lines holding words: all but an empty last line.
+static u64
+WordCount(void)
+{
+  u64 count = BufferLineCount(&words);
+  return count && !BufferLine(&words, count - 1)->length ? count - 1 : count;
+}
+
+// a list edited by hand may be out of order, so it is sorted in memory.
+static void
+SortWords(void)
+{
+  u64 count = WordCount();
+
+  for (u64 index = 1; index < count; index++) {
+    if (CompareLines(&words.lines[index - 1], &words.lines[index]) > 0) {
+      qsort(words.lines, count, sizeof(StrBuf), CompareLines);
+      return;
+    }
   }
 }
 
-// compares a word with an entry in byte order.
-static i32
-CompareEntry(const char *word, u64 length, u32 entry)
+bool
+SpellReady(StrBuf *message)
 {
-  const u8 *text = words + entry;
-  u64 room = sizeof words - entry;
+  if (!wordsFile.path.length) FileConfigPath("words.txt", &wordsFile.path);
+  if (loaded && !FileChangedOnDisk(&wordsFile)) return true;
 
-  for (u64 index = 0; index < length; index++) {
-    if (index == room || text[index] == '\n') return 1;
-    if ((u8)word[index] != text[index]) return (u8)word[index] < text[index] ? -1 : 1;
+  enum FileStatus status = FileLoad(&wordsFile, &words, message);
+
+  if (status == FileStatusNew) {
+    StrBufAppendFormat(message, "no word list: put one at %s", wordsFile.path.data);
   }
 
-  return length == room || text[length] == '\n' ? 0 : -1;
+  // a list read before stays in use when it cannot be read again.
+  if (status != FileStatusOk) return loaded;
+
+  SortWords();
+  loaded = true;
+  return true;
+}
+
+// finds where a word is in the list, or where it would go.
+static bool
+Locate(const char *word, u64 length, u64 *index)
+{
+  u64 low = 0;
+  u64 high = WordCount();
+
+  while (low < high) {
+    u64 middle = low + (high - low) / 2;
+    const StrBuf *line = BufferLine(&words, middle);
+    i32 order = CompareWords(word, length, line->data, line->length);
+
+    if (order == 0) {
+      *index = middle;
+      return true;
+    }
+
+    if (order < 0) high = middle;
+    else low = middle + 1;
+  }
+
+  *index = low;
+  return false;
 }
 
 static bool
 InList(const char *word, u64 length)
 {
-  if (!entries) IndexWords();
-
-  u32 low = 0;
-  u32 high = entryCount;
-
-  while (low < high) {
-    u32 middle = low + (high - low) / 2;
-    i32 order = CompareEntry(word, length, entries[middle]);
-    if (order == 0) return true;
-    if (order < 0) high = middle;
-    else low = middle + 1;
-  }
-
-  return false;
+  u64 index;
+  return Locate(word, length, &index);
 }
 
 // letters of the latin, greek and cyrillic scripts, and combining marks.
@@ -197,13 +241,12 @@ NeedsCheck(const char *text, u64 *start, u64 *end, bool *capitalised)
   return letters && !(letters > 1 && capitals == letters);
 }
 
-bool
-SpellFind(const char *text, u64 length, u64 from, u64 *start, u64 *end)
+// the start of the run holding or ending at at.
+static u64
+RunStart(const char *text, u64 at)
 {
   u32 codepoint;
-  u64 at = from;
 
-  // back up to the start of the run holding from, so runs are always read whole.
   while (at > 0) {
     u64 previous = Utf8PreviousStart(text, at);
     Utf8Decode(text + previous, at - previous, &codepoint);
@@ -211,19 +254,40 @@ SpellFind(const char *text, u64 length, u64 from, u64 *start, u64 *end)
     at = previous;
   }
 
+  return at;
+}
+
+// the end of the run from at, which is at itself when no run starts there.
+static u64
+RunEnd(const char *text, u64 length, u64 at)
+{
+  u32 codepoint;
+
+  while (at < length) {
+    u64 next = Next(text, length, at, &codepoint);
+    if (!IsTokenPart(codepoint)) break;
+    at = next;
+  }
+
+  return at;
+}
+
+bool
+SpellFind(const char *text, u64 length, u64 from, u64 *start, u64 *end)
+{
+  if (!loaded) return false;
+
+  u32 codepoint;
+
+  // back up to the start of the run holding from, so runs are always read whole.
+  u64 at = RunStart(text, from);
+
   while (at < length) {
     u64 runStart = at;
     at = Next(text, length, at, &codepoint);
     if (!IsTokenPart(codepoint)) continue;
 
-    u64 runEnd = at;
-
-    while (runEnd < length) {
-      u64 next = Next(text, length, runEnd, &codepoint);
-      if (!IsTokenPart(codepoint)) break;
-      runEnd = next;
-    }
-
+    u64 runEnd = RunEnd(text, length, at);
     at = runEnd;
     *start = runStart;
     *end = runEnd;
@@ -233,5 +297,92 @@ SpellFind(const char *text, u64 length, u64 from, u64 *start, u64 *end)
     if (!InLink(text, length, *start, *end)) return true;
   }
 
+  return false;
+}
+
+bool
+SpellWordAt(const char *text, u64 length, u64 at, u64 *start, u64 *end)
+{
+  *start = RunStart(text, at);
+  *end = RunEnd(text, length, *start);
+
+  char key[maxWordSize];
+  u64 keyLength;
+  bool capitalised = false;
+  if (!NeedsCheck(text, start, end, &capitalised)) return false;
+  return MakeKey(text, *start, *end, false, key, &keyLength);
+}
+
+bool
+SpellEntry(const char *text, u64 start, u64 end, StrBuf *entry)
+{
+  char key[maxWordSize];
+  u64 keyLength;
+  bool capitalised = false;
+  NeedsCheck(text, &start, &end, &capitalised);
+  MakeKey(text, start, end, false, key, &keyLength);
+  StrBufClear(entry);
+  StrBufAppend(entry, key, keyLength);
+  if (InList(key, keyLength)) return true;
+
+  if (!capitalised || !MakeKey(text, start, end, true, key, &keyLength)) return false;
+  if (!InList(key, keyLength)) return false;
+
+  StrBufClear(entry);
+  StrBufAppend(entry, key, keyLength);
+  return true;
+}
+
+// puts a word in the list at index, after the line break of the last word when there is
+// no empty line after it.
+static void
+Insert(u64 index, const char *word, u64 length)
+{
+  StrBuf text = {};
+
+  if (index < BufferLineCount(&words)) {
+    StrBufAppend(&text, word, length);
+    StrBufAppendByte(&text, '\n');
+    BufferReplace(&words, (Range){{index, 0}, {index, 0}}, text.data, text.length);
+  } else {
+    StrBufAppendByte(&text, '\n');
+    StrBufAppend(&text, word, length);
+    Position end = BufferEnd(&words);
+    BufferReplace(&words, (Range){end, end}, text.data, text.length);
+  }
+
+  StrBufFree(&text);
+}
+
+// takes the word at index out of the list with a line break next to it.
+static void
+Remove(u64 index)
+{
+  Range range = {{index, 0}, {index + 1, 0}};
+
+  if (index + 1 == BufferLineCount(&words)) {
+    range.end = (Position){index, BufferLine(&words, index)->length};
+    if (index > 0) range.start = (Position){index - 1, BufferLine(&words, index - 1)->length};
+  }
+
+  BufferReplace(&words, range, "", 0);
+}
+
+bool
+SpellChange(const char *word, u64 length, bool add, StrBuf *message)
+{
+  if (!SpellReady(message)) return false;
+
+  u64 index;
+  if (Locate(word, length, &index) == add) return true;
+
+  if (add) Insert(index, word, length);
+  else Remove(index);
+
+  if (FileSave(&wordsFile, &words, false, message) == FileStatusOk) return true;
+
+  // the list in memory stays the one on disk.
+  if (add) Remove(index);
+  else Insert(index, word, length);
   return false;
 }

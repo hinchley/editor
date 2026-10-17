@@ -11,9 +11,9 @@ This document describes how the editor is put together.
 | `vendor/grammars/<id>/` | Generated grammar sources (`parser.c`, optional `scanner.c`) and their `tree_sitter/` headers. PHP and XML keep upstream's layout (`php/src/`, `common/scanner.h`) because their scanners include a shared header by a relative path. |
 | `vendor/queries/<id>/` | `highlights.scm` and, where the grammar embeds other languages, `injections.scm`. |
 | `languages/<id>/` | The editor's own files of each default package (see Languages): its `language` file and, for a language with symbols, `tags.scm` (see Symbols). Not vendored, so they are edited freely. |
-| `data/words.txt` | Spell check word list, one word per line, sorted in byte order (`LC_ALL=C`). |
+| `data/words.txt` | The default spell check word list, one word per line, sorted in byte order (`LC_ALL=C`). Not built in: `build.sh --install` copies it to the config folder when there is no list there (see Spell check). |
 | `tools/` | Scripts that are not part of the binary: `unicodedata.py` generates `src/unicodedata.c`, `bindings.py` writes the key binding tables in README.md from `src/keymap.c`, and `language.sh` makes a language package from a grammar repository. |
-| `build.sh` | The build. Outputs `./editor`, objects go to `build/`, and with `--languages` the default packages go to `build/languages/<id>/`. |
+| `build.sh` | The build. Outputs `./editor`, objects go to `build/`, and with `--languages` the default packages go to `build/languages/<id>/`. `--install` puts them and the word list in the config folder. |
 
 ## Glossary
 
@@ -26,7 +26,7 @@ This document describes how the editor is put together.
 The editor is one thread around one loop in `app`:
 
 1. **Input.** `TermWait` polls standard input and the resize pipe. `input` decodes the bytes into events: keys, pastes and terminal replies.
-2. **Dispatch.** A running scan (project search or indexing symbols), an open picker, the find and replace prompts and any other prompt take a key first, in that order. Otherwise a printable key is typed, and any other key is looked up in `keymap`, whose command `app` runs.
+2. **Dispatch.** A running scan (project search or indexing symbols), learning mode, an open picker, the find and replace prompts and any other prompt take a key first, in that order. Otherwise a printable key is typed, and any other key is looked up in `keymap`, whose command `app` runs.
 3. **Commands** live in the modules that own what they change (`move`, `edit`, `search`, `session`, `save`, `project`). They work on the current document's focused view through `workspace`, and change text only through `BufferReplace`.
 4. **Listeners.** Every replace notifies the buffer's listeners: both views of the document (cursors and scroll position), its undo history (records) and its highlighter (tree edits). Nothing else needs telling, so a command does not know who shows the text.
 5. **Frame.** Once no input is waiting, `RenderFrame` scrolls each view to its cursors and draws the views, status bars and message bar into the `screen` grid, laying out only the visible rows and colouring only the visible lines. `ScreenFlush` writes the cells that changed.
@@ -47,7 +47,7 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `unicodedata` | Generated Unicode tables: display width, grapheme break property, Extended_Pictographic, simple case folding and simple upper and lower case mappings. |
 | `utf8` | UTF-8 decode and encode, grapheme cluster boundaries, display width, simple case folding and simple case mapping, from the Unicode tables. |
 | `buffer` | The text of one buffer as a flat array of lines, and `BufferReplace`, the single edit primitive, which notifies listeners. A revision counts changes, so a copy of anything computed from the text can tell it is stale. |
-| `file` | Reading a file as it is on disk (`FileRead`: size and binary checks), loading it into a buffer (line ending detection) and saving it atomically. |
+| `file` | Reading a file as it is on disk (`FileRead`: size and binary checks), loading it into a buffer (line ending detection) and saving it atomically. Also the path of a file in the config folder (`FileConfigPath`). |
 | `undo` | The undo history of one buffer: groups of recorded changes with the cursors before and after each. |
 | `document` | A buffer with its file, undo history and a view for each side of a split, whether it differs from the file, what it highlights (search matches, unknown words or nothing), and its language and highlighter. |
 | `filter` | Path patterns from `.editor` files: names, folders, anchored paths and `*`. |
@@ -60,7 +60,8 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `term` | The terminal session: raw mode, startup handshake, alternate screen, keyboard protocol, bracketed paste, cursor shape, window size, waiting for input or a resize, and restoring the terminal on every exit path. |
 | `input` | Decodes the bytes read from the terminal into events: keys, pastes, cursor position reports and keyboard protocol reports. Pure parsing, no I/O. |
 | `key` | The `Key` type (code plus modifiers) and key names such as `ctrl+shift+up`. |
-| `keymap` | The binding table: key, command and help text. The single source of truth for dispatch and the Alt-H list. |
+| `keymap` | The binding table: key, command and help text. The single source of truth for dispatch, the Alt-H list and learning mode. |
+| `learn` | Learning mode (Alt-Shift-H): asking for the bindings held with Ctrl or Alt by their help text, in a shuffled order, and checking the key pressed, in the message bar. |
 | `screen` | A grid of styled cells drawn in full each frame. Flushing writes only the cells that changed, inside a synchronized update. |
 | `theme` | Highlight groups (syntax, markup and interface), the style each one draws with, and which group a tree-sitter capture name uses. |
 | `layout` | How one line sits on screen: grapheme clusters with their display columns and widths (tabs expanded), and the visual rows it wraps into. |
@@ -75,9 +76,9 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `render` | Draws a frame: one view or two side by side (gutter, syntax coloured text, selections, matches, whitespace symbols, ruler), a status bar under each, and the message bar. |
 | `pattern` | The search pattern shared by find, replace and the match commands, literal or a regular expression: escapes, anchors, case folding, whole words, finding a match in a line, expanding a replacement (escapes and groups), and rebuilding a line with its matches replaced. |
 | `regex` | The regular expression engine behind regex search: a parser that compiles a pattern into a small program, and a Pike VM that runs it over the code points of one line. |
-| `spell` | The word list compiled in from `data/words.txt`, and finding unknown words in a line. |
+| `spell` | The word list read from the config folder, finding unknown words in a line, the word at a position, and adding words to the list or removing them. |
 | `match` | The match set a document highlights (a pattern's matches or unknown words, limited to the text spell check looks at): finding the matches on a line, the next or previous one in the buffer, and counting them. |
-| `search` | The search commands: Ctrl-F, Alt-N and Alt-P, Ctrl-W, Ctrl-R and Alt-S, and the pattern and replacement prompts of project search and replace. |
+| `search` | The search commands: Ctrl-F, Alt-N and Alt-P, Ctrl-W, Ctrl-R, Alt-S and Alt-Shift-S, and the pattern and replacement prompts of project search and replace. |
 | `lang` | The registry of language packages, read once at startup: each one's display name, comment markers, injection ids and flags, and the language of a file name, extension, `#!` line or injection name. |
 | `query` | A compiled tree-sitter query with what the runtime leaves to its user: the text predicates (`#eq?`, `#match?`, `#lua-match?`, `#any-of?` and their `#not-` forms) and the injection settings of `#set!`. Knows nothing about particular languages. |
 | `highlight` | The only place that knows grammars: loading each package's `parser.so` and queries on first use, parsing a buffer (again incrementally after edits), injected languages, and the syntax group of every byte of the lines around the one asked for. Also tells spell check which text it looks at, lists the symbols of a buffer or of text read from a file, and finds the syntax node around a range. The trees stay private: other modules ask these questions as functions. |
@@ -90,7 +91,7 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `git` | Reading what a file was in the last commit of the git repository holding it: finding the repository, HEAD through loose and packed refs, loose and packed objects (with deltas), and the walk down the commit's tree. Read-only and for typical repositories only (see Git). |
 | `diff` | The hunks between two texts' lines: the common start and end passed over, then Myers' algorithm, with a limit on the cost of any part. |
 | `changes` | How a document differs from its file in the last commit: the committed text, read again only when HEAD moves, and the hunks, worked out again when asked for after the buffer's revision changed. What the gutter marks and the status bar counts come from. |
-| `review` | The commands on those changes: next and previous change (Alt-Shift-] and Alt-Shift-[), the change panel (Alt-Shift-G) and the picker of changed files (Alt-U). |
+| `review` | The commands on those changes: next and previous change (Alt-Shift-] and Alt-Shift-[), the change panel (Alt-Shift-G), restoring the change at the cursor (Alt-Shift-Z) and the picker of changed files (Alt-U). |
 
 ## Terminal
 
@@ -201,6 +202,10 @@ The history keeps a save point: the number of applied groups when the text match
 
 The message bar doubles as the prompt. `PromptAsk` edits one line of text (Left, Right, Home, End, Backspace, Ctrl-Backspace, Delete, paste up to the first line break), and `PromptChoose` waits for one of a few letters (a capital letter counts as its lowercase choice, unless it is a choice of its own, as the capitals are for sort). Escape cancels either. The answer goes to a callback, and the prompt is closed before the callback runs, so a callback can open the next prompt. `PromptHandle` adds two optional handlers to a text prompt: one told about every change to the text (the picker filters with it), and one asked to complete the text on Tab (Ctrl-O uses it).
 
+### Learning mode
+
+Learning mode takes every key while it is on, ahead of pickers and prompts, so no command runs, and pastes are dropped. It uses the message bar, which `app` clears before each key, writing the result of the last key and the next question each time. The bindings held with Ctrl or Alt (except its own) are shuffled with `arc4random_uniform` and asked in turn, and shuffled again once all have been asked. A key is right when it is the binding's key (`KeyEqual`); a wrong one is named with what it does (`KeymapFind`), and after three misses the answer is given, after which pressing it no longer counts as right. Esc, which has no modifier and so is never asked, ends it.
+
 ### Save flow
 
 `save` runs a queue of documents: the current one for Ctrl-S, every modified one for Ctrl-Shift-S and for "save all" when quitting or replacing the buffers. Each document is trimmed (when `trimTrailingWhitespace` is set), then written, and the next one starts from the completion of the last. A document without a name asks for one first, and during save all it is made current so the user can see what they are naming. A name that exists asks "overwrite?", and `FileStatusChanged` asks "changed on disk; overwrite?". Any error, refusal or cancel stops the queue, and the callback waiting for the end of the run (quit, replace) never runs. A save that fails after save as leaves the buffer unnamed again.
@@ -259,7 +264,7 @@ Ctrl-R runs from the start of the selection to the end of the buffer, then from 
 
 ### Spell check
 
-The word list is embedded with `#embed` and indexed (one offset per word) the first time it is used, then binary searched in byte order. A run of letters, digits, `_` and apostrophes is read whole: runs with digits or `_` are skipped, apostrophes at either end are trimmed, words in capitals only are taken for acronyms, and words inside a blank separated chunk holding `://`, `www.` or `@` are skipped as links. A word is known when it is in the list as written, or when it starts with a capital and its lowercase form is. Typographic apostrophes are looked up as `'`. Letters are those of the Latin, Greek and Cyrillic scripts; other scripts are not checked. In a highlighted buffer, the spell match set asks `HighlightSpellable` about each unknown word's first byte and passes over the ones outside the text it checks (see Highlighting). Other buffers are checked in full.
+The word list is `words.txt` in the config folder. It is loaded into a `Buffer`, one word a line, by `FileLoad` the first time Alt-S or Alt-Shift-S needs it, and again when its stamp shows another program changed it (`FileChangedOnDisk`, checked by those commands only, not as lines are drawn). Lines out of byte order (a list edited by hand) are sorted in memory, and the list is binary searched in byte order, leaving out the empty line after a final line break. Without the file, spell check says where to put one and finds nothing. Alt-Shift-S takes the word at the cursor as the spell check reads words (so the word Alt-S selected, with the cursor at its end, is the one asked about), and finds the entry that makes it known: as written, or its lowercase form for a capitalised word. Adding inserts a line where the search ends and removing deletes one (both through `BufferReplace`, with no listeners), and the list is saved with `FileSave`, so it is written atomically, through a symbolic link, keeping its permissions; when the save fails, the change is undone in memory. Unknown words are found again as each frame is drawn, so the highlights follow the list at once. A run of letters, digits, `_` and apostrophes is read whole: runs with digits or `_` are skipped, apostrophes at either end are trimmed, words in capitals only are taken for acronyms, and words inside a blank separated chunk holding `://`, `www.` or `@` are skipped as links. A word is known when it is in the list as written, or when it starts with a capital and its lowercase form is. Typographic apostrophes are looked up as `'`. Letters are those of the Latin, Greek and Cyrillic scripts; other scripts are not checked. In a highlighted buffer, the spell match set asks `HighlightSpellable` about each unknown word's first byte and passes over the ones outside the text it checks (see Highlighting). Other buffers are checked in full.
 
 ### Scans
 
@@ -409,6 +414,10 @@ The change panel is drawn by `review` into the right half of the window, beside 
 
 Alt-U runs a scan of every named, unrefused entry: open documents use their own changes, and the others are compared from the text the scan read with `ChangesOfText`, which reads their committed text for the occasion. The picker marks entries as the buffer pickers do, and notes each one's counts (shown when there is no preview). Its preview is the whole file as a diff: every line of the newer text, with each hunk's committed lines before its new ones, drawn by the same row function as the change panel. The rows are never built: the row each hunk's old lines start on is the hunk's new start plus the old lines of the hunks before it, so a binary search over those tells what any row shows, and a draw costs the hunks plus the rows shown. A file that is not open is read again from disk when it is selected and compared through `ChangesNewText`, changes whose newer side is that text rather than a buffer, kept until another item is selected or the picker closes. The preview keeps its own top row, placed at the first change, and takes Shift with the arrows and pages to scroll and Alt-Shift-] and Alt-Shift-[ to step through the changes through the picker's key handler; the change it shows is the step's, or else the first that ends below the top, and Enter opens the file at that change as it is then.
 
+### Restoring a change
+
+Alt-Shift-Z takes the hunk at the primary cursor's line from `ChangesHunkAt`, so a removal is restored from the line its mark is on, and replaces the hunk's new lines with its old ones from the committed text, in one undo group. The hunk is copied first, as the edit makes the hunks stale. Lines are replaced with the line break after each, which a hunk that runs to the end of the buffer does not have: there the range starts at the end of the line before the hunk and the old lines go after a line break (or with none, from the start of the buffer, for a hunk that starts at the top), and an addition at the end goes with the line break before it. Both sides end with the same empty line when the file ends with a line break, so this also covers a file that lost or gained its last line break. Only that hunk changes, and the cursor goes to its start.
+
 ## Performance
 
 Measured on the release build, timed from the key to the end of the frame:
@@ -430,15 +439,14 @@ Ctrl-/ uses the comment markers from `lang`. It first decides for all the lines 
 - Types are `PascalCase` and structs are typedef'd (`StrBuf`). Enum constants are `PascalCase` prefixed with their enum name (`CursorStyleLine`, `GraphemeBreakExtend`).
 - Functions are `PascalCase` and prefixed with their module name (`StrBufAppend`, `MemoryResize`). Variables and constants are `camelCase`.
 - Headers use `#pragma once`.
-- C23 features in use: `bool`, `nullptr`, `constexpr`, `[[attributes]]`, `#embed`, `<stdckdint.h>`, digit separators.
-- Data embedded with `#embed` goes into `u8` arrays, not `char`. A `char` array trips `-Wconversion` on every byte above 127. Embed paths are quoted and relative to the including file (`#embed "../data/words.txt"`), so they work without extra flags in gcc and clangd.
+- C23 features in use: `bool`, `nullptr`, `constexpr`, `[[attributes]]`, `<stdckdint.h>`, digit separators.
 - Vendored code is compiled with `-w` and never edited. Queries the editor needs that upstream does not provide in the right form (the tags queries) and the `language` files live in `languages/`, outside `vendor/`. Strict warnings (`-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror`) apply to `src/` only.
 
 ## The default packages
 
 `./build.sh --languages` builds a package for every folder in `vendor/grammars/`: the grammar's `parser.c` and `scanner.c` compiled with `-fPIC` and linked as `parser.so`, the vendored `highlights.scm` and `injections.scm` (PHP's two upstream injection files, `injections.scm` and `injections-text.scm`, joined into one), and the files in `languages/<id>/`. `--install` copies each file next to its target and renames it into place, so an editor that has the old `parser.so` loaded keeps its copy. Grammar objects are rebuilt only when something in the grammar's folder is newer, as the runtime is.
 
-With the grammars out of the binary, the editor went from 9.7 MB to 1.6 MB (about half of what is left is the embedded word list, and 0.3 MB the tree-sitter runtime). The packages take 8.1 MB: SQL 2.4 MB, Bash 1.4 MB, PHP 1.1 MB, Zig 0.7 MB, C 0.6 MB and the rest under 0.5 MB each. Reading all fourteen `language` files at startup takes well under a millisecond, and each grammar is opened only when a file of its language is.
+With the grammars out of the binary, the editor went from 9.7 MB to 1.6 MB, and with the word list read from the config folder too, to 0.6 MB (0.3 MB of it the tree-sitter runtime). The packages take 8.1 MB: SQL 2.4 MB, Bash 1.4 MB, PHP 1.1 MB, Zig 0.7 MB, C 0.6 MB and the rest under 0.5 MB each. Reading all fourteen `language` files at startup takes well under a millisecond, and each grammar is opened only when a file of its language is.
 
 The vendored versions:
 

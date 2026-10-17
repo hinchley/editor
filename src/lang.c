@@ -475,11 +475,7 @@ void
 LangLoadAll(StrBuf *message)
 {
   StrBuf folder = {};
-  const char *config = getenv("XDG_CONFIG_HOME");
-  const char *home = getenv("HOME");
-
-  if (config && *config) StrBufAppendFormat(&folder, "%s/editor/languages", config);
-  else StrBufAppendFormat(&folder, "%s/.config/editor/languages", home ? home : "");
+  FileConfigPath("languages", &folder);
 
   Reading reading = {};
   u32 count;

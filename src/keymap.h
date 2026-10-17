@@ -66,6 +66,7 @@ enum Command {
   CommandUpperCase,
   CommandLowerCase,
   CommandSpellCheck,
+  CommandSpellWord,
   CommandAddCursorWord,
   CommandSkipCursorWord,
   CommandAddCursorAll,
@@ -107,6 +108,7 @@ enum Command {
   CommandNextChange,
   CommandPreviousChange,
   CommandChangePanel,
+  CommandRevertChange,
   CommandPickChanged,
   CommandReplace,
   CommandToggleExpandTab,
@@ -118,7 +120,8 @@ enum Command {
   CommandSave,
   CommandSaveAll,
   CommandQuit,
-  CommandHelp
+  CommandHelp,
+  CommandLearn
 };
 
 typedef struct Binding {

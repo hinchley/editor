@@ -25,6 +25,16 @@ typedef struct Writer {
   i32 error;
 } Writer;
 
+void
+FileConfigPath(const char *name, StrBuf *path)
+{
+  const char *config = getenv("XDG_CONFIG_HOME");
+  const char *home = getenv("HOME");
+
+  if (config && *config) StrBufAppendFormat(path, "%s/editor/%s", config, name);
+  else StrBufAppendFormat(path, "%s/.config/editor/%s", home ? home : "", name);
+}
+
 const char *
 FileLineEndingName(enum LineEnding lineEnding)
 {

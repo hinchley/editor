@@ -109,6 +109,11 @@ const Binding keymapBindings[] = {
     "convert the selection (or the whole file) to lower case"
   },
   {{'s', alt}, CommandSpellCheck, "spell check the current document"},
+  {
+    {'s', alt | shift},
+    CommandSpellWord,
+    "add the word at the cursor to the word list (or remove it)"
+  },
 
   // multiple cursors.
   {
@@ -190,6 +195,11 @@ const Binding keymapBindings[] = {
     CommandChangePanel,
     "show or hide the change at the cursor beside the buffer"
   },
+  {
+    {'z', alt | shift},
+    CommandRevertChange,
+    "restore the change at the cursor to the last commit"
+  },
   {{'u', alt}, CommandPickChanged, "pick from files changed since the last commit"},
 
   // display and settings.
@@ -203,7 +213,8 @@ const Binding keymapBindings[] = {
     CommandSetRulerColumn,
     "set the vertical ruler column (and show the ruler)"
   },
-  {{'h', alt}, CommandHelp, "show this list of shortcuts"}
+  {{'h', alt}, CommandHelp, "show this list of shortcuts"},
+  {{'h', alt | shift}, CommandLearn, "practise the shortcuts (esc to stop)"}
 };
 
 const u32 keymapBindingCount = sizeof keymapBindings / sizeof keymapBindings[0];

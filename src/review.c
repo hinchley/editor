@@ -116,6 +116,70 @@ ReviewStep(bool backward)
   MoveSelect(view, position, position);
 }
 
+void
+ReviewRevert(void)
+{
+  Document *document = WorkspaceDocument(workspace);
+  u64 count;
+  const DiffHunk *hunks = CurrentHunks(document, &count);
+  if (!hunks) return;
+
+  View *view = document->view;
+  u64 index = ChangesHunkAt(document->changes, CursorSetPrimary(&view->cursors)->head.line);
+
+  if (index == UINT64_MAX) {
+    StrBufAppendString(message, "no change at the cursor");
+    return;
+  }
+
+  // the hunks are worked out again after the edit, so this one is copied.
+  DiffHunk hunk = hunks[index];
+  Buffer *buffer = &document->buffer;
+  bool atEnd = hunk.newStart + hunk.newCount >= BufferLineCount(buffer);
+  Range range = {{hunk.newStart, 0}, {hunk.newStart + hunk.newCount, 0}};
+  StrBuf text = {};
+
+  // lines that run to the end of the buffer have no line break after them to replace, so
+  // the one before them is replaced instead.
+  if (atEnd) {
+    range.end = BufferEnd(buffer);
+
+    if (hunk.newStart > 0) {
+      u64 above = hunk.newStart - 1;
+      range.start = (Position){above, BufferLine(buffer, above)->length};
+      StrBufAppendByte(&text, '\n');
+    }
+  }
+
+  for (u64 line = 0; line < hunk.oldCount; line++) {
+    const char *data;
+    u64 length;
+    ChangesBaseLine(document->changes, hunk.oldStart + line, &data, &length);
+    StrBufAppend(&text, data, length);
+    if (!atEnd || line + 1 < hunk.oldCount) StrBufAppendByte(&text, '\n');
+  }
+
+  // lines added at the end go with the line break before them, leaving nothing in their
+  // place.
+  if (!hunk.oldCount) StrBufClear(&text);
+
+  JumpRecord();
+  UndoBegin(&document->undo, UndoKindOther, &view->cursors);
+  BufferReplace(buffer, range, text.data ? text.data : "", text.length);
+  Position start = BufferClamp(buffer, (Position){hunk.newStart, 0});
+  MoveSelect(view, start, start);
+  UndoEnd(&document->undo, &view->cursors);
+  StrBufFree(&text);
+
+  if (hunk.oldCount) {
+    const char *plural = hunk.oldCount == 1 ? "" : "s";
+    StrBufAppendFormat(message, "restored %lu line%s of the last commit", hunk.oldCount, plural);
+  } else {
+    const char *plural = hunk.newCount == 1 ? "" : "s";
+    StrBufAppendFormat(message, "removed %lu added line%s", hunk.newCount, plural);
+  }
+}
+
 bool
 ReviewPanelOpen(void)
 {

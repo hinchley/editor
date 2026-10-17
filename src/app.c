@@ -10,6 +10,7 @@
 #include "jump.h"
 #include "keymap.h"
 #include "lang.h"
+#include "learn.h"
 #include "memory.h"
 #include "move.h"
 #include "multicursor.h"
@@ -596,6 +597,7 @@ NavigationCommand(enum Command command)
   case CommandNextChange: ReviewStep(false); break;
   case CommandPreviousChange: ReviewStep(true); break;
   case CommandChangePanel: ReviewTogglePanel(windowSize.width); break;
+  case CommandRevertChange: ReviewRevert(); break;
   case CommandPickChanged: ReviewPickChanged(); break;
   default: return false;
   }
@@ -689,6 +691,7 @@ SearchCommand(enum Command command)
   case CommandJumpWord: SearchWord(); break;
   case CommandReplace: SearchReplace(); break;
   case CommandSpellCheck: SearchSpell(); break;
+  case CommandSpellWord: SearchSpellWord(); break;
   case CommandProjectSearch: SearchProject(ProjectAsk); break;
   case CommandProjectResults: ProjectShow(); break;
   default: return false;
@@ -734,6 +737,7 @@ RunCommand(const Binding *binding)
   case CommandToggleRuler: Toggle(&displayOptions.ruler, "ruler"); break;
   case CommandSetRulerColumn: AskRulerColumn(); break;
   case CommandHelp: ShowHelp(); break;
+  case CommandLearn: LearnStart(); break;
 
   // the rest were run above.
   default: break;
@@ -751,6 +755,12 @@ HandleKey(Key key)
   }
 
   StrBufClear(&message);
+
+  // learning mode answers with keys, so none of them runs a command.
+  if (LearnActive()) {
+    LearnKey(key);
+    return;
+  }
 
   // a picker reads its filter through a prompt, so it gets the keys first.
   if (PickerActive()) {
@@ -783,7 +793,7 @@ HandleKey(Key key)
 static void
 HandlePaste(const char *text, u64 length)
 {
-  if (ScanBusy()) return;
+  if (ScanBusy() || LearnActive()) return;
 
   if (PromptActive()) {
     PromptPaste(text, length);
@@ -945,6 +955,7 @@ AppRun(i32 argumentCount, char **arguments)
   JumpInit(&workspace, &message);
   SymbolsInit(&workspace, &message);
   ReviewInit(&workspace, &message);
+  LearnInit(&message);
   SessionStart(&workspace, &message, arguments + 1, (u64)argumentCount - 1);
 
   TermStart();

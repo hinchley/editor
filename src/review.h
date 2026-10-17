@@ -2,8 +2,9 @@
 
 // review: the commands on changes since the last git commit (see changes.h): stepping
 // through the changes of the current buffer (alt+shift+] and alt+shift+[), a panel beside
-// it showing the change at the cursor (alt+shift+g), and a picker of the loaded files that
-// differ from the last commit, with the lines they change (alt+u).
+// it showing the change at the cursor (alt+shift+g), restoring that change (alt+shift+z),
+// and a picker of the loaded files that differ from the last commit, with the lines they
+// change (alt+u).
 #include "strbuf.h"
 #include "types.h"
 #include "workspace.h"
@@ -21,6 +22,11 @@ ReviewStep(bool backward);
 // columns for the panel to show.
 void
 ReviewTogglePanel(i32 width);
+
+// puts the lines of the change at the cursor back as they are in the last commit, as one
+// undo step.
+void
+ReviewRevert(void);
 
 bool
 ReviewPanelOpen(void);

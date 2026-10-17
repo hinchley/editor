@@ -4,9 +4,10 @@
 # usage: ./build.sh [--debug] [--languages] [--install]
 #   --debug      unoptimised build with debug info and address/undefined sanitizers.
 #   --languages  also builds a package for each vendored grammar into build/languages.
-#   --install    copies the packages in build/languages to the config folder
-#                (${XDG_CONFIG_HOME:-~/.config}/editor/languages), replacing those of the
-#                same name and leaving any others alone.
+#   --install    copies data/words.txt to the config folder
+#                (${XDG_CONFIG_HOME:-~/.config}/editor) when it has no word list yet, and
+#                the packages in build/languages to its languages folder, replacing those
+#                of the same name and leaving any others alone.
 #
 # the vendored tree-sitter runtime and grammars are compiled once into build/vendor and
 # rebuilt only when a file in their folder changes.
@@ -44,13 +45,6 @@ vendorDir=build/vendor
 sourceDir=build/$mode
 packageDir=build/languages
 mkdir -p "$vendorDir" "$sourceDir"
-
-# the spell checker binary searches the word list, so it must stay in byte order.
-if ! LC_ALL=C sort -c data/words.txt 2>/dev/null; then
-  echo "build: data/words.txt is not sorted in byte order" >&2
-  echo "fix with: LC_ALL=C sort -o data/words.txt data/words.txt" >&2
-  exit 1
-fi
 
 pids=()
 objects=()
@@ -149,9 +143,18 @@ fi
 
 # each file is copied beside its target and renamed over it, so a running editor that has
 # a parser.so loaded keeps its old copy.
+# the word list is only copied when there is none, so words added to it are kept.
 if [[ $install -eq 1 ]]; then
+  config=${XDG_CONFIG_HOME:-$HOME/.config}/editor
+  if [[ ! -e $config/words.txt ]]; then
+    mkdir -p "$config"
+    cp data/words.txt "$config/.words.txt.new"
+    mv "$config/.words.txt.new" "$config/words.txt"
+    echo "build: installed the word list in $config"
+  fi
+
   [[ -d $packageDir ]] || { echo "build: nothing in $packageDir, run with --languages" >&2; exit 1; }
-  target=${XDG_CONFIG_HOME:-$HOME/.config}/editor/languages
+  target=$config/languages
 
   for package in "$packageDir"/*/; do
     id=$(basename "$package")

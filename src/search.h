@@ -43,6 +43,11 @@ SearchReplace(void);
 void
 SearchSpell(void);
 
+// asks whether to add the word at the cursor to the word list or, when the list knows it,
+// to remove the entry that does, and saves the list.
+void
+SearchSpellWord(void);
+
 // receives the pattern of a project search, which has become the last search.
 typedef void (*SearchProjectDone)(const Pattern *pattern);
 

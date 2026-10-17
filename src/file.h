@@ -106,6 +106,11 @@ FileChangedOnDisk(const File *file);
 bool
 FileRename(File *file, const char *path, StrBuf *message);
 
+// appends the path of name in the editor's config folder:
+// ${XDG_CONFIG_HOME:-~/.config}/editor/name.
+void
+FileConfigPath(const char *name, StrBuf *path);
+
 // short name of a line ending for display, "LF" or "CRLF".
 const char *
 FileLineEndingName(enum LineEnding lineEnding);
