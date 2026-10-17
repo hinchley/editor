@@ -58,7 +58,7 @@ static SearchReplacementDone replacementDone;
 static SearchSaved saved;
 static Replacing replacing;
 
-// the word alt+shift+s asks about, and whether it is to be added to the word list.
+// the word alt+shift+c asks about, and whether it is to be added to the word list.
 static StrBuf spellWord;
 static bool spellAdd;
 

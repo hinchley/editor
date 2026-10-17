@@ -2,9 +2,10 @@
 
 // symbols: the definitions a language's tags query finds (functions, types, headings and
 // so on, see ARCHITECTURE.md), and the commands that go to them: in the current buffer
-// the alt+o picker and alt+] and alt+[ to the next or previous definition, and across the
-// loaded files go to definition (alt+d), the signature (alt+k) and the alt+shift+o picker.
-// each records a jump, so alt+left comes back.
+// the alt+s picker and ctrl+] and ctrl+[ to the next or previous definition, and across
+// the loaded files go to definition (alt+d), the signature (alt+shift+d) and the
+// alt+shift+s picker.
+// each records a jump, so alt+[ comes back.
 // the commands across files use an index of the symbols of every loaded file, built by a
 // scan (see scan.h) the first time one is used. open documents are indexed again from
 // their buffer whenever they changed, and a name that is not found first indexes again

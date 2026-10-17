@@ -335,16 +335,22 @@ SortAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]
 static void
 AskSortOrder(void)
 {
+  // the sort works on the newest cursor's selection, as it collapses to that cursor.
+  if (!CursorHasSelection(CursorSetPrimary(&Current()->view->cursors))) {
+    StrBufAppendString(&message, "no selection");
+    return;
+  }
+
   const char *question =
     "sort: (a)sc (d)esc (u)nique (s)hortest (l)ongest; capital ignores case";
   PromptChoose(question, "aAdDuUsSlL", SortAnswered, nullptr);
 }
 
 static void
-TrimWhitespace(void)
+TrimWhitespace(bool everyLine)
 {
   EditContext edit = Editing();
-  u64 count = EditTrimTrailingWhitespace(&edit);
+  u64 count = everyLine ? EditTrimTrailingWhitespace(&edit) : EditTrimLines(&edit);
 
   if (count) StrBufAppendFormat(&message, "trimmed %lu line%s", count, count == 1 ? "" : "s");
   else StrBufAppendString(&message, "no trailing whitespace");
@@ -354,6 +360,12 @@ static void
 ChangeCase(bool upper)
 {
   EditContext edit = Editing();
+
+  if (!CursorSetHasSelection(&edit.view->cursors)) {
+    StrBufAppendString(&message, "no selection");
+    return;
+  }
+
   u64 count = EditChangeCase(&edit, upper);
   const char *done = upper ? "uppercased" : "lowercased";
 
@@ -503,7 +515,7 @@ MoveCommand(enum Command command)
   };
 
   if (command <= CommandMoveFileEnd) {
-    // going to either end of the file is a jump, which alt+left comes back from.
+    // going to either end of the file is a jump, which alt+[ comes back from.
     if (command == CommandMoveFileStart || command == CommandMoveFileEnd) JumpRecord();
     MoveCursors(CurrentView(), moves[command - CommandMoveUp], false);
     return true;
@@ -547,7 +559,8 @@ EditCommand(enum Command command)
   case CommandToggleComment: ToggleComment(); break;
   case CommandSortLines: AskSortOrder(); break;
   case CommandJoinLines: Report(EditJoinLines(&edit), "no line below to join"); break;
-  case CommandTrimWhitespace: TrimWhitespace(); break;
+  case CommandTrimLines: TrimWhitespace(false); break;
+  case CommandTrimWhitespace: TrimWhitespace(true); break;
   case CommandUpperCase: ChangeCase(true); break;
   case CommandLowerCase: ChangeCase(false); break;
   default: return false;

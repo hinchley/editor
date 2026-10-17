@@ -49,6 +49,10 @@ CursorSetAdjust(CursorSet *set, const BufferChange *change);
 void
 CursorSetClamp(CursorSet *set, const Buffer *buffer);
 
+// true when any cursor has a selection.
+bool
+CursorSetHasSelection(const CursorSet *set);
+
 // sorts the cursors by position and merges any that overlap or meet.
 void
 CursorSetMerge(CursorSet *set);

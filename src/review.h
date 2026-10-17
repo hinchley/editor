@@ -2,9 +2,9 @@
 
 // review: the commands on changes since the last git commit (see changes.h): stepping
 // through the changes of the current buffer (alt+shift+] and alt+shift+[), a panel beside
-// it showing the change at the cursor (alt+shift+g), restoring that change (alt+shift+z),
+// it showing the change at the cursor (alt+g), restoring that change (alt+z),
 // and a picker of the loaded files that differ from the last commit, with the lines they
-// change (alt+u).
+// change (ctrl+g).
 #include "strbuf.h"
 #include "types.h"
 #include "workspace.h"

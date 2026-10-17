@@ -10,64 +10,64 @@ const Binding keymapBindings[] = {
   {{KeyDown, 0}, CommandMoveDown, "move down"},
   {{KeyLeft, 0}, CommandMoveLeft, "move left"},
   {{KeyRight, 0}, CommandMoveRight, "move right"},
-  {{KeyHome, 0}, CommandMoveLineStart, "move to first non-blank, then line start"},
-  {{KeyEnd, 0}, CommandMoveLineEnd, "move to line end"},
-  {{KeyPageUp, 0}, CommandMovePageUp, "move up one page"},
-  {{KeyPageDown, 0}, CommandMovePageDown, "move down one page"},
-  {{KeyLeft, control}, CommandMoveWordLeft, "move to previous word"},
-  {{KeyRight, control}, CommandMoveWordRight, "move to next word"},
-  {{KeyHome, control}, CommandMoveFileStart, "move to start of file"},
-  {{KeyEnd, control}, CommandMoveFileEnd, "move to end of file"},
-  {{KeyUp, control}, CommandScrollUp, "scroll the view up one line (cursor stays put)"},
-  {{KeyDown, control}, CommandScrollDown, "scroll the view down one line (cursor stays put)"},
+  {{KeyHome, 0}, CommandMoveLineStart, "move to the first non-blank, then the line start"},
+  {{KeyEnd, 0}, CommandMoveLineEnd, "move to the line end"},
+  {{KeyPageUp, 0}, CommandMovePageUp, "move up a page"},
+  {{KeyPageDown, 0}, CommandMovePageDown, "move down a page"},
+  {{KeyLeft, control}, CommandMoveWordLeft, "move to the previous word"},
+  {{KeyRight, control}, CommandMoveWordRight, "move to the next word"},
+  {{KeyHome, control}, CommandMoveFileStart, "move to the start of the buffer"},
+  {{KeyEnd, control}, CommandMoveFileEnd, "move to the end of the buffer"},
+  {{KeyUp, alt}, CommandScrollUp, "scroll up a line (the cursor stays put)"},
+  {{KeyDown, alt}, CommandScrollDown, "scroll down a line (the cursor stays put)"},
 
   // selection.
-  {{KeyUp, shift}, CommandSelectUp, "extend selection up"},
-  {{KeyDown, shift}, CommandSelectDown, "extend selection down"},
-  {{KeyLeft, shift}, CommandSelectLeft, "extend selection left"},
-  {{KeyRight, shift}, CommandSelectRight, "extend selection right"},
+  {{KeyUp, shift}, CommandSelectUp, "extend the selection up"},
+  {{KeyDown, shift}, CommandSelectDown, "extend the selection down"},
+  {{KeyLeft, shift}, CommandSelectLeft, "extend the selection left"},
+  {{KeyRight, shift}, CommandSelectRight, "extend the selection right"},
   {
     {KeyHome, shift},
     CommandSelectLineStart,
-    "extend selection to first non-blank, then line start"
+    "extend the selection to the first non-blank, then the line start"
   },
-  {{KeyEnd, shift}, CommandSelectLineEnd, "extend selection to line end"},
-  {{KeyPageUp, shift}, CommandSelectPageUp, "extend selection up one page"},
-  {{KeyPageDown, shift}, CommandSelectPageDown, "extend selection down one page"},
-  {{KeyLeft, control | shift}, CommandSelectWordLeft, "extend selection to previous word"},
-  {{KeyRight, control | shift}, CommandSelectWordRight, "extend selection to next word"},
-  {{KeyHome, control | shift}, CommandSelectFileStart, "extend selection to start of file"},
-  {{KeyEnd, control | shift}, CommandSelectFileEnd, "extend selection to end of file"},
-  {{'a', control}, CommandSelectAll, "select the whole file"},
+  {{KeyEnd, shift}, CommandSelectLineEnd, "extend the selection to the line end"},
+  {{KeyPageUp, shift}, CommandSelectPageUp, "extend the selection up a page"},
+  {{KeyPageDown, shift}, CommandSelectPageDown, "extend the selection down a page"},
+  {{KeyLeft, control | shift}, CommandSelectWordLeft, "extend the selection to the previous word"},
+  {{KeyRight, control | shift}, CommandSelectWordRight, "extend the selection to the next word"},
   {
-    {'m', control},
-    CommandSelectBrackets,
-    "extend selection to all text inside closest brackets"
+    {KeyHome, control | shift},
+    CommandSelectFileStart,
+    "extend the selection to the start of the buffer"
   },
   {
-    {KeyUp, alt},
+    {KeyEnd, control | shift},
+    CommandSelectFileEnd,
+    "extend the selection to the end of the buffer"
+  },
+  {{'a', control}, CommandSelectAll, "select the whole buffer"},
+  {{'m', control}, CommandSelectBrackets, "select inside the closest brackets (again to widen)"},
+  {
+    {KeyRight, alt},
     CommandExpandSelection,
-    "extend selection to the enclosing syntax node (or brackets)"
+    "expand the selection to the enclosing syntax node (or brackets)"
   },
-  {{KeyDown, alt}, CommandShrinkSelection, "shrink selection back to before alt+up"},
-  {{KeyUp, alt | shift}, CommandSelectionTopUp, "grow selection by a line above"},
-  {{KeyDown, alt | shift}, CommandSelectionBottomDown, "grow selection by a line below"},
+  {{KeyLeft, alt}, CommandShrinkSelection, "shrink the selection back a step"},
+  {{KeyUp, control | shift}, CommandSelectionTopUp, "grow the selection by a line above"},
+  {{KeyDown, control | shift}, CommandSelectionBottomDown, "grow the selection by a line below"},
+  {{KeyDown, alt | shift}, CommandSelectionTopDown, "shrink the selection by a line at the top"},
+  {{KeyUp, alt | shift}, CommandSelectionBottomUp, "shrink the selection by a line at the bottom"},
   {
-    {KeyDown, control | alt | shift},
-    CommandSelectionTopDown,
-    "shrink selection by a line at the top"
+    {KeyEscape, 0},
+    CommandCancel,
+    "collapse to one cursor, clear the selection, or clear highlights"
   },
-  {
-    {KeyUp, control | alt | shift},
-    CommandSelectionBottomUp,
-    "shrink selection by a line at the bottom"
-  },
-  {{KeyEscape, 0}, CommandCancel, "clear the selection, or collapse to a single cursor"},
 
   // editing.
-  {{KeyEnter, 0}, CommandNewline, "insert a newline"},
-  {{KeyTab, 0}, CommandIndent, "insert a tab, or indent the selected lines"},
-  {{KeyTab, shift}, CommandDedent, "dedent the current line or the selected lines"},
+  {{KeyEnter, 0}, CommandNewline, "insert a line break"},
+  {{KeyTab, 0}, CommandIndent, "insert a tab (or indent the selected lines)"},
+  {{KeyTab, shift}, CommandDedent, "dedent the line (or the selected lines)"},
   {{KeyBackspace, 0}, CommandDeleteBackward, "delete the character before the cursor"},
   {{KeyDelete, 0}, CommandDeleteForward, "delete the character after the cursor"},
   {{KeyBackspace, control}, CommandDeleteWordBackward, "delete the word before the cursor"},
@@ -75,42 +75,25 @@ const Binding keymapBindings[] = {
   {{'y', control}, CommandRedo, "redo"},
   {{'c', control}, CommandCopy, "copy the selection (or the line)"},
   {{'x', control}, CommandCut, "cut the selection (or the line)"},
-  {{'v', control}, CommandPaste, "paste the clipboard"},
+  {{'v', control}, CommandPaste, "paste"},
+  {{KeyUp, control}, CommandMoveLinesUp, "move the line (or the selected lines) up"},
+  {{KeyDown, control}, CommandMoveLinesDown, "move the line (or the selected lines) down"},
+  {{'d', control}, CommandDuplicateLine, "duplicate the line (or the selected lines)"},
+  {{'k', control}, CommandDeleteLine, "delete the line (or the selected lines)"},
+  {{'/', control}, CommandToggleComment, "toggle comments on the line (or the selected lines)"},
+  {{'j', alt}, CommandJoinLines, "join the selected lines (or the line and the next)"},
+  {{'o', alt}, CommandSortLines, "sort the selected lines"},
   {
-    {KeyUp, control | shift},
-    CommandMoveLinesUp,
-    "move the current line (or selected lines) up"
+    {'t', control},
+    CommandTrimLines,
+    "trim trailing whitespace from the line (or the selected lines)"
   },
+  {{'t', control | shift}, CommandTrimWhitespace, "trim trailing whitespace from every line"},
+  {{'u', alt | shift}, CommandUpperCase, "convert the selection to upper case"},
+  {{'l', alt | shift}, CommandLowerCase, "convert the selection to lower case"},
+  {{'c', alt}, CommandSpellCheck, "spell check the buffer"},
   {
-    {KeyDown, control | shift},
-    CommandMoveLinesDown,
-    "move the current line (or selected lines) down"
-  },
-  {{'d', control}, CommandDuplicateLine, "duplicate the current line"},
-  {{'k', control}, CommandDeleteLine, "delete the current line"},
-  {{'m', alt}, CommandJumpBracket, "jump to matching bracket"},
-  {
-    {'w', control},
-    CommandJumpWord,
-    "jump to the next occurrence of the word under the cursor"
-  },
-  {{'/', control}, CommandToggleComment, "toggle line comments"},
-  {{'q', alt}, CommandSortLines, "sort the selected lines (or every line)"},
-  {{'j', alt}, CommandJoinLines, "join the selected lines (or this line and the next)"},
-  {{'t', alt | shift}, CommandTrimWhitespace, "trim trailing whitespace from every line"},
-  {
-    {'u', alt | shift},
-    CommandUpperCase,
-    "convert the selection (or the whole file) to upper case"
-  },
-  {
-    {'l', alt | shift},
-    CommandLowerCase,
-    "convert the selection (or the whole file) to lower case"
-  },
-  {{'s', alt}, CommandSpellCheck, "spell check the current document"},
-  {
-    {'s', alt | shift},
+    {'c', alt | shift},
     CommandSpellWord,
     "add the word at the cursor to the word list (or remove it)"
   },
@@ -119,28 +102,32 @@ const Binding keymapBindings[] = {
   {
     {'e', control},
     CommandAddCursorWord,
-    "select the word, then add a cursor at each next occurrence (or search match)"
+    "select the word, then add a cursor at the next occurrence (or search match)"
   },
   {
-    {'e', control | shift},
+    {'e', alt},
     CommandSkipCursorWord,
-    "move the newest cursor on to the next occurrence, skipping this one"
+    "move the newest cursor to the next occurrence, skipping this one"
   },
-  {{'e', control | alt}, CommandAddCursorAll, "add a cursor at every occurrence"},
+  {{'e', control | shift}, CommandAddCursorAll, "add a cursor at every occurrence"},
   {{KeyUp, control | alt}, CommandAddCursorAbove, "add a cursor on the line above"},
   {{KeyDown, control | alt}, CommandAddCursorBelow, "add a cursor on the line below"},
 
   // buffers and files.
   {{'n', control}, CommandNewBuffer, "create a new empty buffer"},
-  {{'o', control}, CommandOpen, "open a file (new buffer) or folder (replaces all)"},
-  {{'r', alt}, CommandReload, "reload the file from disk (discards changes)"},
   {
-    {'r', alt | shift},
-    CommandLoadNewFiles,
-    "load files added to the open folder since it was read"
+    {'o', control},
+    CommandOpen,
+    "open a file (in a new buffer) or a folder (replacing every buffer)"
   },
-  {{'e', alt}, CommandToggleLineEndings, "toggle line endings between LF and CRLF"},
-  {{'c', alt | shift}, CommandCopyPath, "copy the file's path to the clipboard"},
+  {{'s', control}, CommandSave, "save the buffer (asks for a name if it has none)"},
+  {{'s', control | shift}, CommandSaveAll, "save every buffer with unsaved changes"},
+  {{'r', alt}, CommandReload, "reload the buffer from disk (asks before discarding changes)"},
+  {{'r', alt | shift}, CommandLoadNewFiles, "load files added to the folder since it was opened"},
+  {{'q', alt}, CommandCloseBuffer, "close the buffer (offers to save changes)"},
+  {{'x', alt}, CommandFileMenu, "rename, copy or delete the buffer's file"},
+  {{'x', alt | shift}, CommandCopyPath, "copy the path of the buffer's file"},
+  {{';', alt}, CommandToggleLineEndings, "toggle line endings between LF and CRLF"},
   {
     {'i', alt},
     CommandStatistics,
@@ -148,14 +135,10 @@ const Binding keymapBindings[] = {
   },
   {{KeyPageDown, control}, CommandNextBuffer, "switch to the next buffer"},
   {{KeyPageUp, control}, CommandPreviousBuffer, "switch to the previous buffer"},
-  {{KeyTab, control}, CommandLastBuffer, "switch to the last-used buffer"},
-  {{'p', control}, CommandPickBuffer, "pick a buffer from a filterable list"},
-  {{'u', control}, CommandPickUnsaved, "pick from buffers with unsaved changes"},
-  {{'c', alt}, CommandCloseBuffer, "close the buffer (offers to save changes)"},
-  {{'x', alt}, CommandFileMenu, "rename, copy or delete the file"},
-  {{'s', control}, CommandSave, "save the file (prompts for a name if unnamed)"},
-  {{'s', control | shift}, CommandSaveAll, "save every buffer with unsaved changes"},
-  {{'q', control}, CommandQuit, "quit the editor"},
+  {{KeyTab, control}, CommandLastBuffer, "switch to the buffer used before this one"},
+  {{'p', control}, CommandPickBuffer, "pick a buffer"},
+  {{'u', control}, CommandPickUnsaved, "pick a buffer with unsaved changes"},
+  {{'q', control}, CommandQuit, "quit (offers to save changes)"},
 
   // split view.
   {
@@ -163,58 +146,52 @@ const Binding keymapBindings[] = {
     CommandSplitSame,
     "split the window, showing this buffer in both views"
   },
-  {{'b', control}, CommandSplitNew, "split the window, opening a new empty buffer"},
+  {{'b', control}, CommandSplitNew, "split the window, with a new empty buffer in the new view"},
+  {{KeyLeft, control | alt}, CommandCloseView, "close this view"},
   {{'j', control}, CommandFocusOtherView, "move focus to the other view"},
-  {{'t', control}, CommandSwapViews, "swap the two views"},
-  {{'h', control}, CommandCloseView, "close this view of the split"},
+  {{'i', control}, CommandSwapViews, "swap the two views"},
 
   // search.
-  {{'f', control}, CommandFind, "incremental search"},
-  {{'n', alt}, CommandFindNext, "jump to the next match"},
-  {{'p', alt}, CommandFindPrevious, "jump to the previous match"},
-  {{'f', alt | shift}, CommandProjectSearch, "search the loaded files and list the matches"},
-  {{'f', alt}, CommandProjectResults, "reopen the list of project search matches"},
-  {{'r', control}, CommandReplace, "search and replace"},
+  {{'f', control}, CommandFind, "search the buffer"},
+  {{'n', alt}, CommandFindNext, "go to the next match"},
+  {{'p', alt}, CommandFindPrevious, "go to the previous match"},
+  {{'w', control}, CommandJumpWord, "go to the next occurrence of the word at the cursor"},
+  {{'r', control}, CommandReplace, "search and replace in the buffer"},
+  {{'f', alt | shift}, CommandProjectSearch, "search the loaded files"},
+  {{'f', alt}, CommandProjectResults, "reopen the list of matches in the loaded files"},
   {{'l', control}, CommandGoToLine, "go to a line number"},
 
   // navigation.
-  {{KeyLeft, alt}, CommandJumpBack, "go back to where the cursor was before a jump"},
-  {{KeyRight, alt}, CommandJumpForward, "go forward again after going back"},
-  {{'o', alt}, CommandFileSymbols, "pick a symbol of this file from a filterable list"},
-  {{']', alt}, CommandNextSymbol, "go to the next definition"},
-  {{'[', alt}, CommandPreviousSymbol, "go to the previous definition"},
+  {{'[', alt}, CommandJumpBack, "go back to where the cursor was before a jump"},
+  {{']', alt}, CommandJumpForward, "go forward again after going back"},
+  {{'[', control}, CommandPreviousSymbol, "go to the previous definition"},
+  {{']', control}, CommandNextSymbol, "go to the next definition"},
+  {{'m', alt}, CommandJumpBracket, "go to the matching bracket"},
+  {{'s', alt}, CommandFileSymbols, "pick a symbol in this buffer"},
+  {{'s', alt | shift}, CommandProjectSymbols, "pick a symbol in any loaded file"},
   {{'d', alt}, CommandGoToDefinition, "go to the definition of the name at the cursor"},
-  {{'k', alt}, CommandShowSignature, "show the signature of the name or call at the cursor"},
-  {{'o', alt | shift}, CommandProjectSymbols, "pick a symbol of the loaded files"},
+  {
+    {'d', alt | shift},
+    CommandShowSignature,
+    "show the signature of the name (or call) at the cursor"
+  },
 
   // changes since the last git commit.
-  {{']', alt | shift}, CommandNextChange, "go to the next change since the last commit"},
-  {{'[', alt | shift}, CommandPreviousChange, "go to the previous change since the last commit"},
-  {
-    {'g', alt | shift},
-    CommandChangePanel,
-    "show or hide the change at the cursor beside the buffer"
-  },
-  {
-    {'z', alt | shift},
-    CommandRevertChange,
-    "restore the change at the cursor to the last commit"
-  },
-  {{'u', alt}, CommandPickChanged, "pick from files changed since the last commit"},
+  {{']', alt | shift}, CommandNextChange, "go to the next change"},
+  {{'[', alt | shift}, CommandPreviousChange, "go to the previous change"},
+  {{'g', alt}, CommandChangePanel, "show or hide the change at the cursor beside the buffer"},
+  {{'z', alt}, CommandRevertChange, "revert the change at the cursor to the last commit"},
+  {{'g', control}, CommandPickChanged, "pick a file changed since the last commit"},
 
   // display and settings.
-  {{'t', alt}, CommandToggleExpandTab, "toggle expand tab to spaces"},
+  {{'t', alt}, CommandToggleExpandTab, "toggle indenting with spaces or tabs"},
   {{'w', alt}, CommandToggleSoftWrap, "toggle soft wrap"},
   {{'l', alt}, CommandToggleLineNumbers, "toggle line numbers"},
-  {{'.', alt}, CommandToggleWhitespace, "toggle whitespace display"},
-  {{'g', alt}, CommandToggleRuler, "toggle the vertical ruler"},
-  {
-    {'g', control},
-    CommandSetRulerColumn,
-    "set the vertical ruler column (and show the ruler)"
-  },
-  {{'h', alt}, CommandHelp, "show this list of shortcuts"},
-  {{'h', alt | shift}, CommandLearn, "practise the shortcuts (esc to stop)"}
+  {{'.', alt}, CommandToggleWhitespace, "toggle showing whitespace"},
+  {{'\\', alt}, CommandToggleRuler, "toggle the vertical ruler"},
+  {{'\\', alt | shift}, CommandSetRulerColumn, "set the ruler column (and show the ruler)"},
+  {{'h', control}, CommandHelp, "show this list of shortcuts"},
+  {{'h', alt}, CommandLearn, "practise the shortcuts (esc to stop)"}
 };
 
 const u32 keymapBindingCount = sizeof keymapBindings / sizeof keymapBindings[0];

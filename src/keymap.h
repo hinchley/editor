@@ -1,7 +1,7 @@
 #pragma once
 
 // the editor's key bindings.
-// this table is the single source of truth for both dispatch and the alt+h help list.
+// this table is the single source of truth for both dispatch and the ctrl+h help list.
 // keys used inside prompts and pickers are handled there and are not listed here.
 #include "key.h"
 #include "types.h"
@@ -62,6 +62,7 @@ enum Command {
   CommandToggleComment,
   CommandSortLines,
   CommandJoinLines,
+  CommandTrimLines,
   CommandTrimWhitespace,
   CommandUpperCase,
   CommandLowerCase,

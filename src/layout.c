@@ -162,6 +162,8 @@ LayoutWrap(const char *text, u64 length, i32 width, LayoutRows *rows)
   AddRow(rows, 0);
   if (width <= 0) return;
 
+  // rows stop a column short, so the end of the line always has a column on its last row.
+  u64 limit = width > 1 ? (u64)width - 1 : 1;
   LayoutIterator iterator = LayoutBegin(text, length);
   LayoutCluster cluster;
   u64 rowStart = 0;
@@ -172,7 +174,7 @@ LayoutWrap(const char *text, u64 length, i32 width, LayoutRows *rows)
   u64 breakWidth = 0;
 
   while (LayoutNext(&iterator, &cluster)) {
-    while (rowWidth > 0 && rowWidth + cluster.width > (u64)width) {
+    while (rowWidth > 0 && rowWidth + cluster.width > limit) {
       if (breakAt > rowStart) {
         rowStart = breakAt;
         rowWidth -= breakWidth;
@@ -193,6 +195,7 @@ LayoutWrap(const char *text, u64 length, i32 width, LayoutRows *rows)
     }
   }
 
+  // only a cluster too wide for a row of its own can leave no column for the end.
   if (length > 0 && rowWidth >= (u64)width) AddRow(rows, length);
 }
 

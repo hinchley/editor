@@ -105,6 +105,16 @@ Join(Cursor *cursor, const Cursor *next)
   cursor->head = backward ? range.start : range.end;
 }
 
+bool
+CursorSetHasSelection(const CursorSet *set)
+{
+  for (u32 index = 0; index < set->count; index++) {
+    if (CursorHasSelection(&set->cursors[index])) return true;
+  }
+
+  return false;
+}
+
 void
 CursorSetMerge(CursorSet *set)
 {

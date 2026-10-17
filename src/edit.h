@@ -104,8 +104,7 @@ typedef struct SortResult {
   u64 removed;
 } SortResult;
 
-// sorts the lines the selection touches, or with no selection every line (except the
-// empty line after a final line break), and selects them.
+// sorts the lines the newest cursor's selection touches and selects them.
 // the lines are replaced in one go, so cursors of another view inside them move to their
 // start.
 SortResult
@@ -133,9 +132,13 @@ EditCut(const EditContext *edit, StrBuf *text);
 u64
 EditTrimTrailingWhitespace(const EditContext *edit);
 
-// converts each selection, or without any selection the whole buffer, to upper or lower
-// case with the simple one to one mappings of Utf8Upper and Utf8Lower, and returns how many
-// lines changed.
+// removes spaces and tabs from the end of the lines each cursor touches and returns how
+// many lines changed.
+u64
+EditTrimLines(const EditContext *edit);
+
+// converts each selection to upper or lower case with the simple one to one mappings of
+// Utf8Upper and Utf8Lower, and returns how many lines changed.
 // only the changed part of each line is replaced, and each cursor stays on the same code
 // points (with its direction) even when a conversion changes their byte length.
 u64

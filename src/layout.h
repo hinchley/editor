@@ -75,11 +75,11 @@ LayoutNext(LayoutIterator *iterator, LayoutCluster *cluster);
 u64
 LayoutColumn(const char *text, u64 length, u64 byte);
 
-// splits a line into visual rows no wider than width.
+// splits a line into visual rows no wider than width - 1, leaving the last column free so
+// the end of the line always has a column on its last row.
 // a row breaks after its last space or tab that fits, or else before the cluster that
 // does not fit.
-// when the last row is full, an empty row follows it so the end of the line has a column
-// on screen.
+// when a cluster too wide for that fills the last row, an empty row follows it.
 // a width of 0 means no wrapping: the line is one row.
 void
 LayoutWrap(const char *text, u64 length, i32 width, LayoutRows *rows);

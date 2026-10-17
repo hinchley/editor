@@ -49,23 +49,23 @@ Files over 100 MB, files with a nul byte in their first 4 KB, and anything that 
 
 ## Features
 
-- Movement: the arrows, Home (first non-blank, then line start), End, PageUp, PageDown, Ctrl-Left and Ctrl-Right (by word), Ctrl-Home and Ctrl-End, Ctrl-Up and Ctrl-Down (scroll without moving the cursor). Shift with any of them extends the selection. Ctrl-A selects everything, Ctrl-M selects inside the closest brackets (again to include the brackets, again for the next pair out), Alt-M jumps to the matching bracket, Ctrl-L goes to a line or `line:column`. Alt-Up grows every selection to the enclosing syntax node (a word, then the expression, statement, block, function and so on), and Alt-Down takes it back a step at a time, as long as nothing else moved the cursors in between; without syntax highlighting Alt-Up selects inside brackets as Ctrl-M does. Alt-Shift-Up and Alt-Shift-Down grow every selection by a line above or below, and Ctrl-Alt-Shift-Down and Ctrl-Alt-Shift-Up shrink it by a line at the top or bottom. The top of a selection moves between line starts and the bottom between line ends, so after Ctrl-M inside a function, Ctrl-Alt-Shift-Down and Ctrl-Alt-Shift-Up leave just the lines between the braces. Esc collapses several cursors to one, then clears the selection, then stops highlighting search matches or unknown words.
-- Editing: typing, Enter (keeps the indentation, adds a level after `{`, `[` or `(`, and opens a block between a pair), Tab (spaces up to the next tab stop, or indents every selected line), Shift-Tab (dedents the line or the selected lines), Backspace (deletes back to the previous tab stop in leading spaces), Delete, Ctrl-Backspace (previous word), Ctrl-D (duplicate lines), Ctrl-K (delete lines), Alt-Up and Ctrl-Shift-Down (move lines), Alt-J (join the selected lines, or the line and the next; each line break and the next line's leading blanks become one space, or nothing when either side is empty, the line ends in a blank or the next line starts with a closing bracket), Alt-Shift-T (trim trailing whitespace from every line).
-- Case: Alt-Shift-U converts every selection to upper case, and Alt-Shift-L to lower case. Without a selection they convert the whole file. They use Unicode's simple one to one mappings, so `ß` stays `ß` (not `SS`), capital sigma always becomes `σ` (never the final `ς`), and `I` becomes `i` in every language. Selections stay selected and cursors stay on the same characters, and each conversion is one undo step.
-- Sort: Alt-Q sorts the lines the selection touches, or every line, and selects them. It asks how (`sort: (a)sc (d)esc (u)nique (s)hortest (l)ongest; capital ignores case`): `a` ascending (as `LC_ALL=C sort`), `d` descending (as `sort -r`), `u` unique, ascending with one of each duplicate line kept (as `sort -u`), `s` shortest first or `l` longest first. Length is the width on screen: a tab counts up to its tab stop and a wide character as two columns. Lines of the same length stay in ascending order. The capital letters `A`, `D`, `U`, `S` and `L` do the same ignoring case: they compare simply case folded characters, lines that are then equal go in byte order (reversed by `D`), and `U` keeps the first in byte order of lines that differ only in case. It is one undo step. Cursors of the other view of a split inside the sorted lines move to their start.
+- Movement: the arrows, Home (first non-blank, then line start), End, PageUp, PageDown, Ctrl-Left and Ctrl-Right (by word), Ctrl-Home and Ctrl-End, Alt-Up and Alt-Down (scroll without moving the cursor). Shift with any of them extends the selection. Ctrl-A selects everything, Ctrl-M selects inside the closest brackets (again to include the brackets, again for the next pair out), Alt-M jumps to the matching bracket, Ctrl-L goes to a line or `line:column`. Alt-Right grows every selection to the enclosing syntax node (a word, then the expression, statement, block, function and so on), and Alt-Left takes it back a step at a time, as long as nothing else moved the cursors in between; without syntax highlighting Alt-Right selects inside brackets as Ctrl-M does. Ctrl-Shift-Up and Ctrl-Shift-Down grow every selection by a line above or below, and Alt-Shift-Down and Alt-Shift-Up shrink it by a line at the top or bottom. The top of a selection moves between line starts and the bottom between line ends, so after Ctrl-M inside a function, Alt-Shift-Down and Alt-Shift-Up leave just the lines between the braces. Esc collapses several cursors to one, then clears the selection, then stops highlighting search matches or unknown words.
+- Editing: typing, Enter (keeps the indentation, adds a level after `{`, `[` or `(`, and opens a block between a pair), Tab (spaces up to the next tab stop, or indents every selected line), Shift-Tab (dedents the line or the selected lines), Backspace (deletes back to the previous tab stop in leading spaces), Delete, Ctrl-Backspace (previous word), Ctrl-D (duplicate lines), Ctrl-K (delete lines), Ctrl-Up and Ctrl-Down (move lines), Alt-J (join the selected lines, or the line and the next; each line break and the next line's leading blanks become one space, or nothing when either side is empty, the line ends in a blank or the next line starts with a closing bracket), Ctrl-T (trim trailing whitespace from the lines the cursors and selections touch), Ctrl-Shift-T (trim it from every line).
+- Case: Alt-Shift-U converts every selection to upper case, and Alt-Shift-L to lower case. They need a selection: without one they say so and change nothing. They use Unicode's simple one to one mappings, so `ß` stays `ß` (not `SS`), capital sigma always becomes `σ` (never the final `ς`), and `I` becomes `i` in every language. Selections stay selected and cursors stay on the same characters, and each conversion is one undo step.
+- Sort: Alt-O sorts the lines the selection touches and selects them. It needs a selection: without one it says so and changes nothing (Ctrl-A first sorts the whole buffer). It asks how (`sort: (a)sc (d)esc (u)nique (s)hortest (l)ongest; capital ignores case`): `a` ascending (as `LC_ALL=C sort`), `d` descending (as `sort -r`), `u` unique, ascending with one of each duplicate line kept (as `sort -u`), `s` shortest first or `l` longest first. Length is the width on screen: a tab counts up to its tab stop and a wide character as two columns. Lines of the same length stay in ascending order. The capital letters `A`, `D`, `U`, `S` and `L` do the same ignoring case: they compare simply case folded characters, lines that are then equal go in byte order (reversed by `D`), and `U` keeps the first in byte order of lines that differ only in case. It is one undo step. Cursors of the other view of a split inside the sorted lines move to their start.
 - Comments: Ctrl-/ comments out every line touched by a cursor or selection, or uncomments them when they are all commented already. The markers line up at the smallest indentation of each block, and blank lines are left alone. The markers come from the language's package: in the default packages C, Go, JavaScript, PHP and Zig use `//`, Bash and YAML `#`, SQL `--`, CSS `/* */`, and HTML, Markdown and XML `<!-- -->`. JSON has no comments.
-- Multiple cursors: Ctrl-E selects the word under the cursor, and each further press adds a cursor at the next occurrence of the selection (matching case, and as a whole word when the selection is one), going round the end of the file. Ctrl-Shift-E skips an occurrence: it moves the newest cursor on to the next one instead of adding a cursor. Ctrl-Alt-E adds a cursor at every occurrence at once. When the selection is a highlighted search match, the occurrences are the search's matches, so after Ctrl-F with the regular expression `Document\b` and Enter, Ctrl-E steps through the matches and Ctrl-Alt-E selects them all; after Alt-S they are the unknown words. Ctrl-Alt-Up and Ctrl-Alt-Down add a cursor on the row above the first cursor or below the last one. Typing, Enter, Tab, Shift-Tab, the deletes, movement and Shift selection act at every cursor, and each edit is one undo step. Cursors that meet merge. Ctrl-D, Ctrl-K, moving lines, joining, sorting, Ctrl-L, Ctrl-M, Alt-M and the search commands first collapse to the newest cursor. With more than one cursor, every cursor is drawn as a block and the status bar shows how many there are.
+- Multiple cursors: Ctrl-E selects the word under the cursor, and each further press adds a cursor at the next occurrence of the selection (matching case, and as a whole word when the selection is one), going round the end of the file. Alt-E skips an occurrence: it moves the newest cursor on to the next one instead of adding a cursor. Ctrl-Shift-E adds a cursor at every occurrence at once. When the selection is a highlighted search match, the occurrences are the search's matches, so after Ctrl-F with the regular expression `Document\b` and Enter, Ctrl-E steps through the matches and Ctrl-Shift-E selects them all; after Alt-C they are the unknown words. Ctrl-Alt-Up and Ctrl-Alt-Down add a cursor on the row above the first cursor or below the last one. Typing, Enter, Tab, Shift-Tab, the deletes, movement and Shift selection act at every cursor, and each edit is one undo step. Cursors that meet merge. Ctrl-D, Ctrl-K, moving lines, joining, sorting, Ctrl-L, Ctrl-M, Alt-M and the search commands first collapse to the newest cursor. With more than one cursor, every cursor is drawn as a block and the status bar shows how many there are.
 - Undo and redo: Ctrl-Z and Ctrl-Y. Consecutive typing, backspaces or deletes are one step until the cursor moves or another command runs. A paste is one step. Undoing back to the saved text clears `[+]`.
 - Clipboard: Ctrl-C, Ctrl-X and Ctrl-V use `wl-copy` and `wl-paste`, and fall back to an in-editor clipboard without a Wayland session. With no selection, copy and cut take the whole line, and pasting that text again inserts it as a line above the cursor. With several cursors, copy joins the selections (or the cursors' lines) with line breaks, and a paste with as many lines as there are cursors gives each cursor one line. Pasted `\r\n` becomes `\n`.
-- Files: Ctrl-S saves (asking for a name when the buffer has none, and before overwriting an existing file or one changed on disk), Alt-R reloads from disk (asking first if there are unsaved changes), Alt-Shift-R loads the files added to the open folder since it was read (by another program; files already found once, including closed ones, are not added again, and nothing else changes), Alt-E switches between LF and CRLF, Alt-Shift-C copies the file's path (as shown in the status bar), and Ctrl-Q quits (offering to save unsaved changes). Switching to a buffer whose file another program changed since it was loaded or saved says so in the message bar (Alt-R reloads it).
+- Files: Ctrl-S saves (asking for a name when the buffer has none, and before overwriting an existing file or one changed on disk), Alt-R reloads from disk (asking first if there are unsaved changes), Alt-Shift-R loads the files added to the open folder since it was read (by another program; files already found once, including closed ones, are not added again, and nothing else changes), Alt-; switches between LF and CRLF, Alt-Shift-X copies the file's path (as shown in the status bar), and Ctrl-Q quits (offering to save unsaved changes). Switching to a buffer whose file another program changed since it was loaded or saved says so in the message bar (Alt-R reloads it).
 - File menu: Alt-X asks for `r` rename, `c` copy or `d` delete. Rename and copy ask for the new path, starting from the current one (Tab completes, `~` is the home folder), and ask before replacing a file that exists. Rename moves the file on disk (copying it, with its permissions, when the new path is on another file system) and keeps unsaved changes unsaved; a new extension changes the language. Copy writes the buffer's text as it is (with its line ending, untrimmed) to the new path and leaves the buffer, its name and `[+]` alone. Delete asks first, then removes the file and closes its buffer. Unnamed buffers can be copied but not renamed or deleted.
-- Navigation: Alt-Left goes back to where the cursor was before a jump, and Alt-Right forward again. Jumps are Ctrl-L, Ctrl-Home and Ctrl-End, opening a project search match, and the symbol commands below; 32 places are kept, across buffers, and a place in a closed buffer is skipped. Jumping after going back drops the places ahead, as undo does. Alt-O lists the symbols of the file in order (functions, prototypes, types, structs, enums and macros in C, the equivalents in Go, JavaScript, PHP and Zig, Bash functions and Markdown headings), with the symbol named by the word at the cursor selected (so on a call, Enter goes to the function's definition rather than its prototype), or else the one the cursor is in; typing filters them, and Enter goes to its name. Alt-] and Alt-[ go to the start of the next or previous definition. Languages without symbols (CSS, HTML, JSON, SQL, XML, YAML), and files too large to highlight, say so.
-- Project symbols: Alt-D goes to the definition of the name at the cursor, in any loaded file. With one definition it goes straight there; with several (such as `static` functions of the same name in several files) it lists them with a preview, the current file's first. On a definition, Alt-D goes to its prototype instead, and a prototype only counts as a definition when there is none. Alt-K shows the signature of the name at the cursor in the message bar, or of the function whose call the cursor is inside (the name before the innermost `(` left open on the line), preferring one in the current file, then a prototype; long signatures are shortened to fit. Alt-Shift-O lists every symbol of the loaded files by name, with `file:line` beside it, or in a window at least 80 columns wide a preview headed by `file:line`, starting on the name at the cursor. Every preview (these lists and project search) names its file and line on its first row. When there are several languages, only the current buffer's count, and Markdown headings are listed by Alt-Shift-O but are never a definition. These use an index of every loaded file's symbols, built the first time one of them is used: progress shows in the message bar, and Esc stops it, keeping what was indexed, so the next use carries on from there. Open buffers are indexed from their text, so a function written but not saved is found. A name that is not found first indexes again the files that changed on disk. Opening a folder with Ctrl-O drops the index.
-- Git changes: in a file inside a git repository, the cell before each line number marks how the buffer differs from the file in the last commit: a green `▎` for added lines, a yellow `▎` for changed ones and a red `▔` on the line after lines that were removed (`▁` on the last line for lines removed from the end). The marks follow your edits, and cover changes made by other programs before the file was opened. The status bar counts the lines added, changed and removed (`+3 ~2 -1`). Alt-Shift-] and Alt-Shift-[ go to the next and previous change, going round the end of the file. Alt-Shift-G shows a panel on the right half of the window with the change at the cursor: a few lines around it, the old lines in red and the new ones in green; it follows the cursor, takes the place of a split while it shows, and needs a window at least 80 columns wide. Alt-Shift-Z restores the change at the cursor (where its mark is) to the last commit, leaving the file's other changes alone, as one undo step. Alt-U compares every loaded file with the last commit (open buffers as they are in memory, the others as they are on disk, with progress in the message bar and Esc to stop), lists the ones that differ, and sums up the lines they change. Beside the list, the selected file is shown whole with its changes in place: the old lines on red and the new ones on green, each with a bar in the colour of the gutter marks (yellow for changed lines, green for added ones and red for removed ones). The preview scrolls on its own with Shift-Up, Shift-Down, Shift-PgUp and Shift-PgDn, and Alt-Shift-] and Alt-Shift-[ go to its next and previous change; Enter opens the file at the change the preview shows. A commit made by another program is noticed when you switch to a buffer, or use Alt-Shift-G or Alt-U. The comparison is with the last commit (HEAD), not the staged files. The editor reads the repository itself (no `git` program is needed) and only typical ones: a work tree with a `.git` folder, with SHA-1 or SHA-256 objects, loose or packed. Worktrees and submodules (where `.git` is a file), reftable refs and bare repositories show no marks, nor do files the last commit does not have, symbolic links, or buffers over 16 MB. Line numbers must be on (Alt-L) for the marks to show.
+- Navigation: Alt-[ goes back to where the cursor was before a jump, and Alt-] forward again. Jumps are Ctrl-L, Ctrl-Home and Ctrl-End, opening a project search match, and the symbol commands below; 32 places are kept, across buffers, and a place in a closed buffer is skipped. Jumping after going back drops the places ahead, as undo does. Alt-S lists the symbols of the file in order (functions, prototypes, types, structs, enums and macros in C, the equivalents in Go, JavaScript, PHP and Zig, Bash functions and Markdown headings), with the symbol named by the word at the cursor selected (so on a call, Enter goes to the function's definition rather than its prototype), or else the one the cursor is in; typing filters them, and Enter goes to its name. Ctrl-] and Ctrl-[ go to the start of the next or previous definition. Languages without symbols (CSS, HTML, JSON, SQL, XML, YAML), and files too large to highlight, say so.
+- Project symbols: Alt-D goes to the definition of the name at the cursor, in any loaded file. With one definition it goes straight there; with several (such as `static` functions of the same name in several files) it lists them with a preview, the current file's first. On a definition, Alt-D goes to its prototype instead, and a prototype only counts as a definition when there is none. Alt-Shift-D shows the signature of the name at the cursor in the message bar, or of the function whose call the cursor is inside (the name before the innermost `(` left open on the line), preferring one in the current file, then a prototype; long signatures are shortened to fit. Alt-Shift-S lists every symbol of the loaded files by name, with `file:line` beside it, or in a window at least 80 columns wide a preview headed by `file:line`, starting on the name at the cursor. Every preview (these lists and project search) names its file and line on its first row. When there are several languages, only the current buffer's count, and Markdown headings are listed by Alt-Shift-S but are never a definition. These use an index of every loaded file's symbols, built the first time one of them is used: progress shows in the message bar, and Esc stops it, keeping what was indexed, so the next use carries on from there. Open buffers are indexed from their text, so a function written but not saved is found. A name that is not found first indexes again the files that changed on disk. Opening a folder with Ctrl-O drops the index.
+- Git changes: in a file inside a git repository, the cell before each line number marks how the buffer differs from the file in the last commit: a green `▎` for added lines, a yellow `▎` for changed ones and a red `▔` on the line after lines that were removed (`▁` on the last line for lines removed from the end). The marks follow your edits, and cover changes made by other programs before the file was opened. The status bar counts the lines added, changed and removed (`+3 ~2 -1`). Alt-Shift-] and Alt-Shift-[ go to the next and previous change, going round the end of the file. Alt-G shows a panel on the right half of the window with the change at the cursor: a few lines around it, the old lines in red and the new ones in green; it follows the cursor, takes the place of a split while it shows, and needs a window at least 80 columns wide. Alt-Z restores the change at the cursor (where its mark is) to the last commit, leaving the file's other changes alone, as one undo step. Ctrl-G compares every loaded file with the last commit (open buffers as they are in memory, the others as they are on disk, with progress in the message bar and Esc to stop), lists the ones that differ, and sums up the lines they change. Beside the list, the selected file is shown whole with its changes in place: the old lines on red and the new ones on green, each with a bar in the colour of the gutter marks (yellow for changed lines, green for added ones and red for removed ones). The preview scrolls on its own with Shift-Up, Shift-Down, Shift-PgUp and Shift-PgDn, and Alt-Shift-] and Alt-Shift-[ go to its next and previous change; Enter opens the file at the change the preview shows. A commit made by another program is noticed when you switch to a buffer, or use Alt-G or Ctrl-G. The comparison is with the last commit (HEAD), not the staged files. The editor reads the repository itself (no `git` program is needed) and only typical ones: a work tree with a `.git` folder, with SHA-1 or SHA-256 objects, loose or packed. Worktrees and submodules (where `.git` is a file), reftable refs and bare repositories show no marks, nor do files the last commit does not have, symbolic links, or buffers over 16 MB. Line numbers must be on (Alt-L) for the marks to show.
 - Statistics: Alt-I shows the lines, words, characters and bytes of the buffer, or with a selection "selection: N of M" for each. Lines are counted as in the status bar. A word is a run of letters, digits, `_` and non-ASCII characters, the same words that Ctrl-Left and Ctrl-Right move by, so `foo-bar` is two words (unlike `wc -w`). A character is what the cursor steps over (a grapheme cluster, so an emoji sequence is one), and a line break is one character. Bytes count line breaks as the file is saved, so two each with CRLF.
-- Display: Alt-W (soft wrap), Alt-L (line numbers), Alt-. (whitespace), Alt-G (ruler), Ctrl-G (ruler column), Alt-T (spaces or tabs for indentation).
-- Buffers: Ctrl-N (new unnamed buffer), Ctrl-O (open a file, or a folder, which replaces every buffer after offering to save; Tab completes the path, and again steps through the choices; `~` stands for the home folder, here and when saving as), Ctrl-PgDn and Ctrl-PgUp (next and previous open buffer), Ctrl-Tab (the buffer used before this one), Ctrl-P (pick any buffer; a faint `+` before a name marks unsaved changes and `·` any other open buffer, one already read), Ctrl-U (pick a buffer with unsaved changes), Ctrl-Shift-S (save every buffer with unsaved changes, asking for names for unnamed ones), Alt-C (close the buffer, removing it from the list; with unsaved changes it asks `y` save, `n` discard or `c` cancel, then switches to the buffer used before it, and closing the last buffer leaves a new unnamed one). Closing a buffer shown on both sides of a split, or on the other side, shows the most recently used buffer there instead. Ctrl-Q offers to save every unsaved buffer, and does not quit if a save fails.
-- Split view: Ctrl-Alt-Right splits the window into two views of the current buffer, and Ctrl-B splits it with a new unnamed buffer in the new view. Both need a window at least 80 columns wide that is not split already. The new view is on the right and takes focus. Ctrl-J moves focus to the other view, Ctrl-T swaps the two sides, and Ctrl-H closes the focused view (its buffer stays loaded). Every other command acts on the focused view, which has the full status bar and the cursor; the other view's status bar is dimmed and shows only its name. Each view has its own cursors and scrolling, even on the same buffer, and edits in one show in the other at once. Display toggles apply to both. Below 80 columns only the focused view is shown, and the split comes back when the window widens. Opening a folder with Ctrl-O ends the split.
+- Display: Alt-W (soft wrap), Alt-L (line numbers), Alt-. (whitespace), Alt-\ (ruler), Alt-Shift-\ (ruler column), Alt-T (spaces or tabs for indentation). Soft wrap breaks rows a column short of the edge, so the cursor at the end of a line always fits on its last row and a line that ends exactly at the edge is not followed by an empty row.
+- Buffers: Ctrl-N (new unnamed buffer), Ctrl-O (open a file, or a folder, which replaces every buffer after offering to save; Tab completes the path, and again steps through the choices; `~` stands for the home folder, here and when saving as), Ctrl-PgDn and Ctrl-PgUp (next and previous open buffer), Ctrl-Tab (the buffer used before this one), Ctrl-P (pick any buffer; a faint `+` before a name marks unsaved changes and `·` any other open buffer, one already read), Ctrl-U (pick a buffer with unsaved changes), Ctrl-Shift-S (save every buffer with unsaved changes, asking for names for unnamed ones), Alt-Q (close the buffer, removing it from the list; with unsaved changes it asks `y` save, `n` discard or `c` cancel, then switches to the buffer used before it, and closing the last buffer leaves a new unnamed one). Closing a buffer shown on both sides of a split, or on the other side, shows the most recently used buffer there instead. Ctrl-Q offers to save every unsaved buffer, and does not quit if a save fails.
+- Split view: Ctrl-Alt-Right splits the window into two views of the current buffer, and Ctrl-B splits it with a new unnamed buffer in the new view. Both need a window at least 80 columns wide that is not split already. The new view is on the right and takes focus. Ctrl-J moves focus to the other view, Ctrl-I swaps the two sides, and Ctrl-Alt-Left closes the focused view (its buffer stays loaded). Every other command acts on the focused view, which has the full status bar and the cursor; the other view's status bar is dimmed and shows only its name. Each view has its own cursors and scrolling, even on the same buffer, and edits in one show in the other at once. Display toggles apply to both. Below 80 columns only the focused view is shown, and the split comes back when the window widens. Opening a folder with Ctrl-O ends the split.
 - Search: Ctrl-F searches as you type, highlighting every match and selecting the first one after the cursor. Up and Down (or Ctrl-P and Ctrl-N) step between matches, Ctrl-T switches case matching on or off (off at first, and kept for the session), Ctrl-R switches regular expressions on or off (the same way, in every search prompt), Enter keeps the match and Esc puts the cursor and view back. In an empty search prompt, Up or Down brings back the last search. Alt-N and Alt-P select the next and previous match of the last search, wrapping round the ends of the file. Ctrl-W searches for the whole word under the cursor (matching case, and always literally) and selects its next occurrence. The prompt's label shows `[match case]` and `[regex]` while they are on, and `bad pattern` while the typed regular expression is not valid (Enter then says why).
 - Replace: Ctrl-R asks for the text to find (Ctrl-T and Ctrl-R work in that prompt as in Ctrl-F) and its replacement, then for each match whether to replace it: `y` yes, `n` no, `a` this and all the rest, `q` (or Esc) stop. It starts at the cursor and goes round the file once. The whole run is one undo step.
 - Project search: Alt-Shift-F asks for a pattern (as Ctrl-F does: Ctrl-T matches case, and Up or Down in the empty prompt brings back the last search), then which files to search. Leave that blank for every loaded file, or give space-separated patterns: `*.c *.h` (by name), `src/` (a folder, at any depth), `src/*.c` (a path from the folder the editor was started in), and `!` to leave files out (`*.c !test*`). Only `!` patterns search everything else. The prompt starts with the last scope, so Enter repeats it. Files outside the scope are not read. Open buffers are searched as they are in memory, and the others are read from disk without being opened. Binary and too-large files are skipped. Progress shows in the message bar, and Esc stops the search, keeping what it found. The matching lines are listed as `file:line`, with a preview of the lines around the selected one when the window is at least 80 columns wide (narrower, each line's text follows it in the list). At most 10,000 lines are listed. Type to filter the list, and Enter opens the selected line, selecting the match and highlighting the pattern in that buffer. Alt-F shows the list again, starting after the line opened last, and Esc in the list clears it. Before showing it, Alt-F finds the matches again in every listed file that is open and has been edited, so lines that no longer match drop out and line numbers follow inserted or deleted lines; files that had no match are not searched again (Alt-Shift-F does that). Lines in buffers closed since the search are left out, and the list's title counts them.
@@ -88,14 +88,14 @@ Files over 100 MB, files with a nul byte in their first 4 KB, and anything that 
   | `\t` `\r` `\n` `\f` `\v` | control characters; `\` before any punctuation matches it literally |
 
   Without case matching, letters match either case, and so do sets: `[A-Z]` also matches `a`. There are no backreferences, lookarounds, POSIX classes or Unicode properties. Search time grows with the line length times the pattern's size, never exponentially; a pattern too large (over 4096 steps, such as `(a{1000}){5}`) is refused. In the replacement, `\0` is the whole match and `\1` to `\9` are the groups (empty when a group took no part), and `\t`, `\r`, `\n` and `\\` work as in a literal replacement, so `(\w+)=(\w+)` replaced with `\2=\1` swaps the two sides.
-- Spell check: Alt-S highlights the words that are not in the word list (`~/.config/editor/words.txt`, see Build), counts them and selects the next one. Alt-N and Alt-P then step through unknown words instead of search matches, and the highlights follow your edits. Words in capitals only, words with digits or `_`, and URLs and email addresses are skipped. A capitalised word is accepted when its lowercase form is in the list. In the programming and data languages (everything highlighted except Markdown) only comments and strings are checked. In Markdown everything is checked except code (fenced and indented blocks and code spans) and link targets. Other files are checked in full. Alt-Shift-S asks whether to add the word at the cursor (or the unknown word Alt-S selected) to the list, or, when the list knows it, whether to remove it (for a capitalised word known through its lowercase form, the lowercase entry). The list is saved straight away, and read again when another program changes it.
+- Spell check: Alt-C highlights the words that are not in the word list (`~/.config/editor/words.txt`, see Build), counts them and selects the next one. Alt-N and Alt-P then step through unknown words instead of search matches, and the highlights follow your edits. Words in capitals only, words with digits or `_`, and URLs and email addresses are skipped. A capitalised word is accepted when its lowercase form is in the list. In the programming and data languages (everything highlighted except Markdown) only comments and strings are checked. In Markdown everything is checked except code (fenced and indented blocks and code spans) and link targets. Other files are checked in full. Alt-Shift-C asks whether to add the word at the cursor (or the unknown word Alt-C selected) to the list, or, when the list knows it, whether to remove it (for a capitalised word known through its lowercase form, the lowercase entry). The list is saved straight away, and read again when another program changes it.
 - Syntax highlighting: Bash (`.sh`, `.bash`, and `.bashrc`, `.bash_profile`, `.profile` and `PKGBUILD` by name), C (`.c`, `.h`), CSS, Go, HTML (`.html`, `.htm`), JavaScript (`.js`, `.mjs`, `.cjs`), JSON, Markdown (`.md`, `.markdown`), PHP, SQL, XML (`.xml`, `.xsd`, `.xsl`, `.svg`), YAML (`.yaml`, `.yml`) and Zig (`.zig`, `.zon`) are coloured, and the status bar names the language. A file without an extension whose first line is `#!` running `sh` or `bash` (directly or through `env`) is Bash; this is checked when the file opens. Markdown colours headings, emphasis, links and code, and a fenced code block in any of these languages (named by the language or its extension, as in ```` ```js ````, or `shell`). HTML colours its `<script>` and `<style>` contents, and PHP the HTML around its `<?php ?>` blocks (each piece of HTML on its own, so a closing tag whose opening tag is in another piece is not coloured as a tag). Buffers over 16 MB, or that take more than a second to parse, are shown uncoloured, and the status bar says so.
-- Pickers and Alt-H: type to filter (any part of the text, ignoring case; `^` at the start and `$` at the end tie it to the start or end, as in `^src/` or `.c$`), Up, Down, PgUp, PgDn, Home and End to move, Enter to pick, Esc to cancel. Buffers are listed most recently used first. Alt-H lists every binding and runs the one picked.
-- Learning mode: Alt-Shift-H shows what a shortcut does in the message bar and waits for you to press it: `✓` and the next one when you are right, or `✗` and what the key you pressed does when you are not, and after three misses the answer. Only shortcuts held with Ctrl or Alt are asked, each once in a random order before any comes up again. No key runs its command while it is on; Esc stops it and says how many you got right.
+- Pickers and Ctrl-H: type to filter (any part of the text, ignoring case; `^` at the start and `$` at the end tie it to the start or end, as in `^src/` or `.c$`), Up, Down, PgUp, PgDn, Home and End to move, Enter to pick, Esc to cancel. Buffers are listed most recently used first. Ctrl-H lists every binding and runs the one picked.
+- Learning mode: Alt-H shows what a shortcut does in the message bar and waits for you to press it: `✓` and the next one when you are right, or `✗` and what the key you pressed does when you are not, and after three misses the answer. Only shortcuts held with Ctrl or Alt are asked, each once in a random order before any comes up again. No key runs its command while it is on; Esc stops it and says how many you got right.
 
 ## Key bindings
 
-Alt-H lists every binding, filterable, and runs the one picked. The tables below are generated from the same table in `src/keymap.c` by `tools/bindings.py`, so run it after changing a binding.
+Ctrl-H lists every binding, filterable, and runs the one picked. The tables below are generated from the same table in `src/keymap.c` by `tools/bindings.py`, so run it after changing a binding.
 
 <!-- bindings start: generated by tools/bindings.py -->
 
@@ -107,50 +107,50 @@ Alt-H lists every binding, filterable, and runs the one picked. The tables below
 | Down | move down |
 | Left | move left |
 | Right | move right |
-| Home | move to first non-blank, then line start |
-| End | move to line end |
-| PgUp | move up one page |
-| PgDn | move down one page |
-| Ctrl-Left | move to previous word |
-| Ctrl-Right | move to next word |
-| Ctrl-Home | move to start of file |
-| Ctrl-End | move to end of file |
-| Ctrl-Up | scroll the view up one line (cursor stays put) |
-| Ctrl-Down | scroll the view down one line (cursor stays put) |
+| Home | move to the first non-blank, then the line start |
+| End | move to the line end |
+| PgUp | move up a page |
+| PgDn | move down a page |
+| Ctrl-Left | move to the previous word |
+| Ctrl-Right | move to the next word |
+| Ctrl-Home | move to the start of the buffer |
+| Ctrl-End | move to the end of the buffer |
+| Alt-Up | scroll up a line (the cursor stays put) |
+| Alt-Down | scroll down a line (the cursor stays put) |
 
 **Selection**
 
 | Key | Action |
 |---|---|
-| Shift-Up | extend selection up |
-| Shift-Down | extend selection down |
-| Shift-Left | extend selection left |
-| Shift-Right | extend selection right |
-| Shift-Home | extend selection to first non-blank, then line start |
-| Shift-End | extend selection to line end |
-| Shift-PgUp | extend selection up one page |
-| Shift-PgDn | extend selection down one page |
-| Ctrl-Shift-Left | extend selection to previous word |
-| Ctrl-Shift-Right | extend selection to next word |
-| Ctrl-Shift-Home | extend selection to start of file |
-| Ctrl-Shift-End | extend selection to end of file |
-| Ctrl-A | select the whole file |
-| Ctrl-M | extend selection to all text inside closest brackets |
-| Alt-Up | extend selection to the enclosing syntax node (or brackets) |
-| Alt-Down | shrink selection back to before alt+up |
-| Alt-Shift-Up | grow selection by a line above |
-| Alt-Shift-Down | grow selection by a line below |
-| Ctrl-Alt-Shift-Down | shrink selection by a line at the top |
-| Ctrl-Alt-Shift-Up | shrink selection by a line at the bottom |
-| Esc | clear the selection, or collapse to a single cursor |
+| Shift-Up | extend the selection up |
+| Shift-Down | extend the selection down |
+| Shift-Left | extend the selection left |
+| Shift-Right | extend the selection right |
+| Shift-Home | extend the selection to the first non-blank, then the line start |
+| Shift-End | extend the selection to the line end |
+| Shift-PgUp | extend the selection up a page |
+| Shift-PgDn | extend the selection down a page |
+| Ctrl-Shift-Left | extend the selection to the previous word |
+| Ctrl-Shift-Right | extend the selection to the next word |
+| Ctrl-Shift-Home | extend the selection to the start of the buffer |
+| Ctrl-Shift-End | extend the selection to the end of the buffer |
+| Ctrl-A | select the whole buffer |
+| Ctrl-M | select inside the closest brackets (again to widen) |
+| Alt-Right | expand the selection to the enclosing syntax node (or brackets) |
+| Alt-Left | shrink the selection back a step |
+| Ctrl-Shift-Up | grow the selection by a line above |
+| Ctrl-Shift-Down | grow the selection by a line below |
+| Alt-Shift-Down | shrink the selection by a line at the top |
+| Alt-Shift-Up | shrink the selection by a line at the bottom |
+| Esc | collapse to one cursor, clear the selection, or clear highlights |
 
 **Editing**
 
 | Key | Action |
 |---|---|
-| Enter | insert a newline |
-| Tab | insert a tab, or indent the selected lines |
-| Shift-Tab | dedent the current line or the selected lines |
+| Enter | insert a line break |
+| Tab | insert a tab (or indent the selected lines) |
+| Shift-Tab | dedent the line (or the selected lines) |
 | Backspace | delete the character before the cursor |
 | Delete | delete the character after the cursor |
 | Ctrl-Backspace | delete the word before the cursor |
@@ -158,29 +158,28 @@ Alt-H lists every binding, filterable, and runs the one picked. The tables below
 | Ctrl-Y | redo |
 | Ctrl-C | copy the selection (or the line) |
 | Ctrl-X | cut the selection (or the line) |
-| Ctrl-V | paste the clipboard |
-| Ctrl-Shift-Up | move the current line (or selected lines) up |
-| Ctrl-Shift-Down | move the current line (or selected lines) down |
-| Ctrl-D | duplicate the current line |
-| Ctrl-K | delete the current line |
-| Alt-M | jump to matching bracket |
-| Ctrl-W | jump to the next occurrence of the word under the cursor |
-| Ctrl-/ | toggle line comments |
-| Alt-Q | sort the selected lines (or every line) |
-| Alt-J | join the selected lines (or this line and the next) |
-| Alt-Shift-T | trim trailing whitespace from every line |
-| Alt-Shift-U | convert the selection (or the whole file) to upper case |
-| Alt-Shift-L | convert the selection (or the whole file) to lower case |
-| Alt-S | spell check the current document |
-| Alt-Shift-S | add the word at the cursor to the word list (or remove it) |
+| Ctrl-V | paste |
+| Ctrl-Up | move the line (or the selected lines) up |
+| Ctrl-Down | move the line (or the selected lines) down |
+| Ctrl-D | duplicate the line (or the selected lines) |
+| Ctrl-K | delete the line (or the selected lines) |
+| Ctrl-/ | toggle comments on the line (or the selected lines) |
+| Alt-J | join the selected lines (or the line and the next) |
+| Alt-O | sort the selected lines |
+| Ctrl-T | trim trailing whitespace from the line (or the selected lines) |
+| Ctrl-Shift-T | trim trailing whitespace from every line |
+| Alt-Shift-U | convert the selection to upper case |
+| Alt-Shift-L | convert the selection to lower case |
+| Alt-C | spell check the buffer |
+| Alt-Shift-C | add the word at the cursor to the word list (or remove it) |
 
 **Multiple cursors**
 
 | Key | Action |
 |---|---|
-| Ctrl-E | select the word, then add a cursor at each next occurrence (or search match) |
-| Ctrl-Shift-E | move the newest cursor on to the next occurrence, skipping this one |
-| Ctrl-Alt-E | add a cursor at every occurrence |
+| Ctrl-E | select the word, then add a cursor at the next occurrence (or search match) |
+| Alt-E | move the newest cursor to the next occurrence, skipping this one |
+| Ctrl-Shift-E | add a cursor at every occurrence |
 | Ctrl-Alt-Up | add a cursor on the line above |
 | Ctrl-Alt-Down | add a cursor on the line below |
 
@@ -189,92 +188,94 @@ Alt-H lists every binding, filterable, and runs the one picked. The tables below
 | Key | Action |
 |---|---|
 | Ctrl-N | create a new empty buffer |
-| Ctrl-O | open a file (new buffer) or folder (replaces all) |
-| Alt-R | reload the file from disk (discards changes) |
-| Alt-Shift-R | load files added to the open folder since it was read |
-| Alt-E | toggle line endings between LF and CRLF |
-| Alt-Shift-C | copy the file's path to the clipboard |
+| Ctrl-O | open a file (in a new buffer) or a folder (replacing every buffer) |
+| Ctrl-S | save the buffer (asks for a name if it has none) |
+| Ctrl-Shift-S | save every buffer with unsaved changes |
+| Alt-R | reload the buffer from disk (asks before discarding changes) |
+| Alt-Shift-R | load files added to the folder since it was opened |
+| Alt-Q | close the buffer (offers to save changes) |
+| Alt-X | rename, copy or delete the buffer's file |
+| Alt-Shift-X | copy the path of the buffer's file |
+| Alt-; | toggle line endings between LF and CRLF |
 | Alt-I | count the lines, words, characters and bytes (of the selection) |
 | Ctrl-PgDn | switch to the next buffer |
 | Ctrl-PgUp | switch to the previous buffer |
-| Ctrl-Tab | switch to the last-used buffer |
-| Ctrl-P | pick a buffer from a filterable list |
-| Ctrl-U | pick from buffers with unsaved changes |
-| Alt-C | close the buffer (offers to save changes) |
-| Alt-X | rename, copy or delete the file |
-| Ctrl-S | save the file (prompts for a name if unnamed) |
-| Ctrl-Shift-S | save every buffer with unsaved changes |
-| Ctrl-Q | quit the editor |
+| Ctrl-Tab | switch to the buffer used before this one |
+| Ctrl-P | pick a buffer |
+| Ctrl-U | pick a buffer with unsaved changes |
+| Ctrl-Q | quit (offers to save changes) |
 
 **Split view**
 
 | Key | Action |
 |---|---|
 | Ctrl-Alt-Right | split the window, showing this buffer in both views |
-| Ctrl-B | split the window, opening a new empty buffer |
+| Ctrl-B | split the window, with a new empty buffer in the new view |
+| Ctrl-Alt-Left | close this view |
 | Ctrl-J | move focus to the other view |
-| Ctrl-T | swap the two views |
-| Ctrl-H | close this view of the split |
+| Ctrl-I | swap the two views |
 
 **Search**
 
 | Key | Action |
 |---|---|
-| Ctrl-F | incremental search |
-| Alt-N | jump to the next match |
-| Alt-P | jump to the previous match |
-| Alt-Shift-F | search the loaded files and list the matches |
-| Alt-F | reopen the list of project search matches |
-| Ctrl-R | search and replace |
+| Ctrl-F | search the buffer |
+| Alt-N | go to the next match |
+| Alt-P | go to the previous match |
+| Ctrl-W | go to the next occurrence of the word at the cursor |
+| Ctrl-R | search and replace in the buffer |
+| Alt-Shift-F | search the loaded files |
+| Alt-F | reopen the list of matches in the loaded files |
 | Ctrl-L | go to a line number |
 
 **Navigation**
 
 | Key | Action |
 |---|---|
-| Alt-Left | go back to where the cursor was before a jump |
-| Alt-Right | go forward again after going back |
-| Alt-O | pick a symbol of this file from a filterable list |
-| Alt-] | go to the next definition |
-| Alt-[ | go to the previous definition |
+| Alt-[ | go back to where the cursor was before a jump |
+| Alt-] | go forward again after going back |
+| Ctrl-[ | go to the previous definition |
+| Ctrl-] | go to the next definition |
+| Alt-M | go to the matching bracket |
+| Alt-S | pick a symbol in this buffer |
+| Alt-Shift-S | pick a symbol in any loaded file |
 | Alt-D | go to the definition of the name at the cursor |
-| Alt-K | show the signature of the name or call at the cursor |
-| Alt-Shift-O | pick a symbol of the loaded files |
+| Alt-Shift-D | show the signature of the name (or call) at the cursor |
 
 **Changes since the last git commit**
 
 | Key | Action |
 |---|---|
-| Alt-Shift-] | go to the next change since the last commit |
-| Alt-Shift-[ | go to the previous change since the last commit |
-| Alt-Shift-G | show or hide the change at the cursor beside the buffer |
-| Alt-Shift-Z | restore the change at the cursor to the last commit |
-| Alt-U | pick from files changed since the last commit |
+| Alt-Shift-] | go to the next change |
+| Alt-Shift-[ | go to the previous change |
+| Alt-G | show or hide the change at the cursor beside the buffer |
+| Alt-Z | revert the change at the cursor to the last commit |
+| Ctrl-G | pick a file changed since the last commit |
 
 **Display and settings**
 
 | Key | Action |
 |---|---|
-| Alt-T | toggle expand tab to spaces |
+| Alt-T | toggle indenting with spaces or tabs |
 | Alt-W | toggle soft wrap |
 | Alt-L | toggle line numbers |
-| Alt-. | toggle whitespace display |
-| Alt-G | toggle the vertical ruler |
-| Ctrl-G | set the vertical ruler column (and show the ruler) |
-| Alt-H | show this list of shortcuts |
-| Alt-Shift-H | practise the shortcuts (esc to stop) |
+| Alt-. | toggle showing whitespace |
+| Alt-\ | toggle the vertical ruler |
+| Alt-Shift-\ | set the ruler column (and show the ruler) |
+| Ctrl-H | show this list of shortcuts |
+| Alt-H | practise the shortcuts (esc to stop) |
 
 <!-- bindings end -->
 
 ## Terminals
 
-The editor needs the kitty keyboard protocol, so that keys like Ctrl-M, Ctrl-H, Ctrl-J and Ctrl-Shift-S reach it as themselves. At startup it asks the terminal whether the protocol is there and exits with an error if it is not (as in the Linux console, or inside tmux). It works in foot, alacritty and ghostty with their default configurations, except for the keys below.
+The editor needs the kitty keyboard protocol, so that keys like Ctrl-M, Ctrl-H, Ctrl-I, Ctrl-J, Ctrl-[ and Ctrl-Shift-S reach it as themselves. At startup it asks the terminal whether the protocol is there and exits with an error if it is not (as in the Linux console, or inside tmux). It works in foot, alacritty and ghostty with their default configurations, except for the keys below.
 
 As mentioned above, project search is **Alt-Shift-F** rather than Ctrl-Shift-F, because alacritty and ghostty use Ctrl-Shift-F for their own search and never pass it on. Alt-Shift-F pairs with Alt-F, which reopens the results.
 
 ### Ghostty
 
-Ghostty's default key bindings take Shift-Home, Shift-End, Shift-PgUp, Shift-PgDn (scrolling) and Ctrl-Tab (next tab), so the editor never sees them. Foot and alacritty pass them through. To use the editor in ghostty, add this to `~/.config/ghostty/config.ghostty`:
+Ghostty's default key bindings take Shift-Home, Shift-End, Shift-PgUp, Shift-PgDn (scrolling), Ctrl-Tab (next tab), Ctrl-Shift-T (new tab) and Ctrl-Shift-E (new split), so the editor never sees them: selection extension to the line start, line end and by page, switching to the buffer used before, trimming every line and adding a cursor at every occurrence. Foot and alacritty pass them through. To use the editor in ghostty, add this to `~/.config/ghostty/config.ghostty`:
 
 ```
 keybind = shift+home=unbind
@@ -282,9 +283,11 @@ keybind = shift+end=unbind
 keybind = shift+page_up=unbind
 keybind = shift+page_down=unbind
 keybind = ctrl+tab=unbind
+keybind = ctrl+shift+t=unbind
+keybind = ctrl+shift+e=unbind
 ```
 
-If changing the ghostty config is not an option, rebind them in `src/keymap.c` instead. Suggested free keys: Alt-Left, Alt-Right, Alt-Up and Alt-Down for the four selection keys, and Ctrl-Space for Ctrl-Tab. Ghostty also binds Ctrl-PgUp, Ctrl-PgDn, Ctrl-Shift-Left, Ctrl-Shift-Right and the Ctrl-Alt arrows to its tabs and splits. They are not unbound above because ghostty tabs and splits are not used; if ghostty takes one of them, unbind it the same way.
+If changing the ghostty config is not an option, rebind them in `src/keymap.c` instead. Suggested free keys: Alt-A, Alt-B, Alt-U and Alt-V for the four selection keys, Ctrl-Space for Ctrl-Tab, Alt-K for Ctrl-Shift-T and Alt-Y for Ctrl-Shift-E. Ctrl-Shift-Up and Ctrl-Shift-Down do reach the editor in ghostty. Ghostty also binds Ctrl-PgUp, Ctrl-PgDn, Ctrl-Shift-Left, Ctrl-Shift-Right and the Ctrl-Alt arrows to its tabs and splits. They are not unbound above because ghostty tabs and splits are not used; if ghostty takes one of them, unbind it the same way.
 
 ## Adding a language
 
@@ -296,7 +299,7 @@ languages/go/
   parser.so        # the tree-sitter grammar, for highlighting and symbols
   highlights.scm   # required with parser.so
   injections.scm   # optional: languages embedded in this one
-  tags.scm         # optional: symbols (Alt-O, Alt-], Alt-[, Alt-D, Alt-K, Alt-Shift-O)
+  tags.scm         # optional: symbols (Alt-S, Ctrl-], Ctrl-[, Alt-D, Alt-Shift-D, Alt-Shift-S)
 ```
 
 `language` holds one `key = value` per line. A line starting with `#` is a comment (there are no comments after a value, since `#` can be a comment marker):

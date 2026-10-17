@@ -410,22 +410,12 @@ DedentLine([[maybe_unused]] const LineTask *task, const StrBuf *line)
   return (LineEdit){.removed = removed < leading ? removed : leading};
 }
 
-static bool
-AnySelection(const CursorSet *set)
-{
-  for (u32 index = 0; index < set->count; index++) {
-    if (CursorHasSelection(&set->cursors[index])) return true;
-  }
-
-  return false;
-}
-
 void
 EditIndent(const EditContext *edit)
 {
   CursorSet *set = &edit->view->cursors;
 
-  if (AnySelection(set)) {
+  if (CursorSetHasSelection(set)) {
     EditLines(edit, IndentLine, nullptr);
     return;
   }
@@ -927,18 +917,6 @@ MergeSort(const Sorting *sorting, u64 *items, u64 *scratch, u64 count)
   memcpy(items, scratch, out * sizeof(u64));
 }
 
-// the lines a sort works on: those the selection touches, or every line but the empty
-// one after a final line break.
-static LineBlock
-SortBlock(const Buffer *buffer, const Cursor *cursor)
-{
-  if (CursorHasSelection(cursor)) return TouchedLines(cursor);
-
-  u64 last = BufferLineCount(buffer) - 1;
-  if (last > 0 && BufferLine(buffer, last)->length == 0) last--;
-  return (LineBlock){0, last};
-}
-
 // drops each line equal to the one kept before it and returns the new count.
 // the case folded orders compare without the byte order tie break, so lines differing
 // only in case are equal.
@@ -970,7 +948,7 @@ EditSortLines(const EditContext *edit, SortOptions options)
   Buffer *buffer = view->buffer;
   CursorSetCollapse(&view->cursors);
   Cursor *cursor = CursorSetPrimary(&view->cursors);
-  LineBlock block = SortBlock(buffer, cursor);
+  LineBlock block = TouchedLines(cursor);
   u64 count = block.last - block.first + 1;
 
   // widths are measured once here, not in every comparison.
@@ -1074,7 +1052,7 @@ EditCopy(View *view, StrBuf *text)
 {
   CursorSet *set = &view->cursors;
   CursorSetMerge(set);
-  bool lineWise = !AnySelection(set);
+  bool lineWise = !CursorSetHasSelection(set);
   u64 previousLine = UINT64_MAX;
 
   for (u32 index = 0; index < set->count; index++) {
@@ -1155,6 +1133,26 @@ EditTrimTrailingWhitespace(const EditContext *edit)
   }
 
   End(edit);
+  return trimmed;
+}
+
+// the context counts the lines trimmed.
+static LineEdit
+TrimLine(const LineTask *task, const StrBuf *line)
+{
+  u64 end = line->length;
+  while (end > 0 && IsBlank(line->data[end - 1])) end--;
+  if (end == line->length) return (LineEdit){};
+
+  (*(u64 *)task->context)++;
+  return (LineEdit){.at = end, .removed = line->length - end};
+}
+
+u64
+EditTrimLines(const EditContext *edit)
+{
+  u64 trimmed = 0;
+  EditLines(edit, TrimLine, &trimmed);
   return trimmed;
 }
 
@@ -1249,17 +1247,14 @@ EditChangeCase(const EditContext *edit, bool upper)
     }
   }
 
-  bool selections = AnySelection(set);
-  u64 lastLine = BufferLineCount(buffer) - 1;
-  Range whole = {{0, 0}, {lastLine, BufferLine(buffer, lastLine)->length}};
   StrBuf output = {};
   u64 changed = 0;
   u64 counted = UINT64_MAX;
   Begin(edit, UndoKindOther);
 
   // from the last selection and line back, so the offsets still to convert stay put.
-  for (u32 index = selections ? set->count : 1; index-- > 0;) {
-    Range range = selections ? CursorRange(&set->cursors[index]) : whole;
+  for (u32 index = set->count; index-- > 0;) {
+    Range range = CursorRange(&set->cursors[index]);
 
     for (u64 line = range.end.line + 1; line-- > range.start.line;) {
       const StrBuf *text = BufferLine(buffer, line);

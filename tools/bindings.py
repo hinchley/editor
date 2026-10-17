@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # writes the key binding tables in README.md from the binding table in src/keymap.c, so the
-# readme lists exactly what alt+h shows.
+# readme lists exactly what ctrl+h shows.
 #
 # usage: tools/bindings.py
 #
@@ -35,7 +35,7 @@ KEY_NAMES = {
     "KeySpace": "Space",
 }
 
-# modifiers in the order alt+h names them.
+# modifiers in the order ctrl+h names them.
 MODIFIERS = [("control", "Ctrl"), ("alt", "Alt"), ("shift", "Shift")]
 
 BINDING = re.compile(
@@ -49,7 +49,7 @@ def key_name(key, modifiers):
     parts = [label for name, label in MODIFIERS if re.search(r"\b" + name + r"\b", modifiers)]
 
     if key.startswith("'"):
-        character = key[1:-1]
+        character = key[1:-1].replace("\\\\", "\\")
         parts.append(character.upper() if character.isalpha() else character)
     else:
         parts.append(KEY_NAMES[key])

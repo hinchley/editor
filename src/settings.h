@@ -62,7 +62,7 @@ static constexpr i64 maxParseTime = 1000;
 // a symbol's signature is cut to this many bytes.
 static constexpr u64 maxSignatureLength = 512;
 
-// how many places jump history (alt+left, alt+right) keeps.
+// how many places jump history (alt+[, alt+]) keeps.
 static constexpr u32 jumpHistorySize = 32;
 
 // a split view needs at least this many columns.
