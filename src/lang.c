@@ -385,8 +385,8 @@ ListPackages(const char *folder, u32 *count)
   DIR *directory = opendir(folder);
   if (!directory) return nullptr;
 
-  char **names = nullptr;
   u32 capacity = 0;
+  char **names = nullptr;
   struct dirent *entry;
 
   while ((entry = readdir(directory))) {
@@ -477,9 +477,10 @@ LangLoadAll(StrBuf *message)
   StrBuf folder = {};
   FileConfigPath("languages", &folder);
 
-  Reading reading = {};
   u32 count;
   char **names = ListPackages(folder.data, &count);
+
+  Reading reading = {};
 
   for (u32 index = 0; index < count; index++) {
     ReadPackage(&reading, folder.data, names[index]);

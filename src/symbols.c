@@ -15,7 +15,7 @@
 // a symbol of the current buffer, with its name and kind in names.
 typedef struct Symbol {
   Position start;
-  Position name;
+  Range name;
   u64 text;
   u64 length;
   const char *kind;
@@ -31,8 +31,9 @@ typedef struct SymbolList {
 static Workspace *workspace;
 static StrBuf *message;
 
-// the symbols the open picker lists.
+// the symbols the open picker lists, and the serial of the entry they are in.
 static SymbolList listed;
+static u64 listedSerial;
 
 void
 SymbolsInit(Workspace *newWorkspace, StrBuf *newMessage)
@@ -61,7 +62,7 @@ Add(void *context, const HighlightSymbol *symbol)
 
   list->symbols[list->count++] = (Symbol){
     .start = symbol->start,
-    .name = symbol->name.start,
+    .name = symbol->name,
     .text = list->names.length,
     .length = symbol->nameLength,
     .kind = symbol->kind
@@ -108,8 +109,23 @@ Go(Position position)
 static void
 Picked([[maybe_unused]] void *context, bool picked, u64 id)
 {
-  if (picked) Go(listed.symbols[id].name);
+  if (picked) Go(listed.symbols[id].name.start);
   FreeList(&listed);
+}
+
+// previews the line of a symbol's name in the entry with serial, picking the name out.
+static void
+DrawName(u64 serial, Range name, i32 column, i32 width, i32 height)
+{
+  u64 end = name.end.line == name.start.line ? name.end.byte : UINT64_MAX;
+  Position at = name.start;
+  PreviewDraw(serial, at.line, at.byte, end, nullptr, column, width, height);
+}
+
+static void
+DrawListed([[maybe_unused]] void *context, u64 id, i32 column, i32 width, i32 height)
+{
+  DrawName(listedSerial, listed.symbols[id].name, column, width, height);
 }
 
 // the listed symbol named by the word at a position, preferring a definition to a
@@ -170,7 +186,7 @@ SymbolsPickFile(void)
     while (item.length < width + 2) StrBufAppendByte(&item, ' ');
     if (item.length > width + 2) StrBufAppendString(&item, "  ");
     StrBufAppendString(&item, symbol->kind);
-    snprintf(note, sizeof note, "%lu", symbol->name.line + 1);
+    snprintf(note, sizeof note, "%lu", symbol->name.start.line + 1);
     PickerAdd(item.data, item.length, note, index);
   }
 
@@ -179,7 +195,9 @@ SymbolsPickFile(void)
   StrBuf name = {};
   WorkspaceName(workspace, workspace->current, &name);
   StrBufAppendFormat(&title, "%lu symbols in %s", listed.count, name.data);
+  listedSerial = workspace->entries[workspace->current].serial;
   PickerOpen(title.data, "symbol: ", Picked, nullptr);
+  PickerShowPreview(DrawListed, nullptr);
   PickerSelect(selected);
   StrBufFree(&title);
   StrBufFree(&name);
@@ -788,15 +806,10 @@ GoToSymbol(const IndexSymbol *symbol)
   MoveSelect(view, at, at);
 }
 
-// the line of a symbol's name, picked out by the preview.
 static void
 DrawSymbol([[maybe_unused]] void *context, u64 id, i32 column, i32 width, i32 height)
 {
-  const IndexSymbol *symbol = &symbols[id];
-  Range name = symbol->name;
-  u64 end = name.end.line == name.start.line ? name.end.byte : UINT64_MAX;
-  Position at = name.start;
-  PreviewDraw(symbol->serial, at.line, at.byte, end, nullptr, column, width, height);
+  DrawName(symbols[id].serial, symbols[id].name, column, width, height);
 }
 
 static void

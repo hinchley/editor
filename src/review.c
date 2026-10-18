@@ -27,17 +27,20 @@ static Workspace *workspace;
 static StrBuf *message;
 static bool panelOpen;
 
-// a file found to differ from the last commit: its entry, the line of its first change
-// and the lines it changes.
+// a change in a file that differs from the last commit: its entry, the line it is marked
+// on, which of the file's changes it is, and the lines it changes.
 typedef struct Changed {
   u64 serial;
-  u64 firstLine;
+  u64 line;
+  u64 hunk;
   ChangeCounts counts;
 } Changed;
 
+// the changes found, grouped by file in scan order, and how many files they are in.
 static Changed *changed;
 static u64 changedCount;
 static u64 changedCapacity;
+static u64 changedFiles;
 static u64 scannedCount;
 
 void
@@ -199,18 +202,47 @@ ReviewTogglePanel(i32 width)
   if (panelOpen) ChangesRefresh(WorkspaceDocument(workspace)->changes);
 }
 
-// draws text from column, cut at width, in style.
+// lays out a line of a diff in rows width columns wide: wrapped when soft wrap is on, using
+// the whole width since no cursor needs the last column, or else one row cut at the edge.
 static void
-DrawText(i32 row, i32 column, i32 width, const char *text, u64 length, Style style)
+WrapText(const char *text, u64 length, i32 width, LayoutRows *rows)
 {
+  LayoutWrap(text, length, workspace->options->softWrap ? width + 1 : 0, rows);
+}
+
+// draws the first count rows of text, laid out in rows, from row and column, cut at width,
+// in style.
+static void
+DrawText(
+  i32 row,
+  i32 count,
+  i32 column,
+  i32 width,
+  const char *text,
+  u64 length,
+  const LayoutRows *rows,
+  Style style
+) {
   LayoutIterator iterator = LayoutBegin(text, length);
   LayoutCluster cluster;
   Style control = ThemeStyle(ThemeControl);
   control.background = style.background;
+  i32 index = 0;
+  LayoutRow layoutRow = LayoutGetRow(rows, 0, length);
+  u64 left = 0;
 
   while (LayoutNext(&iterator, &cluster)) {
-    i64 x = (i64)cluster.column;
-    if (x + cluster.width > width) break;
+    // each wrapped row starts at its own first column.
+    while (!layoutRow.last && cluster.start >= layoutRow.end && index < count) {
+      layoutRow = LayoutGetRow(rows, (u64)++index, length);
+      left = cluster.column;
+    }
+
+    if (index == count) break;
+
+    i64 x = (i64)(cluster.column - left);
+    if (x + cluster.width > width && layoutRow.last) break;
+    if (x + cluster.width > width) continue;
 
     i32 at = column + (i32)x;
     char symbol[2] = {'^', (char)(text[cluster.start] ^ 0x40)};
@@ -218,16 +250,16 @@ DrawText(i32 row, i32 column, i32 width, const char *text, u64 length, Style sty
     switch (cluster.kind) {
     case LayoutKindText:
       u64 size = cluster.end - cluster.start;
-      ScreenPutCluster(row, at, text + cluster.start, size, cluster.width, style);
+      ScreenPutCluster(row + index, at, text + cluster.start, size, cluster.width, style);
       break;
     case LayoutKindSpace:
     case LayoutKindTab:
       break;
     case LayoutKindControl:
-      ScreenPutText(row, at, symbol, 2, control);
+      ScreenPutText(row + index, at, symbol, 2, control);
       break;
     case LayoutKindInvalid:
-      ScreenPutCluster(row, at, invalidSymbol, strlen(invalidSymbol), 1, control);
+      ScreenPutCluster(row + index, at, invalidSymbol, strlen(invalidSymbol), 1, control);
       break;
     }
   }
@@ -283,41 +315,81 @@ RowMark(const DiffHunk *hunk, PanelRow row)
   return row.line - hunk->newStart < inPlace ? ThemeChangeModified : ThemeChangeAdded;
 }
 
-// draws a row of a diff on screen row from column, width wide: a mark in the first cell
-// (for a row of hunk), a sign, the line number in digits columns, a space and the text.
+// the text of a row of a diff, from the base for an old line.
 static void
+RowText(const Changes *changes, PanelRow panelRow, const char **text, u64 *length)
+{
+  if (panelRow.kind == RowOld) ChangesBaseLine(changes, panelRow.line, text, length);
+  else ChangesLine(changes, panelRow.line, text, length);
+}
+
+// the columns left for the text of a row width wide, after the mark, the sign, the line
+// number in digits columns and a space.
+static i32
+TextWidth(i32 width, i32 digits)
+{
+  return width - 1 - 2 - digits - 1;
+}
+
+// the screen rows a row of a diff takes when width wide (one, unless soft wrap is on).
+static u64
+RowHeight(const Changes *changes, PanelRow panelRow, i32 width, i32 digits)
+{
+  i32 textWidth = TextWidth(width, digits);
+  if (!workspace->options->softWrap || textWidth <= 0) return 1;
+
+  const char *text;
+  u64 length;
+  RowText(changes, panelRow, &text, &length);
+  LayoutRows rows = {};
+  WrapText(text, length, textWidth, &rows);
+  u64 count = rows.count;
+  LayoutRowsFree(&rows);
+  return count;
+}
+
+// draws a row of a diff from screen row (and above bottom) from column, width wide: a
+// mark in the first cell (for a row of hunk), a sign, the line number in digits columns, a
+// space and the text, wrapped when soft wrap is on.
+// returns the screen rows it took.
+static i32
 DrawRow(
   const Changes *changes,
   const DiffHunk *hunk,
   PanelRow panelRow,
   i32 row,
+  i32 bottom,
   i32 column,
   i32 width,
   i32 digits
 )
 {
-  i32 textColumn = column + 1 + 2 + digits + 1;
-  i32 textWidth = column + width - textColumn;
-  if (textWidth <= 0) return;
+  i32 textColumn = column + width - TextWidth(width, digits);
+  i32 textWidth = TextWidth(width, digits);
+  if (textWidth <= 0 || row >= bottom) return 1;
 
   Style style = styleDefault;
   const char *sign = " ";
   const char *text;
   u64 length;
+  RowText(changes, panelRow, &text, &length);
 
   if (panelRow.kind == RowOld) {
     style = ThemeStyle(ThemeDiffOld);
     sign = "-";
-    ChangesBaseLine(changes, panelRow.line, &text, &length);
-  } else {
-    if (panelRow.kind == RowNew) style = ThemeStyle(ThemeDiffNew);
-    if (panelRow.kind == RowNew) sign = "+";
-    ChangesLine(changes, panelRow.line, &text, &length);
+  } else if (panelRow.kind == RowNew) {
+    style = ThemeStyle(ThemeDiffNew);
+    sign = "+";
   }
 
-  if (panelRow.kind != RowContext) {
-    ScreenPutString(row, column, markSymbol, ThemeStyle(RowMark(hunk, panelRow)));
-    ScreenFill(row, column + 1, width - 1, style);
+  LayoutRows rows = {};
+  WrapText(text, length, textWidth, &rows);
+  i32 count = rows.count < (u64)(bottom - row) ? (i32)rows.count : bottom - row;
+
+  // the mark and background run down every row of a wrapped line.
+  for (i32 at = row; at < row + count && panelRow.kind != RowContext; at++) {
+    ScreenPutString(at, column, markSymbol, ThemeStyle(RowMark(hunk, panelRow)));
+    ScreenFill(at, column + 1, width - 1, style);
   }
 
   StrBuf gutter = {};
@@ -328,7 +400,9 @@ DrawRow(
   ScreenPutText(row, column + 1, gutter.data, gutter.length, number);
   StrBufFree(&gutter);
 
-  DrawText(row, textColumn, textWidth, text, length, style);
+  DrawText(row, count, textColumn, textWidth, text, length, &rows, style);
+  LayoutRowsFree(&rows);
+  return count;
 }
 
 // the columns line numbers up to highest take.
@@ -411,46 +485,63 @@ ReviewDrawPanel(i32 column, i32 width, i32 height)
   Changes *changes = document->changes;
   u64 rowCount = PanelRows(changes, hunk, rows);
 
-  // the rows below the header scroll to keep the cursor's line in sight.
-  u64 shown = height > 1 ? (u64)height - 1 : 0;
-  u64 first = 0;
-  u64 cursorRow = 0;
-  for (u64 at = 0; at < rowCount; at++) {
-    if (rows[at].kind != RowOld && rows[at].line == line) cursorRow = at;
-  }
-  if (rowCount > shown && cursorRow + contextLines >= shown) {
-    first = cursorRow + contextLines + 1 - shown;
-    if (first > rowCount - shown) first = rowCount - shown;
-  }
-
   u64 highest = hunk->oldStart + hunk->oldCount;
   if (hunk->newStart + hunk->newCount + contextLines > highest) {
     highest = hunk->newStart + hunk->newCount + contextLines;
   }
   i32 digits = DigitsOf(highest);
 
-  for (u64 at = first; at < rowCount && at - first < shown; at++) {
-    DrawRow(changes, hunk, rows[at], 1 + (i32)(at - first), column, width, digits);
+  // the rows below the header scroll to keep the cursor's line in sight, with the context
+  // after it: the first row shown is the earliest from which those rows fit.
+  u64 shown = height > 1 ? (u64)height - 1 : 0;
+  u64 cursorRow = 0;
+  for (u64 at = 0; at < rowCount; at++) {
+    if (rows[at].kind != RowOld && rows[at].line == line) cursorRow = at;
+  }
+
+  u64 last = cursorRow + contextLines < rowCount ? cursorRow + contextLines : rowCount - 1;
+  u64 first = last + 1;
+  u64 used = 0;
+
+  while (first > 0) {
+    u64 rowHeight = RowHeight(changes, rows[first - 1], width, digits);
+    if (used + rowHeight > shown) break;
+    used += rowHeight;
+    first--;
+  }
+
+  if (first > cursorRow) first = cursorRow;
+
+  for (u64 at = first, row = 1; at < rowCount && row < (u64)height; at++) {
+    row += (u64)DrawRow(changes, hunk, rows[at], (i32)row, height, column, width, digits);
   }
 
   free(rows);
 }
 
-// the changed files picker.
+// the changes picker.
 
+// adds the changes of a file: of its document when it is open (so lines past the end are
+// marked on the last), or else of its text on disk.
 static void
-AddChanged(u64 serial, u64 firstLine, const DiffHunk *hunks, u64 count)
+AddChanged(u64 serial, const Document *document, const DiffHunk *hunks, u64 count)
 {
   if (!count) return;
 
-  if (changedCount == changedCapacity) {
-    changedCapacity = changedCapacity ? changedCapacity * 2 : 64;
-    changed = MemoryResize(changed, changedCapacity, sizeof(Changed));
-  }
+  changedFiles++;
 
-  Changed *file = &changed[changedCount++];
-  *file = (Changed){.serial = serial, .firstLine = firstLine};
-  for (u64 index = 0; index < count; index++) ChangesCountHunk(&hunks[index], &file->counts);
+  for (u64 index = 0; index < count; index++) {
+    if (changedCount == changedCapacity) {
+      changedCapacity = changedCapacity ? changedCapacity * 2 : 64;
+      changed = MemoryResize(changed, changedCapacity, sizeof(Changed));
+    }
+
+    const DiffHunk *hunk = &hunks[index];
+    u64 line = document ? HunkLine(document, hunk) : hunk->newStart;
+    Changed *change = &changed[changedCount++];
+    *change = (Changed){.serial = serial, .line = line, .hunk = index};
+    ChangesCountHunk(hunk, &change->counts);
+  }
 }
 
 static bool
@@ -464,14 +555,14 @@ VisitEntry([[maybe_unused]] void *context, const ScanItem *item)
     ChangesRefresh(changes);
     u64 count;
     const DiffHunk *hunks = ChangesHunks(changes, &count);
-    if (count) AddChanged(serial, HunkLine(item->document, &hunks[0]), hunks, count);
+    AddChanged(serial, item->document, hunks, count);
     return true;
   }
 
   DiffHunks hunks = {};
   const char *path = WorkspacePath(workspace, item->index)->data;
   ChangesOfText(path, item->text, item->length, &hunks);
-  if (hunks.count) AddChanged(serial, hunks.hunks[0].newStart, hunks.hunks, hunks.count);
+  AddChanged(serial, nullptr, hunks.hunks, hunks.count);
   DiffFree(&hunks);
   return true;
 }
@@ -480,7 +571,7 @@ static void
 Progress([[maybe_unused]] void *context, u64 done, u64 count, StrBuf *text)
 {
   StrBufAppendFormat(text, "comparing %lu of %lu files with the last commit", done, count);
-  StrBufAppendFormat(text, ": %lu changed (escape stops)", changedCount);
+  StrBufAppendFormat(text, ": %lu changed (escape stops)", changedFiles);
 }
 
 static void
@@ -494,27 +585,29 @@ DescribeChanged(bool stopped, StrBuf *text)
     total.removed += changed[index].counts.removed;
   }
 
-  const char *plural = changedCount == 1 ? "" : "s";
-  StrBufAppendFormat(text, "%lu file%s changed since the last commit: ", changedCount, plural);
+  const char *changes = changedCount == 1 ? "" : "s";
+  const char *files = changedFiles == 1 ? "" : "s";
+  const char *format = "%lu change%s in %lu file%s since the last commit: ";
+  StrBufAppendFormat(text, format, changedCount, changes, changedFiles, files);
   DescribeCounts(&total, text);
   if (stopped) StrBufAppendFormat(text, " (stopped after %lu files)", scannedCount);
 }
 
-// the picker's preview: the whole of the selected file, with the base's lines of each change
-// before its new ones, scrolled on its own.
+// the picker's preview: the whole of the selected change's file, with the base's lines of
+// each change before its new ones, placed at that change and scrolled on its own.
 static constexpr u64 noItem = UINT64_MAX;
 
-// the item previewed, the changes read for it when it is not open, and whether they were.
-static u64 previewId = noItem;
+// the entry whose changes are read, the changes read for it when it is not open, and
+// whether they were.
+static u64 previewSerial = noItem;
 static Changes *previewOwned;
 static bool previewRead;
 
-// the first row shown (noItem until placed at the first change), the rows shown at the
-// last draw, the change a step went to (or noItem) and the change at the top.
+// the item previewed, the first row shown (noItem until placed at its change) and the
+// rows shown at the last draw.
+static u64 previewId = noItem;
 static u64 previewTop;
 static u64 previewHeight;
-static u64 previewStep;
-static u64 previewCurrent;
 
 static void
 ForgetPreview(void)
@@ -522,22 +615,28 @@ ForgetPreview(void)
   ChangesFree(previewOwned);
   previewOwned = nullptr;
   previewRead = false;
+  previewSerial = noItem;
   previewId = noItem;
 }
 
-// the changes of the item with id: its document's, or read from its file.
+// the changes of the file of the item with id: its document's, or read from its file,
+// once for all the items of that file.
 static Changes *
 PreviewChanges(u64 id)
 {
-  if (id != previewId) {
+  u64 serial = changed[id].serial;
+
+  if (serial != previewSerial) {
     ForgetPreview();
-    previewId = id;
-    previewTop = noItem;
-    previewStep = noItem;
-    previewCurrent = 0;
+    previewSerial = serial;
   }
 
-  u64 index = WorkspaceEntryOf(workspace, changed[id].serial);
+  if (id != previewId) {
+    previewId = id;
+    previewTop = noItem;
+  }
+
+  u64 index = WorkspaceEntryOf(workspace, serial);
   if (index == workspaceNone) return nullptr;
 
   Document *document = workspace->entries[index].document;
@@ -572,13 +671,6 @@ HunkRows(const DiffHunk *hunks, u64 count)
   }
 
   return rows;
-}
-
-// the row a step to a hunk scrolls to, showing a few lines before it.
-static u64
-HunkTop(const u64 *hunkRows, u64 index)
-{
-  return hunkRows[index] > contextLines ? hunkRows[index] - contextLines : 0;
 }
 
 // what row of the whole diff shows, setting hunk to the hunk it belongs to (or nullptr).
@@ -617,23 +709,61 @@ RowAt(const DiffHunk *hunks, const u64 *hunkRows, u64 count, u64 row, const Diff
   return (PanelRow){*hunk ? RowNew : RowContext, line};
 }
 
+// the last row the preview may scroll to: the earliest from which the rows to the end
+// fit in it.
+static u64
+LastTop(
+  const Changes *changes,
+  const DiffHunk *hunks,
+  const u64 *hunkRows,
+  u64 count,
+  u64 rowCount,
+  i32 width,
+  i32 digits
+) {
+  u64 top = rowCount;
+  u64 used = 0;
+
+  while (top > 0) {
+    const DiffHunk *hunk;
+    PanelRow panelRow = RowAt(hunks, hunkRows, count, top - 1, &hunk);
+    u64 rowHeight = RowHeight(changes, panelRow, width, digits);
+    if (used + rowHeight > previewHeight) break;
+    used += rowHeight;
+    top--;
+  }
+
+  return top < rowCount ? top : rowCount - 1;
+}
+
 static void
 DrawPreview([[maybe_unused]] void *context, u64 id, i32 column, i32 width, i32 height)
 {
   Changes *changes = PreviewChanges(id);
   u64 count;
   const DiffHunk *hunks = ChangesHunks(changes, &count);
-  u64 shown = height > 1 ? (u64)height - 1 : 0;
-  previewHeight = shown;
+  previewHeight = height > 1 ? (u64)height - 1 : 0;
+
+  StrBuf header = {};
+  WorkspaceName(workspace, WorkspaceEntryOf(workspace, changed[id].serial), &header);
+  StrBufAppendFormat(&header, ":%lu  ", changed[id].line + 1);
+  DescribeCounts(&changed[id].counts, &header);
 
   if (!count) {
-    StrBuf header = {};
-    WorkspaceName(workspace, WorkspaceEntryOf(workspace, changed[id].serial), &header);
     ScreenPutString(0, column + 1, header.data, ThemeStyle(ThemeGutter));
     ScreenPutString(1, column + 1, "no changes to show", ThemeStyle(ThemeGutter));
     StrBufFree(&header);
     return;
   }
+
+  // the file may have changed on disk since it was compared, leaving fewer changes.
+  u64 hunk = changed[id].hunk < count ? changed[id].hunk : count - 1;
+  StrBufAppendFormat(&header, "  change %lu of %lu", hunk + 1, count);
+  StrBuf shortened = {};
+  LayoutShorten(header.data, header.length, width - 2, &shortened);
+  ScreenPutText(0, column + 1, shortened.data, shortened.length, ThemeStyle(ThemeGutter));
+  StrBufFree(&shortened);
+  StrBufFree(&header);
 
   u64 *hunkRows = HunkRows(hunks, count);
   u64 oldTotal = 0;
@@ -642,110 +772,55 @@ DrawPreview([[maybe_unused]] void *context, u64 id, i32 column, i32 width, i32 h
   for (u64 index = 0; index < count; index++) newTotal += hunks[index].newCount;
   u64 lineCount = ChangesLineCount(changes);
   u64 rowCount = lineCount + oldTotal;
-
-  if (previewStep < count) previewTop = HunkTop(hunkRows, previewStep);
-  if (previewTop == noItem) previewTop = HunkTop(hunkRows, 0);
-  u64 lastTop = rowCount > shown ? rowCount - shown : 0;
-  if (previewTop > lastTop) previewTop = lastTop;
-
-  // the change at the top is the first that ends below it, unless a step chose one.
-  previewCurrent = count - 1;
-  for (u64 index = 0; index < count; index++) {
-    const DiffHunk *hunk = &hunks[index];
-
-    if (hunkRows[index] + hunk->oldCount + hunk->newCount > previewTop) {
-      previewCurrent = index;
-      break;
-    }
-  }
-  if (previewStep < count) previewCurrent = previewStep;
-
-  StrBuf header = {};
-  WorkspaceName(workspace, WorkspaceEntryOf(workspace, changed[id].serial), &header);
-  StrBufAppendString(&header, "  ");
-  DescribeCounts(&changed[id].counts, &header);
-  StrBufAppendFormat(&header, "  change %lu of %lu", previewCurrent + 1, count);
-  StrBuf shortened = {};
-  LayoutShorten(header.data, header.length, width - 2, &shortened);
-  ScreenPutText(0, column + 1, shortened.data, shortened.length, ThemeStyle(ThemeGutter));
-  StrBufFree(&shortened);
-  StrBufFree(&header);
-
   u64 baseCount = lineCount - newTotal + oldTotal;
   i32 digits = DigitsOf(lineCount > baseCount ? lineCount : baseCount);
 
-  for (u64 row = previewTop; row < rowCount && row - previewTop < shown; row++) {
-    const DiffHunk *hunk;
-    PanelRow panelRow = RowAt(hunks, hunkRows, count, row, &hunk);
-    DrawRow(changes, hunk, panelRow, 1 + (i32)(row - previewTop), column, width, digits);
+  // the change starts a few lines down, with the lines before it for context.
+  if (previewTop == noItem) {
+    previewTop = hunkRows[hunk] > contextLines ? hunkRows[hunk] - contextLines : 0;
+  }
+
+  u64 lastTop = LastTop(changes, hunks, hunkRows, count, rowCount, width, digits);
+  if (previewTop > lastTop) previewTop = lastTop;
+
+  for (u64 at = previewTop, row = 1; at < rowCount && row < (u64)height; at++) {
+    const DiffHunk *rowHunk;
+    PanelRow panelRow = RowAt(hunks, hunkRows, count, at, &rowHunk);
+    row += (u64)DrawRow(changes, rowHunk, panelRow, (i32)row, height, column, width, digits);
   }
 
   free(hunkRows);
 }
 
-// scrolls the preview by rows, leaving the change it shows to follow the top.
+// scrolls the preview by rows of the diff.
 static void
 ScrollPreview(i64 rows)
 {
   if (previewTop == noItem) return;
 
-  previewStep = noItem;
   i64 top = (i64)previewTop + rows;
   previewTop = top > 0 ? (u64)top : 0;
 }
 
-// scrolls the preview to the next change after the one it shows, or (backward) the one
-// before it.
-static void
-StepPreview(bool backward)
-{
-  if (previewId == noItem) return;
-
-  u64 count;
-  ChangesHunks(PreviewChanges(previewId), &count);
-
-  if (!count) return;
-
-  if (backward && previewCurrent > 0) {
-    previewStep = previewCurrent - 1;
-  } else if (!backward && previewCurrent + 1 < count) {
-    previewStep = previewCurrent + 1;
-  } else {
-    StrBufAppendString(message, backward ? "this is the first change" : "this is the last change");
-  }
-}
-
-// shift with up, down, page up and page down scrolls the preview, and alt+shift+] and
-// alt+shift+[ step through its changes.
+// shift with up, down, page up and page down scrolls the preview.
 static bool
 PreviewKey([[maybe_unused]] void *context, Key key)
 {
   i64 page = previewHeight > 1 ? (i64)previewHeight - 1 : 1;
+  if (key.modifiers != KeyModifierShift) return false;
 
-  if (key.modifiers == KeyModifierShift) {
-    switch (key.code) {
-    case KeyUp: ScrollPreview(-1); return true;
-    case KeyDown: ScrollPreview(1); return true;
-    case KeyPageUp: ScrollPreview(-page); return true;
-    case KeyPageDown: ScrollPreview(page); return true;
-    default: return false;
-    }
+  switch (key.code) {
+  case KeyUp: ScrollPreview(-1); return true;
+  case KeyDown: ScrollPreview(1); return true;
+  case KeyPageUp: ScrollPreview(-page); return true;
+  case KeyPageDown: ScrollPreview(page); return true;
+  default: return false;
   }
-
-  if (key.modifiers == (KeyModifierAlt | KeyModifierShift)) {
-    if (key.code == ']') StepPreview(false);
-    if (key.code == '[') StepPreview(true);
-    return key.code == ']' || key.code == '[';
-  }
-
-  return false;
 }
 
 static void
 Picked([[maybe_unused]] void *context, bool picked, u64 id)
 {
-  // the change the preview showed, when it showed this item.
-  u64 shownChange = id == previewId ? previewCurrent : 0;
   ForgetPreview();
 
   if (!picked) return;
@@ -764,8 +839,8 @@ Picked([[maybe_unused]] void *context, bool picked, u64 id)
   Document *document = WorkspaceDocument(workspace);
   u64 count;
   const DiffHunk *hunks = ChangesHunks(document->changes, &count);
-  if (shownChange >= count) shownChange = 0;
-  u64 line = count ? HunkLine(document, &hunks[shownChange]) : changed[id].firstLine;
+  u64 hunk = changed[id].hunk;
+  u64 line = hunk < count ? HunkLine(document, &hunks[hunk]) : changed[id].line;
   u64 last = BufferLineCount(&document->buffer) - 1;
   Position position = {line <= last ? line : last, 0};
   MoveSelect(document->view, position, position);
@@ -783,16 +858,24 @@ Finish([[maybe_unused]] void *context, ScanResult result)
   }
 
   PickerBegin();
-  StrBuf name = {};
+  StrBuf item = {};
   StrBuf note = {};
+  u64 serial = noItem;
+  u64 index = workspaceNone;
 
   for (u64 at = 0; at < changedCount; at++) {
-    u64 index = WorkspaceEntryOf(workspace, changed[at].serial);
-    StrBufClear(&name);
+    // changes come grouped by file.
+    if (changed[at].serial != serial) {
+      serial = changed[at].serial;
+      index = WorkspaceEntryOf(workspace, serial);
+    }
+
+    StrBufClear(&item);
     StrBufClear(&note);
-    WorkspaceName(workspace, index, &name);
+    WorkspaceName(workspace, index, &item);
+    StrBufAppendFormat(&item, ":%lu", changed[at].line + 1);
     DescribeCounts(&changed[at].counts, &note);
-    PickerAdd(name.data, name.length, note.data, at);
+    PickerAdd(item.data, item.length, note.data, at);
 
     if (WorkspaceModified(workspace, index)) PickerMark("+");
     else if (workspace->entries[index].document) PickerMark("·");
@@ -801,11 +884,11 @@ Finish([[maybe_unused]] void *context, ScanResult result)
   StrBuf title = {};
   DescribeChanged(result.stopped, &title);
   StrBufAppend(message, title.data, title.length);
-  PickerOpen(title.data, "file: ", Picked, nullptr);
+  PickerOpen(title.data, "filter: ", Picked, nullptr);
   PickerShowPreview(DrawPreview, nullptr);
   PickerHandleKeys(PreviewKey, nullptr);
   StrBufFree(&title);
-  StrBufFree(&name);
+  StrBufFree(&item);
   StrBufFree(&note);
 }
 
@@ -813,6 +896,7 @@ void
 ReviewPickChanged(void)
 {
   changedCount = 0;
+  changedFiles = 0;
   scannedCount = 0;
   u64 *queue = MemoryAllocate((workspace->count ? workspace->count : 1) * sizeof(u64));
   u64 queueCount = 0;

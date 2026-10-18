@@ -13,8 +13,9 @@ PreviewInit(Workspace *workspace);
 
 // draws the lines around line of the entry with serial in the area from row 0 and column,
 // of width and height cells: a header naming the entry and the line, then the lines with
-// their numbers, scrolled sideways when needed to show the
-// bytes from start to end of that line, which are picked out.
+// their numbers, wrapped when soft wrap is on, with the bytes from start to end of that
+// line picked out and kept in view (in the middle when wrapped, or else by scrolling
+// sideways).
 // when pattern is not nullptr, its matches are highlighted as well, and the bytes from
 // start to end are picked out only where they match.
 void

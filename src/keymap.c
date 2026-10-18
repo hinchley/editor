@@ -181,7 +181,7 @@ const Binding keymapBindings[] = {
   {{'[', alt | shift}, CommandPreviousChange, "go to the previous change"},
   {{'g', alt}, CommandChangePanel, "show or hide the change at the cursor beside the buffer"},
   {{'z', alt}, CommandRevertChange, "revert the change at the cursor to the last commit"},
-  {{'g', control}, CommandPickChanged, "pick a file changed since the last commit"},
+  {{'g', control}, CommandPickChanged, "pick a change since the last commit"},
 
   // display and settings.
   {{'t', alt}, CommandToggleExpandTab, "toggle indenting with spaces or tabs"},

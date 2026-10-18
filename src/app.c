@@ -775,9 +775,12 @@ HandleKey(Key key)
     return;
   }
 
-  // a picker reads its filter through a prompt, so it gets the keys first.
+  // a picker reads its filter through a prompt, so it gets the keys first, all but soft
+  // wrap, which its preview follows.
   if (PickerActive()) {
-    PickerKey(key);
+    const Binding *binding = KeymapFind(key);
+    if (binding && binding->command == CommandToggleSoftWrap) RunCommand(binding);
+    else PickerKey(key);
     return;
   }
 
@@ -955,10 +958,9 @@ Draw(void)
 }
 
 i32
-AppRun(i32 argumentCount, char **arguments)
+AppRun(i32 argc, char **argv)
 {
   // files are loaded before the terminal changes, so argument errors leave it untouched.
-  // the languages come first, as opening a file picks one.
   LangLoadAll(&message);
   WorkspaceInit(&workspace, &displayOptions);
   SearchInit(&workspace, &message);
@@ -969,7 +971,7 @@ AppRun(i32 argumentCount, char **arguments)
   SymbolsInit(&workspace, &message);
   ReviewInit(&workspace, &message);
   LearnInit(&message);
-  SessionStart(&workspace, &message, arguments + 1, (u64)argumentCount - 1);
+  SessionStart(&workspace, &message, argv + 1, (u64)argc - 1);
 
   TermStart();
   Resize();

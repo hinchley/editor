@@ -107,34 +107,64 @@ LineOf(u64 entry, u64 line, const char **text, u64 *length)
   return true;
 }
 
-// where a preview line is drawn: its text area, the first column shown, the bytes to pick
-// out (or an empty range) and the pattern whose matches show.
+// where a preview line is drawn: the screen row it starts on, the row below the last it
+// may take, its text area, its first visual row shown, the first column shown (when it is
+// not wrapped), the bytes to pick out (or an empty range) and the pattern whose matches
+// show.
 typedef struct PreviewRow {
   i32 row;
+  i32 bottom;
   i32 column;
   i32 width;
+  u64 firstRow;
   u64 left;
   PatternMatch hit;
   const Pattern *pattern;
 } PreviewRow;
 
+// lays out a line in rows width columns wide: wrapped when soft wrap is on, using the
+// whole width since no cursor needs the last column, or else one row.
 static void
-DrawLine(const PreviewRow *place, const char *text, u64 length)
+WrapLine(const char *text, u64 length, i32 width, LayoutRows *rows)
+{
+  LayoutWrap(text, length, workspace->options->softWrap ? width + 1 : 0, rows);
+}
+
+// draws the rows of a line, laid out in rows, from its first row shown, and returns the
+// screen rows it took.
+static i32
+DrawLine(const PreviewRow *place, const char *text, u64 length, const LayoutRows *rows)
 {
   LayoutIterator iterator = LayoutBegin(text, length);
   LayoutCluster cluster;
   PatternMatch match = {};
   bool more = place->pattern != nullptr;
+  u64 index = 0;
+  LayoutRow layoutRow = LayoutGetRow(rows, 0, length);
+  u64 left = place->left;
+  i32 row = place->row - (i32)place->firstRow;
 
   while (LayoutNext(&iterator, &cluster)) {
-    if (cluster.column < place->left) continue;
+    // each wrapped row starts at its own first column.
+    while (!layoutRow.last && cluster.start >= layoutRow.end) {
+      layoutRow = LayoutGetRow(rows, ++index, length);
+      left = cluster.column;
+      row++;
+    }
 
-    i64 x = (i64)(cluster.column - place->left);
-    if (x + cluster.width > place->width) break;
+    if (row >= place->bottom) break;
 
+    // matches are found from the start of the line, so one that starts out of sight still
+    // shows.
     if (more && cluster.start >= match.end) {
       more = PatternFind(place->pattern, text, length, cluster.start, &match);
     }
+
+    if (row < place->row || cluster.column < left) continue;
+
+    i64 x = (i64)(cluster.column - left);
+    if (x + cluster.width > place->width && layoutRow.last) break;
+    if (x + cluster.width > place->width) continue;
 
     bool isHit = cluster.start >= place->hit.start && cluster.start < place->hit.end;
     bool matched = more && cluster.start >= match.start && cluster.start < match.end;
@@ -152,20 +182,23 @@ DrawLine(const PreviewRow *place, const char *text, u64 length)
 
     switch (cluster.kind) {
     case LayoutKindText:
-      ScreenPutCluster(place->row, column, bytes, size, cluster.width, style);
+      ScreenPutCluster(row, column, bytes, size, cluster.width, style);
       break;
     case LayoutKindSpace:
     case LayoutKindTab:
-      ScreenFill(place->row, column, (i32)cluster.width, style);
+      ScreenFill(row, column, (i32)cluster.width, style);
       break;
     case LayoutKindControl:
-      ScreenPutText(place->row, column, symbol, 2, control);
+      ScreenPutText(row, column, symbol, 2, control);
       break;
     case LayoutKindInvalid:
-      ScreenPutCluster(place->row, column, invalidSymbol, strlen(invalidSymbol), 1, control);
+      ScreenPutCluster(row, column, invalidSymbol, strlen(invalidSymbol), 1, control);
       break;
     }
   }
+
+  i32 last = place->row - (i32)place->firstRow + (i32)rows->count;
+  return (last < place->bottom ? last : place->bottom) - place->row;
 }
 
 // names the entry and the line on the row above the lines.
@@ -198,10 +231,8 @@ PreviewDraw(
 ) {
   // the header takes the first row, and the lines the rows below it.
   DrawHeader(serial, line, column, width);
-  height--;
-  if (height < 1) return;
+  if (height < 2) return;
 
-  u64 first = line > (u64)(height - 1) / 2 ? line - (u64)(height - 1) / 2 : 0;
   const char *text;
   u64 length;
 
@@ -210,38 +241,72 @@ PreviewDraw(
     return;
   }
 
+  // the numbers are as wide as the last line that could show needs.
   i32 digits = 1;
-  for (u64 last = first + (u64)height; last >= 10; last /= 10) digits++;
+  for (u64 last = line + (u64)height; last >= 10; last /= 10) digits++;
 
   PreviewRow place = {
+    .bottom = height,
     .column = column + digits + 2,
     .width = width - digits - 2,
     .pattern = pattern
   };
   if (place.width < 1) return;
 
-  // the bytes picked out are kept in view, a quarter of the way in when the line has to
-  // scroll.
+  // the bytes picked out are kept in view: wrapped, by the row that holds them, and
+  // otherwise a quarter of the way in when the line has to scroll.
   u64 hitStart = start <= length ? start : length;
   u64 hitEnd = end <= length ? end : length;
   u64 startColumn = LayoutColumn(text, length, hitStart);
   u64 endColumn = LayoutColumn(text, length, hitEnd);
   u64 quarter = (u64)place.width / 4;
-  bool scrolled = endColumn > (u64)place.width;
+  bool scrolled = !workspace->options->softWrap && endColumn > (u64)place.width;
   if (scrolled) place.left = startColumn > quarter ? startColumn - quarter : 0;
 
-  for (i32 row = 0; row < height; row++) {
-    u64 shown = first + (u64)row;
+  LayoutRows rows = {};
+  WrapLine(text, length, place.width, &rows);
+
+  // that row is put in the middle, going back over the rows of the lines above it.
+  u64 first = line;
+  u64 firstRow = LayoutRowOf(&rows, hitStart);
+  u64 above = (u64)(height - 2) / 2;
+
+  while (above > 0) {
+    if (firstRow >= above) {
+      firstRow -= above;
+      break;
+    }
+
+    above -= firstRow;
+    firstRow = 0;
+    if (!first || !LineOf(serial, first - 1, &text, &length)) break;
+
+    first--;
+    above--;
+    WrapLine(text, length, place.width, &rows);
+    firstRow = rows.count - 1;
+  }
+
+  place.row = 1;
+
+  for (u64 shown = first; place.row < height; shown++) {
     if (!LineOf(serial, shown, &text, &length)) break;
 
-    StrBuf number = {};
-    StrBufAppendFormat(&number, "%*lu", digits, shown + 1);
-    Style gutter = shown == line ? styleDefault : ThemeStyle(ThemeGutter);
-    ScreenPutText(row + 1, column + 1, number.data, number.length, gutter);
-    StrBufFree(&number);
+    // only a line's first row is numbered.
+    if (!firstRow) {
+      StrBuf number = {};
+      StrBufAppendFormat(&number, "%*lu", digits, shown + 1);
+      Style gutter = shown == line ? styleDefault : ThemeStyle(ThemeGutter);
+      ScreenPutText(place.row, column + 1, number.data, number.length, gutter);
+      StrBufFree(&number);
+    }
 
-    place.row = row + 1;
+    WrapLine(text, length, place.width, &rows);
     place.hit = shown == line ? (PatternMatch){hitStart, hitEnd} : (PatternMatch){};
-    DrawLine(&place, text, length);
+    place.firstRow = firstRow;
+    place.row += DrawLine(&place, text, length, &rows);
+    firstRow = 0;
   }
+
+  LayoutRowsFree(&rows);
 }

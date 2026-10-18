@@ -3,8 +3,8 @@
 // review: the commands on changes since the last git commit (see changes.h): stepping
 // through the changes of the current buffer (alt+shift+] and alt+shift+[), a panel beside
 // it showing the change at the cursor (alt+g), restoring that change (alt+z),
-// and a picker of the loaded files that differ from the last commit, with the lines they
-// change (ctrl+g).
+// and a picker of every change in the loaded files, with the lines each one changes
+// (ctrl+g).
 #include "strbuf.h"
 #include "types.h"
 #include "workspace.h"
@@ -32,11 +32,11 @@ bool
 ReviewPanelOpen(void);
 
 // draws the change at the current buffer's primary cursor in the area from row 0 and
-// column, of width and height cells.
+// column, of width and height cells, wrapping its lines when soft wrap is on.
 void
 ReviewDrawPanel(i32 column, i32 width, i32 height);
 
-// lists the loaded files whose text differs from the last commit, reading those that are
+// lists every change in the loaded files since the last commit, reading those that are
 // not open in a scan, and sums up the lines they change in the message bar.
 void
 ReviewPickChanged(void);

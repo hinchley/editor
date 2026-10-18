@@ -1,7 +1,7 @@
 #include "app.h"
 
 int
-main(int argumentCount, char **arguments)
+main(int argc, char **argv)
 {
-  return AppRun(argumentCount, arguments);
+  return AppRun(argc, argv);
 }

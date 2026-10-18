@@ -1,5 +1,7 @@
 #include "search.h"
 
+#include <ctype.h>
+
 #include "move.h"
 #include "prompt.h"
 #include "spell.h"
@@ -99,6 +101,33 @@ SetPattern(const char *source, u64 length)
 {
   PatternOptions options = {.caseSensitive = caseSensitive, .regex = regex};
   PatternSet(&last, source, length, options);
+}
+
+// sets source to a pattern matching the primary selection literally, as a regular expression
+// when regex is on, and returns false when nothing is selected or the selection crosses a
+// line.
+static bool
+SelectedSource(StrBuf *source)
+{
+  Document *document = Current();
+  Range selection = CursorRange(CursorSetPrimary(&document->view->cursors));
+  bool empty = PositionCompare(selection.start, selection.end) == 0;
+  if (empty || selection.start.line != selection.end.line) return false;
+
+  const StrBuf *line = BufferLine(&document->buffer, selection.start.line);
+  const char *text = line->data + selection.start.byte;
+  u64 length = selection.end.byte - selection.start.byte;
+  if (!regex) {
+    PatternEscape(text, length, source);
+    return true;
+  }
+
+  for (u64 at = 0; at < length; at++) {
+    if (ispunct((u8)text[at])) StrBufAppendByte(source, '\\');
+    StrBufAppendByte(source, text[at]);
+  }
+
+  return true;
 }
 
 static void
@@ -240,8 +269,12 @@ SearchFind(void)
   StrBufAppend(&saved.source, TextOf(&last.source), last.source.length);
   saved.options = last.options;
 
+  // a selection is the first thing found, from where it starts.
+  StrBuf selected = {};
+  bool hasSelection = SelectedSource(&selected);
   CursorSetCollapse(&view->cursors);
-  origin = CursorSetPrimary(&view->cursors)->head;
+  Cursor *primary = CursorSetPrimary(&view->cursors);
+  origin = hasSelection ? CursorRange(primary).start : primary->head;
   found = false;
   wrapped = false;
   document->marks = MatchKindSearch;
@@ -250,7 +283,9 @@ SearchFind(void)
   prompt = SearchPromptFind;
   PromptAsk("find: ", "", FindDone, nullptr);
   PromptHandle(FindChanged, nullptr);
-  Label();
+  if (hasSelection) PromptSetText(selected.data, selected.length);
+  else Label();
+  StrBufFree(&selected);
 }
 
 void
@@ -574,11 +609,14 @@ PatternAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
 void
 SearchReplace(void)
 {
+  StrBuf selected = {};
+  SelectedSource(&selected);
   CursorSetCollapse(&Current()->view->cursors);
   prompt = SearchPromptPattern;
-  PromptAsk("replace: ", "", PatternAnswered, nullptr);
+  PromptAsk("replace: ", TextOf(&selected), PatternAnswered, nullptr);
   PromptHandle(Relabel, nullptr);
   Label();
+  StrBufFree(&selected);
 }
 
 static void
@@ -594,11 +632,14 @@ ProjectAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
 void
 SearchProject(SearchProjectDone done)
 {
+  StrBuf selected = {};
+  SelectedSource(&selected);
   projectDone = done;
   prompt = SearchPromptProject;
-  PromptAsk("search files: ", "", ProjectAnswered, nullptr);
+  PromptAsk("search files: ", TextOf(&selected), ProjectAnswered, nullptr);
   PromptHandle(Relabel, nullptr);
   Label();
+  StrBufFree(&selected);
 }
 
 static void
