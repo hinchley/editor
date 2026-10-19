@@ -13,6 +13,7 @@
 #include "file.h"
 #include "highlight.h"
 #include "lang.h"
+#include "lsp.h"
 #include "match.h"
 #include "strbuf.h"
 #include "types.h"
@@ -47,6 +48,10 @@ typedef struct Document {
   // how the text differs from the file in the last commit of its git repository, or
   // nullptr when it is not in one.
   Changes *changes;
+
+  // what the language server knows of the document, or nullptr when its language has no
+  // server or servers are off.
+  LspDocument *lsp;
 } Document;
 
 // opens path, or an unnamed empty document when path is nullptr.
@@ -84,6 +89,11 @@ DocumentRename(Document *document, const char *path, StrBuf *message);
 // returns false, changing nothing, when the file cannot be read.
 bool
 DocumentReload(Document *document, StrBuf *message);
+
+// starts or stops following the document with its language server, after servers were
+// turned on or off.
+void
+DocumentRefreshServer(Document *document);
 
 // makes the view in slot the one the commands use.
 // unless it was already, it first takes the cursors and scroll position of the view used

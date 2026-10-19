@@ -25,11 +25,12 @@ This document describes how the editor is put together.
 
 The editor is one thread around one loop in `app`:
 
-1. **Input.** `TermWait` polls standard input and the resize pipe. `input` decodes the bytes into events: keys, pastes and terminal replies.
+1. **Input.** `TermWait` polls standard input, the resize pipe and the language servers' pipes. `input` decodes the bytes into events: keys, pastes and terminal replies.
 2. **Dispatch.** A running scan (project search or indexing symbols), learning mode, an open picker, the find and replace prompts and any other prompt take a key first, in that order. Otherwise a printable key is typed, and any other key is looked up in `keymap`, whose command `app` runs.
 3. **Commands** live in the modules that own what they change (`move`, `edit`, `search`, `session`, `save`, `project`). They work on the current document's focused view through `workspace`, and change text only through `BufferReplace`.
 4. **Listeners.** Every replace notifies the buffer's listeners: both views of the document (cursors and scroll position), its undo history (records) and its highlighter (tree edits). Nothing else needs telling, so a command does not know who shows the text.
-5. **Frame.** Once no input is waiting, `RenderFrame` scrolls each view to its cursors and draws the views, status bars and message bar into the `screen` grid, laying out only the visible rows and colouring only the visible lines. `ScreenFlush` writes the cells that changed.
+5. **Servers.** `LspPump` sends each language server the edits made since the last pass (one message per document), and handles what the servers sent (see Language servers).
+6. **Frame.** Once no input is waiting, `RenderFrame` scrolls each view to its cursors and draws the views, status bars and message bar into the `screen` grid, laying out only the visible rows and colouring only the visible lines. `ScreenFlush` writes the cells that changed.
 
 Loading runs before the loop: `loader` turns the command line into the list of files, `workspace` holds them as entries, and an entry's file is read into a `document` the first time it is used.
 
@@ -49,7 +50,7 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `buffer` | The text of one buffer as a flat array of lines, and `BufferReplace`, the single edit primitive, which notifies listeners. A revision counts changes, so a copy of anything computed from the text can tell it is stale. |
 | `file` | Reading a file as it is on disk (`FileRead`: size and binary checks), loading it into a buffer (line ending detection) and saving it atomically. Also the path of a file in the config folder (`FileConfigPath`). |
 | `undo` | The undo history of one buffer: groups of recorded changes with the cursors before and after each. |
-| `document` | A buffer with its file, undo history and a view for each side of a split, whether it differs from the file, what it highlights (search matches, unknown words or nothing), and its language and highlighter. |
+| `document` | A buffer with its file, undo history and a view for each side of a split, whether it differs from the file, what it highlights (search matches, unknown words or nothing), its language and highlighter, and what its language server knows of it. |
 | `filter` | Path patterns from `.editor` files: names, folders, anchored paths and `*`. |
 | `loader` | Turns the paths from the command line (or Ctrl-O) into the list of files to load: walking folders, applying `.editor` files, following file links, removing duplicates and enforcing the file limit. |
 | `workspace` | The buffer list: loaded entries, which are open, the current one, and when each was last used. Opens an entry the first time it is used, and removes one. Gives each entry a serial that other modules keep instead of its index. Also the split: whether there are two views, what the other one shows and which side is which. |
@@ -57,7 +58,7 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `save` | Saving one document or every modified one, with the questions on the way (save as, overwrite, changed on disk), and the Alt-X file menu (rename, save a copy, delete). |
 | `picker` | The filterable full window list used for buffers, shortcuts, symbols, project search matches and git changes, with an optional preview beside it. |
 | `complete` | Tab completion of paths in the Ctrl-O and save as prompts, and expanding a leading `~`. |
-| `term` | The terminal session: raw mode, startup handshake, alternate screen, keyboard protocol, bracketed paste, cursor shape, window size, waiting for input or a resize, and restoring the terminal on every exit path. |
+| `term` | The terminal session: raw mode, startup handshake, alternate screen, keyboard protocol, bracketed paste, cursor shape, window size, waiting for input, a resize or other descriptors (the language servers'), and restoring the terminal on every exit path. |
 | `input` | Decodes the bytes read from the terminal into events: keys, pastes, cursor position reports and keyboard protocol reports. Pure parsing, no I/O. |
 | `key` | The `Key` type (code plus modifiers) and key names such as `ctrl+shift+up`. |
 | `keymap` | The binding table: key, command and help text. The single source of truth for dispatch, the Ctrl-H list and learning mode. |
@@ -79,7 +80,7 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `spell` | The word list read from the config folder, finding unknown words in a line, the word at a position, and adding words to the list or removing them. |
 | `match` | The match set a document highlights (a pattern's matches or unknown words, limited to the text spell check looks at): finding the matches on a line, the next or previous one in the buffer, and counting them. |
 | `search` | The search commands: Ctrl-F, Alt-N and Alt-P, Ctrl-W, Ctrl-R, Alt-C and Alt-Shift-C, and the pattern and replacement prompts of project search and replace. |
-| `lang` | The registry of language packages, read once at startup: each one's display name, comment markers, injection ids and flags, and the language of a file name, extension, `#!` line or injection name. |
+| `lang` | The registry of language packages, read once at startup: each one's display name, comment markers, injection ids, flags and language server, and the language of a file name, extension, `#!` line or injection name. |
 | `query` | A compiled tree-sitter query with what the runtime leaves to its user: the text predicates (`#eq?`, `#match?`, `#lua-match?`, `#any-of?` and their `#not-` forms) and the injection settings of `#set!`. Knows nothing about particular languages. |
 | `highlight` | The only place that knows grammars: loading each package's `parser.so` and queries on first use, parsing a buffer (again incrementally after edits), injected languages, and the syntax group of every byte of the lines around the one asked for. Also tells spell check which text it looks at, lists the symbols of a buffer or of text read from a file, and finds the syntax node around a range. The trees stay private: other modules ask these questions as functions. |
 | `scan` | Going through a list of loaded entries a slice at a time between frames, handing each to a visitor with its document or its file's text, with progress and Esc. Project search and the symbol index are its clients. |
@@ -91,6 +92,9 @@ Loading runs before the loop: `loader` turns the command line into the list of f
 | `git` | Reading what a file was in the last commit of the git repository holding it: finding the repository, HEAD through loose and packed refs, loose and packed objects (with deltas), and the walk down the commit's tree. Read-only and for typical repositories only (see Git). |
 | `diff` | The hunks between two texts' lines: the common start and end passed over, then Myers' algorithm, with a limit on the cost of any part. |
 | `changes` | How a document differs from its file in the last commit: the committed text, read again only when HEAD moves, and the hunks, worked out again when asked for after the buffer's revision changed. What the gutter marks and the status bar counts come from. |
+| `json` | Reading a message into a flat array of nodes (each knowing where the value after it starts), finding members and array values, unescaping strings, and writing json strings. |
+| `rpc` | A child process speaking JSON-RPC over its standard input and output: starting it, `Content-Length` framing, a write queue and read buffer that never block, request ids and their reply callbacks, and ending it. Knows nothing about language servers. |
+| `lsp` | The language server client: a server per language and project root, started when a file needs it, initialized, told about each open document and its edits, answered when it asks something, and shut down. Owns no commands. |
 | `review` | The commands on those changes: next and previous change (Alt-Shift-] and Alt-Shift-[), the change panel (Alt-G), restoring the change at the cursor (Alt-Z) and the picker of every change (Ctrl-G). |
 
 ## Terminal
@@ -104,7 +108,7 @@ Startup (`TermStart`):
 
 `TermStop` undoes these in reverse order. The keyboard protocol keeps a separate flag stack per screen, so the flags are popped before leaving the alternate screen. `TermStop` only uses `write` and `tcsetattr`, so it is safe in a signal handler. It runs on normal exit, through `Fatal`, and from handlers for SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGSEGV, SIGBUS, SIGFPE, SIGILL and SIGABRT. Those handlers then re-raise the signal with its default action.
 
-SIGWINCH writes a byte to a self-pipe. The main loop `poll`s standard input and the pipe, so a resize wakes it like input does.
+SIGWINCH writes a byte to a self-pipe. The main loop `poll`s standard input and the pipe, so a resize wakes it like input does. It also polls the descriptors `LspPollFds` gives (each language server's output, and its input while there is something to send), and `TermWait` reports them only when the terminal has nothing, since `LspPump` looks at every server on every pass anyway.
 
 ### Input
 
@@ -418,6 +422,28 @@ Ctrl-G runs a scan of every named, unrefused entry: open documents use their own
 
 Alt-Z takes the hunk at the primary cursor's line from `ChangesHunkAt`, so a removal is restored from the line its mark is on, and replaces the hunk's new lines with its old ones from the committed text, in one undo group. The hunk is copied first, as the edit makes the hunks stale. Lines are replaced with the line break after each, which a hunk that runs to the end of the buffer does not have: there the range starts at the end of the line before the hunk and the old lines go after a line break (or with none, from the start of the buffer, for a hunk that starts at the top), and an addition at the end goes with the line break before it. Both sides end with the same empty line when the file ends with a line break, so this also covers a file that lost or gained its last line break. Only that hunk changes, and the cursor goes to its start.
 
+## Language servers
+
+### Processes
+
+A language's package may name a server (`server`) and the names that mark a project's root (`server-roots`, `.git` by default). `lsp` keeps one server per language and root, at most eight. When a document opens, is saved under a new name or is renamed, `document` asks `lsp` for an `LspDocument`, much as it asks `highlight` for a highlighter: nothing when servers are off, the language has no server, the buffer is unnamed or the buffer is over `maxServerFileSize` (16 MB). Otherwise `lsp` takes the file's real path (its folder's, for a new file), walks up from it to the first folder holding a root name, falling back to the folder the editor started in, and starts the server for that root if none is running.
+
+`rpc` starts the program with `posix_spawnp` in the root, its standard input and output on pipes (close on exec, so a later server does not hold an earlier one's pipe open and hide its exit) and its standard error appended to `<state folder>/editor/<language id>.log`, truncated at each start. Both ends the editor keeps are non-blocking. Messages to send are queued, and `RpcPump` writes what the pipe takes, then reads what has arrived and handles each complete message (a `Content-Length` header, then that many bytes of json). A server that stops reading never blocks the editor, so the two can never deadlock on full pipes. A reply goes to the callback its request was sent with; a message the server starts goes to `lsp`'s handler, which answers requests at once: `workspace/configuration` with a null for each item, progress and capability registrations with null, `workspace/applyEdit` with `applied: false`, anything else with "method not found". `window/showMessage` errors go to the message bar; everything else the server sends is ignored.
+
+The server is sent `initialize`, offering positions in UTF-8 and then UTF-16, and documents opened in the meantime wait. The reply's capabilities say which encoding it chose (UTF-16 when it does not say), whether it wants changes incrementally, whole, or not at all, and whether it wants to hear about saves. Then it is sent `initialized` and a `didOpen` with the text of each waiting document.
+
+When a server's output ends or a write to it fails, or it refuses to initialize, it is ended and marked stopped, and the message bar says so once. Its documents stay attached to it, and the status bar shows `stopped`; nothing is restarted behind the user's back. Alt-V turns servers off (every `LspDocument` is closed and every server shut down) and on again (each open document asks again), and when servers are on but one has stopped it does both, which restarts it. Opening a folder with Ctrl-O shuts every server down, as the new folder may have other roots. Quitting shuts them down after the terminal is restored: each is sent `shutdown`, the editor polls until every one replies or `serverShutdownTime` (500 ms) passes, then sends `exit`, closes the pipe and waits for the process until the same deadline, then sends SIGTERM and, 100 ms later, SIGKILL. When the editor ends any other way (`Fatal`, a signal), the servers see their input close and exit by themselves.
+
+A package is only read from the config folder, so the program a server runs is always one the user installed; a project being edited never names one. How a server understands the project (include paths, language version, warnings) is the server's own configuration, kept in the project for every tool to share: for clangd, `compile_commands.json`, `compile_flags.txt` or `.clangd`.
+
+### Documents
+
+An `LspDocument` listens to its buffer. Each change is turned into an LSP content change (the replaced range and the new text) as it happens and appended to a pending list, and `LspPump`, which runs before every frame, sends each document's pending list as one `didChange` with the next version. So typing sends one message per key, and a paste, replace all or an edit at many cursors one message for the lot. Changes are applied by the server in the order given, and each range is given in the text as it was after the changes before it, which is the text the listener sees. Once more than `maxServerChanges` (64) pile up in one pass, the list is dropped and the whole text is sent instead, as it is when a reload replaces the text without telling listeners (`LspReloaded`) or the server only takes whole texts. Before `didSave`, which the server gets after every save when it asked for it, the pending changes are sent, so it never hears of a save before the text saved. A save under another name, or a rename, closes the document (`didClose`) and opens it again under its new URI.
+
+Positions in UTF-8 are a line and a byte, the same as a `Position`. In UTF-16 a column counts code units, so the listener converts: the start's column from the start of its line in the buffer (unchanged by the edit up to the start), and the old end's column from the replaced text (its last line, or the start's column plus its length when it was on one line). Text is sent as json strings, in which a byte that is not valid UTF-8 becomes U+FFFD, so on a line holding one, byte columns after it differ from the server's by two for each.
+
+URIs are `file://` and the real path with every byte other than letters, digits, `-._~` and `/` percent encoded.
+
 ## Performance
 
 Measured on the release build, timed from the key to the end of the frame:
@@ -428,6 +454,7 @@ Measured on the release build, timed from the key to the end of the frame:
 - 100,000 files load and draw the picker in about 60 ms from the page cache, filtering them takes 2 to 4 ms a key, and searching them all takes about 0.35 seconds.
 - An edit with 1,000 cursors takes 4 to 22 ms, and with 10,000 about 0.2 seconds (see Multiple cursors).
 - Comparing a 15 MB file of 330,000 lines with its committed text takes about 25 ms with one line changed, and about 85 ms with 330 changes spread through it (release build, reading both files included). Reading a file from a pack takes about 3 ms for a source file, and about 40 ms for the 3.9 MB C grammar `parser.c` or the 17 MB SQL one, as inflating is done a bit at a time.
+- With clangd following the buffer, a keystroke costs the same as without it (about 0.35 ms from the key to the end of the frame on a 1,500 line C file, median of 300), since an edit only adds one small message to a queue.
 - Indexing the symbols of `src/` (about 100 files) and resolving all 3,872 calls in it takes 0.5 seconds. The 99,600-file tree of random C keywords (390 MB) indexes in about 170 seconds, about 2 MB/s, because tree-sitter's error recovery is slow on such text; Esc stops it within 0.1 seconds, and once the index is complete a lookup takes under 0.1 seconds.
 
 ## Comments

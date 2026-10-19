@@ -117,6 +117,7 @@ enum Command {
   CommandToggleLineNumbers,
   CommandToggleWhitespace,
   CommandToggleRuler,
+  CommandToggleServers,
   CommandSetRulerColumn,
   CommandSave,
   CommandSaveAll,

@@ -18,6 +18,7 @@ enum ListKind {
   ListNames,
   ListInterpreters,
   ListInjections,
+  ListRoots,
   ListKindCount
 };
 
@@ -28,6 +29,7 @@ typedef struct Draft {
   u64 symbol;
   u64 commentStart;
   u64 commentEnd;
+  u64 server;
   u64 lists[ListKindCount];
   bool prose;
   bool freshParse;
@@ -70,6 +72,8 @@ static const Directive directives[] = {
   {"symbol", DirectiveWord},
   {"comment", DirectiveWord},
   {"comment-end", DirectiveWord},
+  {"server", DirectiveText},
+  {"server-roots", DirectiveList},
   {"prose", DirectiveFlag},
   {"fresh-parse", DirectiveFlag},
   {"first-pattern-wins", DirectiveFlag}
@@ -166,6 +170,7 @@ Apply(
     if (strcmp(key, "name") == 0) draft->name = text;
     else if (strcmp(key, "symbol") == 0) draft->symbol = text;
     else if (strcmp(key, "comment") == 0) draft->commentStart = text;
+    else if (strcmp(key, "server") == 0) draft->server = text;
     else draft->commentEnd = text;
     return true;
   }
@@ -176,6 +181,7 @@ Apply(
     if (strcmp(key, "extensions") == 0) list = ListExtensions;
     else if (strcmp(key, "files") == 0) list = ListNames;
     else if (strcmp(key, "interpreters") == 0) list = ListInterpreters;
+    else if (strcmp(key, "server-roots") == 0) list = ListRoots;
     draft->lists[list] = first;
     return true;
   }
@@ -281,6 +287,11 @@ ParseLanguage(Reading *reading, Draft *draft, const StrBuf *file, StrBuf *proble
     return false;
   }
 
+  if (draft->lists[ListRoots] != noText && draft->server == noText) {
+    StrBufAppendString(problem, "server-roots needs server");
+    return false;
+  }
+
   return true;
 }
 
@@ -320,7 +331,8 @@ ReadPackage(Reading *reading, const char *folder, const char *id)
     .symbol = noText,
     .commentStart = noText,
     .commentEnd = noText,
-    .lists = {noText, noText, noText, noText}
+    .server = noText,
+    .lists = {noText, noText, noText, noText, noText}
   };
 
   StrBuf problem = {};
@@ -353,6 +365,9 @@ ReadPackage(Reading *reading, const char *folder, const char *id)
     if (draft.lists[ListInjections] == noText) {
       draft.lists[ListInjections] = AddList(reading, id, strlen(id));
     }
+
+    // a server's root is the folder of a git repository unless the package says.
+    if (draft.lists[ListRoots] == noText) draft.lists[ListRoots] = AddList(reading, ".git", 4);
 
     if (reading->draftCount == reading->draftCapacity) {
       reading->draftCapacity = reading->draftCapacity ? reading->draftCapacity * 2 : 16;
@@ -458,9 +473,11 @@ Settle(const Reading *reading)
       .names = list[ListNames],
       .interpreters = list[ListInterpreters],
       .injectionIds = list[ListInjections],
+      .serverRoots = list[ListRoots],
       .symbol = TextAt(texts, draft->symbol),
       .commentStart = commentStart,
       .commentEnd = commentStart && !commentEnd ? "" : commentEnd,
+      .server = TextAt(texts, draft->server),
       .prose = draft->prose,
       .freshParse = draft->freshParse,
       .firstPatternWins = draft->firstPatternWins,

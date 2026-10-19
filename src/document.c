@@ -32,6 +32,16 @@ DetectChanges(Document *document)
   document->changes = path ? ChangesNew(&document->buffer, path) : nullptr;
 }
 
+void
+DocumentRefreshServer(Document *document)
+{
+  const char *path = document->file.path.data;
+  if (LspEnabled() && LspFollows(document->lsp, document->lang, path)) return;
+
+  LspClose(document->lsp);
+  document->lsp = LspOpen(&document->buffer, document->lang, path);
+}
+
 enum FileStatus
 DocumentOpen(
   Document *document,
@@ -61,12 +71,14 @@ DocumentOpen(
   document->scriptLang = LangOfScript(first->data, first->length);
   DetectLanguage(document, message);
   DetectChanges(document);
+  DocumentRefreshServer(document);
   return status;
 }
 
 void
 DocumentFree(Document *document)
 {
+  LspClose(document->lsp);
   HighlightFree(document->highlight);
   ChangesFree(document->changes);
   ViewFree(&document->views[0]);
@@ -94,6 +106,11 @@ DocumentSave(Document *document, bool overwriteChanged, StrBuf *message)
   document->savedLineEnding = file->lineEnding;
   DetectLanguage(document, message);
   DetectChanges(document);
+
+  // a save under another name opens the document again, which needs no word of the save.
+  bool same = LspFollows(document->lsp, document->lang, file->path.data);
+  DocumentRefreshServer(document);
+  if (same) LspSaved(document->lsp);
   return status;
 }
 
@@ -104,6 +121,7 @@ DocumentRename(Document *document, const char *path, StrBuf *message)
 
   DetectLanguage(document, message);
   DetectChanges(document);
+  DocumentRefreshServer(document);
   return true;
 }
 
@@ -132,6 +150,7 @@ DocumentReload(Document *document, StrBuf *message)
   UndoClear(&document->undo);
   HighlightReset(document->highlight);
   ChangesRefresh(document->changes);
+  LspReloaded(document->lsp);
   ViewClamp(&document->views[0]);
   ViewClamp(&document->views[1]);
   return true;

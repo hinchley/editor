@@ -7,6 +7,7 @@
 #include "complete.h"
 #include "fatal.h"
 #include "loader.h"
+#include "lsp.h"
 #include "memory.h"
 #include "picker.h"
 #include "project.h"
@@ -238,6 +239,9 @@ ReplaceAll(void)
   SymbolsClear();
   RememberFolders(&pendingFolder.data, 1, &pending);
   WorkspaceFree(workspace);
+
+  // the folder may have other roots, so servers start again as its files open.
+  LspStopAll();
   WorkspaceAddList(workspace, &pending);
   SwitchToFirst(false);
   ReportUnreadable(unreadable);

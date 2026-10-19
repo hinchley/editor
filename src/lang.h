@@ -32,6 +32,12 @@ typedef struct Lang {
   const char *commentStart;
   const char *commentEnd;
 
+  // the language server's program and its arguments, separated by blanks, or nullptr for
+  // a language without one; and the names whose folder is the server's root (the first
+  // found walking up from a file), ending with nullptr.
+  const char *server;
+  const char *const *serverRoots;
+
   // prose is spell checked outside code; other languages only in comments and strings.
   bool prose;
 

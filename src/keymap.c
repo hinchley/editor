@@ -189,6 +189,7 @@ const Binding keymapBindings[] = {
   {{'l', alt}, CommandToggleLineNumbers, "toggle line numbers"},
   {{'.', alt}, CommandToggleWhitespace, "toggle showing whitespace"},
   {{'\\', alt}, CommandToggleRuler, "toggle the vertical ruler"},
+  {{'v', alt}, CommandToggleServers, "toggle language servers (or restart stopped ones)"},
   {{'\\', alt | shift}, CommandSetRulerColumn, "set the ruler column (and show the ruler)"},
   {{'h', control}, CommandHelp, "show this list of shortcuts"},
   {{'h', alt}, CommandLearn, "practise the shortcuts (esc to stop)"}

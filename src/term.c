@@ -154,7 +154,7 @@ Handshake(void)
 
     i64 remaining = deadline - NowMilliseconds();
     if (remaining <= 0) Fatal("the terminal did not answer the cursor position request");
-    if (TermWait((i32)remaining) == TermWaitInput) TermReadInput();
+    if (TermWait((i32)remaining, nullptr, 0) == TermWaitInput) TermReadInput();
   }
 }
 
@@ -234,15 +234,18 @@ TermGetSize(void)
 }
 
 enum TermWait
-TermWait(i32 timeoutMilliseconds)
+TermWait(i32 timeoutMilliseconds, const struct pollfd *others, u32 count)
 {
-  struct pollfd sources[2] = {
+  struct pollfd sources[2 + 16] = {
     {.fd = STDIN_FILENO, .events = POLLIN},
     {.fd = wakePipe[0], .events = POLLIN}
   };
 
+  if (count > 16) count = 16;
+  if (count) memcpy(sources + 2, others, count * sizeof(struct pollfd));
+
   while (true) {
-    i32 ready = poll(sources, 2, timeoutMilliseconds);
+    i32 ready = poll(sources, 2 + count, timeoutMilliseconds);
 
     if (ready < 0) {
       if (errno == EINTR) continue;
@@ -250,7 +253,12 @@ TermWait(i32 timeoutMilliseconds)
     }
 
     if (ready == 0) return TermWaitTimeout;
-    if (!(sources[1].revents & POLLIN)) return TermWaitInput;
+
+    // the other descriptors are only reported when the terminal has nothing, since their
+    // owner looks at all of them on every pass anyway.
+    if (!(sources[1].revents & POLLIN)) {
+      return sources[0].revents ? TermWaitInput : TermWaitOther;
+    }
 
     // several resize signals may have arrived, one redraw covers them all.
     char drain[64];

@@ -3,6 +3,8 @@
 // the terminal session: raw mode, the alternate screen, the kitty keyboard protocol,
 // bracketed paste, the cursor shape, window size and resize notification.
 // every way out of the program goes through TermStop, so the terminal is always restored.
+#include <poll.h>
+
 #include "types.h"
 
 typedef struct TermSize {
@@ -13,7 +15,10 @@ typedef struct TermSize {
 enum TermWait {
   TermWaitInput,
   TermWaitResize,
-  TermWaitTimeout
+  TermWaitTimeout,
+
+  // one of the other descriptors is ready.
+  TermWaitOther
 };
 
 // puts the terminal into editor mode.
@@ -31,10 +36,10 @@ TermStop(void);
 TermSize
 TermGetSize(void);
 
-// waits for input or a resize.
+// waits for input, a resize, or one of count other descriptors (at most 16) to be ready.
 // a negative timeout waits forever.
 enum TermWait
-TermWait(i32 timeoutMilliseconds);
+TermWait(i32 timeoutMilliseconds, const struct pollfd *others, u32 count);
 
 // reads whatever input is available and passes it to the input decoder.
 void

@@ -78,3 +78,18 @@ static constexpr u64 maxDiffSize = 16ull * 1024 * 1024;
 // the most line edits a diff looks for in one part before it reports the part as one
 // change, which keeps comparing unrelated texts quick.
 static constexpr u64 maxDiffCost = 1024;
+
+// start the language server a language's package names when a file of it opens.
+static constexpr bool languageServersDefault = true;
+
+// buffers larger than this are not shown to a language server.
+static constexpr u64 maxServerFileSize = 16ull * 1024 * 1024;
+
+// a document's changes are sent to its language server as they were made, unless more
+// than this many pile up between two passes of the main loop (many cursors, replace all),
+// when the whole text is sent instead.
+static constexpr u32 maxServerChanges = 64;
+
+// how many milliseconds language servers have to exit once asked to, before they are
+// ended.
+static constexpr i64 serverShutdownTime = 500;

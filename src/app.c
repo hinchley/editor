@@ -11,6 +11,7 @@
 #include "keymap.h"
 #include "lang.h"
 #include "learn.h"
+#include "lsp.h"
 #include "memory.h"
 #include "move.h"
 #include "multicursor.h"
@@ -84,6 +85,35 @@ Toggle(bool *setting, const char *name)
 {
   *setting = !*setting;
   StrBufAppendFormat(&message, "%s %s", name, *setting ? "on" : "off");
+}
+
+// starts or stops following every open document with its language server.
+static void
+RefreshServers(void)
+{
+  for (u64 index = 0; index < workspace.count; index++) {
+    Document *document = workspace.entries[index].document;
+    if (document) DocumentRefreshServer(document);
+  }
+}
+
+// turns language servers off or on, or, when one has stopped while they are on, starts
+// them all again.
+static void
+ToggleServers(void)
+{
+  bool restart = LspEnabled() && LspAnyStopped();
+  bool on = restart || !LspEnabled();
+  LspSetEnabled(false);
+  RefreshServers();
+
+  if (on) {
+    LspSetEnabled(true);
+    RefreshServers();
+  }
+
+  StrBufAppendString(&message, restart ? "language servers restarted"
+    : on ? "language servers on" : "language servers off");
 }
 
 static void
@@ -748,6 +778,7 @@ RunCommand(const Binding *binding)
   case CommandToggleLineNumbers: Toggle(&displayOptions.lineNumbers, "line numbers"); break;
   case CommandToggleWhitespace: Toggle(&displayOptions.showWhitespace, "whitespace"); break;
   case CommandToggleRuler: Toggle(&displayOptions.ruler, "ruler"); break;
+  case CommandToggleServers: ToggleServers(); break;
   case CommandSetRulerColumn: AskRulerColumn(); break;
   case CommandHelp: ShowHelp(); break;
   case CommandLearn: LearnStart(); break;
@@ -845,7 +876,11 @@ WaitForInput(void)
   i32 timeout = pending ? escapeTimeout : -1;
   if (ScanBusy() && !pending) timeout = 0;
 
-  switch (TermWait(timeout)) {
+  // language servers wake the loop too, and LspPump handles what they sent.
+  struct pollfd servers[lspMaxPollFds];
+  u32 serverCount = LspPollFds(servers);
+
+  switch (TermWait(timeout, servers, serverCount)) {
   case TermWaitInput:
     TermReadInput();
     break;
@@ -854,6 +889,8 @@ WaitForInput(void)
     break;
   case TermWaitTimeout:
     if (pending) InputExpire();
+    break;
+  case TermWaitOther:
     break;
   }
 }
@@ -876,6 +913,7 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
   // the language, noting when the buffer is too large or slow to colour.
   if (document->lang) StrBufAppendString(&pane->type, document->lang->name);
   if (HighlightDisabled(document->highlight)) StrBufAppendString(&pane->type, " (uncoloured)");
+  LspDescribe(document->lsp, &pane->type);
 
   // the lines changed since the last commit, when there are any.
   ChangeCounts counts = ChangesCount(document->changes);
@@ -962,6 +1000,7 @@ AppRun(i32 argc, char **argv)
 {
   // files are loaded before the terminal changes, so argument errors leave it untouched.
   LangLoadAll(&message);
+  LspInit(&message);
   WorkspaceInit(&workspace, &displayOptions);
   SearchInit(&workspace, &message);
   ScanInit(&workspace, &message);
@@ -983,10 +1022,15 @@ AppRun(i32 argc, char **argv)
 
     // a scan runs a slice at a time, so its progress shows and escape stops it.
     if (running && ScanBusy()) ScanContinue();
+
+    // sends the edits just made, and takes in what the servers said, before drawing.
+    if (running) LspPump();
     if (running) Draw();
     if (running) WaitForInput();
   }
 
+  // the servers are given time to exit once the terminal is back to normal.
   TermStop();
+  LspStopAll();
   return EXIT_SUCCESS;
 }
