@@ -11,6 +11,7 @@
 #include <poll.h>
 
 #include "buffer.h"
+#include "diagnostics.h"
 #include "lang.h"
 #include "strbuf.h"
 #include "types.h"
@@ -60,6 +61,11 @@ LspSaved(LspDocument *document);
 // sent all of it.
 void
 LspReloaded(LspDocument *document);
+
+// the diagnostics the server last reported for the document, following its edits since,
+// or nullptr for no document.
+const Diagnostics *
+LspDiagnostics(const LspDocument *document);
 
 // appends what the status bar says about the document's server: " (clangd)", or with
 // "starting" or "stopped" after the name.

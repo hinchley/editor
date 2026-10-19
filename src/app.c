@@ -7,6 +7,7 @@
 #include "document.h"
 #include "edit.h"
 #include "input.h"
+#include "issues.h"
 #include "jump.h"
 #include "keymap.h"
 #include "lang.h"
@@ -609,6 +610,21 @@ ExpandSelection(void)
   StrBufAppendString(&message, syntax ? "no larger syntax node" : "no brackets around");
 }
 
+// shows or hides the change panel or the diagnostics panel, which take the same place, so
+// showing one hides the other.
+static void
+TogglePanel(bool changes)
+{
+  i32 width = windowSize.width;
+  bool other = changes ? IssuesPanelOpen() : ReviewPanelOpen();
+
+  if (other && changes) IssuesTogglePanel(width);
+  else if (other) ReviewTogglePanel(width);
+
+  if (changes) ReviewTogglePanel(width);
+  else IssuesTogglePanel(width);
+}
+
 static bool
 NavigationCommand(enum Command command)
 {
@@ -639,9 +655,13 @@ NavigationCommand(enum Command command)
   case CommandProjectSymbols: SymbolsPickProject(); break;
   case CommandNextChange: ReviewStep(false); break;
   case CommandPreviousChange: ReviewStep(true); break;
-  case CommandChangePanel: ReviewTogglePanel(windowSize.width); break;
+  case CommandChangePanel: TogglePanel(true); break;
   case CommandRevertChange: ReviewRevert(); break;
   case CommandPickChanged: ReviewPickChanged(); break;
+  case CommandNextDiagnostic: IssuesStep(false); break;
+  case CommandPreviousDiagnostic: IssuesStep(true); break;
+  case CommandDiagnosticPanel: TogglePanel(false); break;
+  case CommandPickDiagnostic: IssuesPick(); break;
   default: return false;
   }
 
@@ -900,6 +920,7 @@ typedef struct Pane {
   StrBuf name;
   StrBuf type;
   StrBuf changes;
+  StrBuf diagnostics;
   StatusInfo status;
   MatchSet marks;
 } Pane;
@@ -923,6 +944,13 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
     StrBufAppendFormat(text, "+%lu ~%lu -%lu", counts.added, counts.changed, counts.removed);
   }
 
+  // the errors and warnings the language server reports, when there are any.
+  const Diagnostics *diagnostics = LspDiagnostics(document->lsp);
+  DiagnosticCounts problems = diagnostics ? DiagnosticsCount(diagnostics) : (DiagnosticCounts){};
+  if (problems.errors) StrBufAppendFormat(&pane->diagnostics, "E%u", problems.errors);
+  if (problems.errors && problems.warnings) StrBufAppendByte(&pane->diagnostics, ' ');
+  if (problems.warnings) StrBufAppendFormat(&pane->diagnostics, "W%u", problems.warnings);
+
   pane->status = (StatusInfo){
     .name = &pane->name,
     .modified = DocumentModified(document),
@@ -930,6 +958,7 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
     .fileType = pane->type.data,
     .lineEnding = FileLineEndingName(document->file.lineEnding),
     .changes = changed ? pane->changes.data : nullptr,
+    .diagnostics = pane->diagnostics.length ? pane->diagnostics.data : nullptr,
     .openCount = workspace.openCount,
     .loadedCount = workspace.count
   };
@@ -940,6 +969,7 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
     .view = view,
     .highlight = document->highlight,
     .changes = document->changes,
+    .diagnostics = diagnostics,
     .marks = &pane->marks,
     .status = &pane->status
   };
@@ -948,7 +978,8 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
 static void
 DrawPanel([[maybe_unused]] void *context, i32 column, i32 width, i32 height)
 {
-  ReviewDrawPanel(column, width, height);
+  if (ReviewPanelOpen()) ReviewDrawPanel(column, width, height);
+  else IssuesDrawPanel(column, width, height);
 }
 
 static void
@@ -977,13 +1008,14 @@ Draw(void)
     }
   }
 
-  if (ReviewPanelOpen()) frame.panel = (FramePanel){DrawPanel, nullptr};
+  if (ReviewPanelOpen() || IssuesPanelOpen()) frame.panel = (FramePanel){DrawPanel, nullptr};
   RenderFrame(&frame);
 
   for (u32 index = 0; index < 2; index++) {
     StrBufFree(&panes[index].name);
     StrBufFree(&panes[index].type);
     StrBufFree(&panes[index].changes);
+    StrBufFree(&panes[index].diagnostics);
   }
 
   // a picker covers the view and its status bar.
@@ -1009,6 +1041,7 @@ AppRun(i32 argc, char **argv)
   JumpInit(&workspace, &message);
   SymbolsInit(&workspace, &message);
   ReviewInit(&workspace, &message);
+  IssuesInit(&workspace, &message);
   LearnInit(&message);
   SessionStart(&workspace, &message, argv + 1, (u64)argc - 1);
 

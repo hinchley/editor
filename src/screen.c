@@ -67,7 +67,7 @@ static bool
 StyleEqual(Style a, Style b)
 {
   return a.foreground == b.foreground && a.background == b.background &&
-    a.attributes == b.attributes;
+    a.attributes == b.attributes && a.underline == b.underline;
 }
 
 static bool
@@ -266,6 +266,11 @@ WriteStyle(Writer *writer, Style style)
   if (style.attributes & StyleAttributeItalic) StrBufAppendString(&output, ";3");
   if (style.attributes & StyleAttributeUnderline) StrBufAppendString(&output, ";4");
   if (style.attributes & StyleAttributeReverse) StrBufAppendString(&output, ";7");
+  if (style.attributes & StyleAttributeCurly) StrBufAppendString(&output, ";4:3");
+
+  if ((style.attributes & StyleAttributeCurly) && style.underline != colorDefault) {
+    StrBufAppendFormat(&output, ";58:5:%d", style.underline);
+  }
 
   if (style.foreground != colorDefault) {
     StrBufAppendFormat(&output, ";38;5;%d", style.foreground);

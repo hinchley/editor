@@ -3,6 +3,7 @@
 // draws a frame into the screen grid: the views with their status bars, and the message
 // bar.
 #include "changes.h"
+#include "diagnostics.h"
 #include "highlight.h"
 #include "match.h"
 #include "strbuf.h"
@@ -23,16 +24,21 @@ typedef struct StatusInfo {
   // the lines changed since the last commit ("+3 ~2 -1"), or nullptr.
   const char *changes;
 
+  // the errors and warnings its language server reports ("E2 W1"), or nullptr.
+  const char *diagnostics;
+
   u64 openCount;
   u64 loadedCount;
 } StatusInfo;
 
 // one side of the window: a view, its syntax highlighting (or nullptr), its changes since
-// the last commit (or nullptr), the matches to highlight in it and its status.
+// the last commit (or nullptr), its language server's diagnostics (or nullptr), the
+// matches to highlight in it and its status.
 typedef struct FramePane {
   View *view;
   Highlight *highlight;
   Changes *changes;
+  const Diagnostics *diagnostics;
   const MatchSet *marks;
   const StatusInfo *status;
 } FramePane;

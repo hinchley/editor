@@ -183,6 +183,16 @@ const Binding keymapBindings[] = {
   {{'z', alt}, CommandRevertChange, "revert the change at the cursor to the last commit"},
   {{'g', control}, CommandPickChanged, "pick a change since the last commit"},
 
+  // diagnostics from language servers.
+  {{']', control | shift}, CommandNextDiagnostic, "go to the next diagnostic"},
+  {{'[', control | shift}, CommandPreviousDiagnostic, "go to the previous diagnostic"},
+  {
+    {'k', alt},
+    CommandDiagnosticPanel,
+    "show or hide the diagnostics at the cursor beside the buffer"
+  },
+  {{'k', alt | shift}, CommandPickDiagnostic, "pick a diagnostic in the open buffers"},
+
   // display and settings.
   {{'t', alt}, CommandToggleExpandTab, "toggle indenting with spaces or tabs"},
   {{'w', alt}, CommandToggleSoftWrap, "toggle soft wrap"},

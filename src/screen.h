@@ -13,17 +13,22 @@ enum StyleAttribute : u8 {
   StyleAttributeFaint = 2,
   StyleAttributeItalic = 4,
   StyleAttributeUnderline = 8,
-  StyleAttributeReverse = 16
+  StyleAttributeReverse = 16,
+
+  // a curly underline in its own colour.
+  StyleAttributeCurly = 32
 };
 
-// foreground and background are 256 colour palette indexes or colorDefault.
+// foreground and background are 256 colour palette indexes or colorDefault, and so is
+// underline, the colour of a curly underline (only used with StyleAttributeCurly).
 typedef struct Style {
   i16 foreground;
   i16 background;
   u8 attributes;
+  i16 underline;
 } Style;
 
-static constexpr Style styleDefault = {colorDefault, colorDefault, 0};
+static constexpr Style styleDefault = {colorDefault, colorDefault, 0, colorDefault};
 
 // resizes the grid and forces the next flush to redraw everything.
 void

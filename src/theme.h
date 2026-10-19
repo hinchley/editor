@@ -55,6 +55,12 @@ enum ThemeGroup {
   ThemeMatch,
   ThemeMatchSelected,
   ThemeMisspelt,
+
+  // diagnostics from a language server: their marks and hints, by severity (information
+  // and hints share one).
+  ThemeError,
+  ThemeWarning,
+  ThemeInfo,
   ThemeCursor,
   ThemeGroupCount
 };

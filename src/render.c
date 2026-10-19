@@ -14,6 +14,11 @@ static constexpr char tabSymbol[] = "\u2192";
 static constexpr char rulerSymbol[] = "\u2502";
 static constexpr char invalidSymbol[] = "\uFFFD";
 
+static constexpr char ellipsis[] = "\u2026";
+
+// a hint is only drawn with at least this many columns free after its line.
+static constexpr i64 minHintWidth = 10;
+
 // gutter marks for changed lines, and for lines removed above or below.
 static constexpr char changedSymbol[] = "\u258E";
 static constexpr char removedAboveSymbol[] = "\u2594";
@@ -33,6 +38,14 @@ typedef struct SpanList {
   u32 count;
   u32 capacity;
 } SpanList;
+
+// the bytes of the line being drawn that a diagnostic covers, and the group of the worst
+// one covering them.
+typedef struct Curl {
+  u64 start;
+  u64 end;
+  enum ThemeGroup group;
+} Curl;
 
 // what every row of one view draw shares.
 typedef struct Canvas {
@@ -60,6 +73,19 @@ typedef struct Canvas {
   Changes *changes;
   enum ChangeMark change;
 
+  // the language server's diagnostics, or nullptr; the parts of the current line they
+  // cover (and the group of the worst one at its end, or ThemeNone); and the line's worst
+  // diagnostic starting on it (ThemeNone without one), which colours its number and gives
+  // the hint after it.
+  const Diagnostics *diagnostics;
+  Curl *curls;
+  u32 curlCount;
+  u32 curlCapacity;
+  enum ThemeGroup curlAtEnd;
+  enum ThemeGroup lineGroup;
+  u32 lineWorst;
+  u32 lineCount;
+
   // the matches on the current line, in order, the first one that may still hold the
   // cluster being drawn, and the group they draw with.
   const MatchSet *marks;
@@ -83,6 +109,17 @@ PutFaintSymbol(const Canvas *canvas, i32 row, i32 column, const char *symbol, St
   bool underCursor = row == canvas->cursorRow && column == canvas->cursorColumn;
   if (underCursor) style.foreground = colorDefault;
   PutSymbol(row, column, symbol, style);
+}
+
+// a style with the curly underline of a diagnostic group (or left alone with ThemeNone).
+static Style
+Curled(Style style, enum ThemeGroup group)
+{
+  if (group == ThemeNone) return style;
+
+  style.attributes |= StyleAttributeCurly;
+  style.underline = ThemeStyle(group).foreground;
+  return style;
 }
 
 // a style drawn over by a selection or match group (or left alone with ThemeNone).
@@ -142,6 +179,70 @@ FindMatches(Canvas *canvas, u64 line)
   }
 }
 
+static void
+AddCurl(Canvas *canvas, u64 start, u64 end, enum ThemeGroup group)
+{
+  if (canvas->curlCount == canvas->curlCapacity) {
+    canvas->curlCapacity = canvas->curlCapacity ? canvas->curlCapacity * 2 : 4;
+    canvas->curls = MemoryResize(canvas->curls, canvas->curlCapacity, sizeof(Curl));
+  }
+
+  canvas->curls[canvas->curlCount++] = (Curl){start, end, group};
+}
+
+// finds the parts of a line the diagnostics cover, and its worst diagnostic.
+// a diagnostic of no width covers the cluster it is before, or the cell after the end of
+// the line.
+static void
+FindDiagnostics(Canvas *canvas, u64 line, u64 length)
+{
+  canvas->curlCount = 0;
+  canvas->curlAtEnd = ThemeNone;
+  canvas->lineGroup = ThemeNone;
+  const Diagnostics *diagnostics = canvas->diagnostics;
+  if (!diagnostics || !diagnostics->count) return;
+
+  u32 first;
+  u32 end;
+  DiagnosticsAround(diagnostics, line, &first, &end);
+
+  for (u32 index = first; index < end; index++) {
+    const Diagnostic *diagnostic = &diagnostics->items[index];
+    Range range = diagnostic->range;
+    if (range.end.line < line) continue;
+
+    u64 start = range.start.line == line ? range.start.byte : 0;
+    u64 stop = range.end.line == line ? range.end.byte : length;
+    enum ThemeGroup group = DiagnosticSeverityGroup(diagnostic->severity);
+
+    // groups are in order of severity, worst first.
+    if (stop > start) AddCurl(canvas, start, stop, group);
+    else if (start < length) AddCurl(canvas, start, start + 1, group);
+    else if (canvas->curlAtEnd == ThemeNone || group < canvas->curlAtEnd) canvas->curlAtEnd = group;
+  }
+
+  if (DiagnosticsOnLine(diagnostics, line, &canvas->lineWorst, &canvas->lineCount)) {
+    const Diagnostic *worst = &diagnostics->items[canvas->lineWorst];
+    canvas->lineGroup = DiagnosticSeverityGroup(worst->severity);
+  }
+}
+
+// the group of the worst diagnostic covering byte, or ThemeNone.
+// groups are in order of severity, worst first.
+static enum ThemeGroup
+CurlOf(const Canvas *canvas, u64 byte)
+{
+  enum ThemeGroup group = ThemeNone;
+
+  for (u32 index = 0; index < canvas->curlCount; index++) {
+    const Curl *curl = &canvas->curls[index];
+    bool covers = byte >= curl->start && byte < curl->end;
+    if (covers && (group == ThemeNone || curl->group < group)) group = curl->group;
+  }
+
+  return group;
+}
+
 static bool
 IsSelected(const Canvas *canvas, u64 byte)
 {
@@ -192,19 +293,21 @@ DrawBlank(
   i32 row,
   const LayoutCluster *cluster,
   i64 x,
-  enum ThemeGroup mark
+  enum ThemeGroup mark,
+  enum ThemeGroup curl
 ) {
-  // blank cells are already empty, so unmarked blanks only need their symbol.
-  if (mark != ThemeNone) FillCells(canvas, row, x, cluster->width, ThemeStyle(mark));
+  // blank cells are already empty, so plain blanks only need their symbol.
+  bool plain = mark == ThemeNone && curl == ThemeNone;
+  if (!plain) FillCells(canvas, row, x, cluster->width, Curled(ThemeStyle(mark), curl));
 
   // a tab cut by the left edge loses its symbol, and the ruler shows through blanks.
   if (!canvas->view->options->showWhitespace) return;
-  if (x < 0 || x >= canvas->textWidth || (x == canvas->rulerX && mark == ThemeNone)) return;
+  if (x < 0 || x >= canvas->textWidth || (x == canvas->rulerX && plain)) return;
 
   const char *symbol = cluster->kind == LayoutKindSpace ? spaceSymbol : tabSymbol;
   Style style = Overlay(ThemeStyle(ThemeWhitespace), mark);
   if (mark == ThemeSelection) style = ThemeStyle(ThemeSelectionWhitespace);
-  PutFaintSymbol(canvas, row, canvas->textColumn + (i32)x, symbol, style);
+  PutFaintSymbol(canvas, row, canvas->textColumn + (i32)x, symbol, Curled(style, curl));
 }
 
 static void
@@ -219,15 +322,16 @@ static void
 DrawCluster(Canvas *canvas, i32 row, const LayoutCluster *cluster, i64 x)
 {
   enum ThemeGroup mark = MarkOf(canvas, cluster->start);
+  enum ThemeGroup curl = canvas->curlCount ? CurlOf(canvas, cluster->start) : ThemeNone;
 
   if (cluster->kind == LayoutKindSpace || cluster->kind == LayoutKindTab) {
-    DrawBlank(canvas, row, cluster, x, mark);
+    DrawBlank(canvas, row, cluster, x, mark, curl);
     return;
   }
 
   // a cluster cut by either edge of the text area shows as blank cells.
   if (x < 0 || x + cluster->width > canvas->textWidth) {
-    FillCells(canvas, row, x, cluster->width, Overlay(styleDefault, mark));
+    FillCells(canvas, row, x, cluster->width, Curled(Overlay(styleDefault, mark), curl));
     return;
   }
 
@@ -237,8 +341,8 @@ DrawCluster(Canvas *canvas, i32 row, const LayoutCluster *cluster, i64 x)
   Style syntax = styleDefault;
   if (canvas->groups) syntax = ThemeStyle(HighlightGroup(canvas->groups, cluster->start));
 
-  Style text = Overlay(syntax, mark);
-  Style control = Overlay(ThemeStyle(ThemeControl), mark);
+  Style text = Curled(Overlay(syntax, mark), curl);
+  Style control = Curled(Overlay(ThemeStyle(ThemeControl), mark), curl);
 
   switch (cluster->kind) {
   case LayoutKindText:
@@ -298,9 +402,59 @@ DrawGutter(const Canvas *canvas, i32 row, u64 line, bool first)
   StrBuf number = {};
   StrBufAppendFormat(&number, "%*lu ", width - 1, line + 1);
   // the first cell is the change mark's, already blank or drawn.
-  Style style = ThemeStyle(ThemeGutter);
+  // a line with a diagnostic starting on it is numbered in the worst one's colour.
+  bool diagnosed = canvas->lineGroup != ThemeNone;
+  Style style = ThemeStyle(diagnosed ? canvas->lineGroup : ThemeGutter);
   ScreenPutText(row, canvas->view->column + 1, number.data + 1, number.length - 1, style);
   StrBufFree(&number);
+}
+
+// draws the first line of the line's worst diagnostic, after a symbol for its severity
+// and with a count of the others starting on the line, from x columns into the text area
+// to its edge, cut with an ellipsis when it does not fit.
+static void
+DrawHint(const Canvas *canvas, i32 row, i64 x)
+{
+  i64 width = canvas->textWidth - x;
+  if (x < 0 || width < minHintWidth) return;
+
+  const Diagnostics *diagnostics = canvas->diagnostics;
+  const Diagnostic *diagnostic = &diagnostics->items[canvas->lineWorst];
+  const char *symbol = DiagnosticSeveritySymbol(diagnostic->severity);
+  const char *message = DiagnosticsText(diagnostics, diagnostic->message);
+
+  StrBuf hint = {};
+  StrBufAppendFormat(&hint, "%s ", symbol);
+  StrBufAppend(&hint, message, strcspn(message, "\n"));
+  if (canvas->lineCount > 1) StrBufAppendFormat(&hint, " (+%u)", canvas->lineCount - 1);
+
+  // the clusters that fit, leaving a column for the ellipsis when some do not.
+  LayoutIterator iterator = LayoutBegin(hint.data, hint.length);
+  LayoutCluster cluster;
+  u64 fits = 0;
+  u64 cut = 0;
+  bool whole = true;
+
+  while (LayoutNext(&iterator, &cluster)) {
+    if ((i64)(cluster.column + cluster.width) <= width - 1) cut = cluster.end;
+    if ((i64)(cluster.column + cluster.width) > width) {
+      whole = false;
+      break;
+    }
+
+    fits = cluster.end;
+  }
+
+  if (!whole) {
+    StrBufTruncate(&hint, cut);
+    StrBufAppendString(&hint, ellipsis);
+    fits = hint.length;
+  }
+
+  Style style = ThemeStyle(canvas->lineGroup);
+  style.attributes |= StyleAttributeFaint;
+  ScreenPutText(row, canvas->textColumn + (i32)x, hint.data, fits, style);
+  StrBufFree(&hint);
 }
 
 // draws the rows of a line from firstRow, starting at screen row, and returns the number
@@ -315,6 +469,7 @@ DrawLine(Canvas *canvas, u64 line, u64 firstRow, i32 row)
   canvas->text = text->data;
   FindSelection(canvas, line, text->length);
   FindMatches(canvas, line);
+  FindDiagnostics(canvas, line, text->length);
   canvas->change = ChangesMarkOf(canvas->changes, line);
 
   // drawing starts at the first row shown, or (without soft wrap) at the first column
@@ -348,11 +503,18 @@ DrawLine(Canvas *canvas, u64 line, u64 firstRow, i32 row)
       more = LayoutNext(&iterator, &cluster);
     }
 
-    // a selected line break shows as one selected cell after the end of the line.
-    if (layoutRow.last && !more && canvas->lineBreakSelected) {
-      i64 x = (i64)iterator.column - offset;
-      FillCells(canvas, screenRow, x, 1, ThemeStyle(ThemeSelection));
+    // a selected line break shows as one selected cell after the end of the line, and a
+    // diagnostic there as a curled cell.
+    i64 end = (i64)iterator.column - offset;
+    bool atEnd = layoutRow.last && !more;
+
+    if (atEnd && (canvas->lineBreakSelected || canvas->curlAtEnd != ThemeNone)) {
+      enum ThemeGroup group = canvas->lineBreakSelected ? ThemeSelection : ThemeNone;
+      FillCells(canvas, screenRow, end, 1, Curled(ThemeStyle(group), canvas->curlAtEnd));
     }
+
+    // the hint goes after the end of the line's last row, past the cursor's cell.
+    if (atEnd && canvas->lineGroup != ThemeNone) DrawHint(canvas, screenRow, end + 2);
 
     drawn++;
   }
@@ -374,13 +536,16 @@ DrawRuler(const Canvas *canvas)
 }
 
 static void
-DrawView(View *view, Highlight *highlight, Changes *changes, const MatchSet *marks)
+DrawView(const FramePane *pane)
 {
+  View *view = pane->view;
+  const MatchSet *marks = pane->marks;
   const DisplayOptions *options = view->options;
   Canvas canvas = {
     .view = view,
-    .highlight = highlight,
-    .changes = changes,
+    .highlight = pane->highlight,
+    .changes = pane->changes,
+    .diagnostics = pane->diagnostics,
     .marks = marks,
     .matchGroup = marks->kind == MatchKindSpell ? ThemeMisspelt : ThemeMatch,
     .textColumn = view->column + ViewGutterWidth(view),
@@ -411,6 +576,7 @@ DrawView(View *view, Highlight *highlight, Changes *changes, const MatchSet *mar
 
   free(canvas.selected.spans);
   free(canvas.matched.spans);
+  free(canvas.curls);
 }
 
 // with several cursors the terminal cursor stays hidden and each one is drawn as a block,
@@ -451,6 +617,7 @@ DescribePosition(View *view, const StatusInfo *info, bool full, StrBuf *right)
 
   if (full) {
     if (info->changes) AppendField(right, info->changes);
+    if (info->diagnostics) AppendField(right, info->diagnostics);
     AppendField(right, view->options->softWrap ? "wrap" : "nowrap");
     if (info->fileType) AppendField(right, info->fileType);
     AppendField(right, info->lineEnding);
@@ -509,7 +676,7 @@ DrawPane(const FramePane *pane, bool focused, i32 column, i32 width, i32 height)
   View *view = pane->view;
   ViewSetArea(view, 0, column, width, height);
   ViewScrollToCursor(view);
-  DrawView(view, pane->highlight, pane->changes, pane->marks);
+  DrawView(pane);
   DrawStatus(view, pane->status, focused, height);
 }
 

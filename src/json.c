@@ -370,7 +370,8 @@ JsonEquals(const Json *json, u32 node, const char *text)
 
   StrBuf unescaped = {};
   JsonString(json, node, &unescaped);
-  bool equal = unescaped.length == strlen(text) && memcmp(unescaped.data, text, unescaped.length) == 0;
+  u64 size = unescaped.length;
+  bool equal = size == strlen(text) && memcmp(unescaped.data, text, size) == 0;
   StrBufFree(&unescaped);
   return equal;
 }

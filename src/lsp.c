@@ -70,6 +70,8 @@ struct LspDocument {
   StrBuf changes;
   u32 changeCount;
   bool full;
+
+  Diagnostics diagnostics;
 };
 
 static StrBuf *message;
@@ -296,6 +298,7 @@ Listen(void *context, const BufferChange *change)
 {
   LspDocument *document = context;
   Server *server = document->server;
+  DiagnosticsAdjust(&document->diagnostics, change);
   if (!document->opened || document->full || server->sync == ServerSyncNone) return;
 
   if (server->sync == ServerSyncFull || document->changeCount == maxServerChanges) {
@@ -378,6 +381,173 @@ Initialized(void *context, const Json *json, u32 result, u32 error)
   }
 }
 
+// the byte at a server's column on a line: the column itself in utf-8, or else the byte
+// after that many utf-16 code units; either way no further than the line's end.
+static u64
+ByteOfColumn(const Server *server, const StrBuf *line, u64 column)
+{
+  if (!server->utf16) return column < line->length ? column : line->length;
+
+  u64 units = 0;
+  u64 at = 0;
+
+  while (at < line->length && units < column) {
+    u32 codepoint;
+    at += Utf8Decode(line->data + at, line->length - at, &codepoint);
+    units += codepoint >= 0x10000 ? 2 : 1;
+  }
+
+  return at;
+}
+
+// a position a server gave in a document, kept inside its text.
+static Position
+ReadPosition(const LspDocument *document, const Json *json, u32 node)
+{
+  const Buffer *buffer = document->buffer;
+  i64 line = JsonInteger(json, JsonGet(json, node, "line"), 0);
+  i64 column = JsonInteger(json, JsonGet(json, node, "character"), 0);
+  if (line < 0) line = 0;
+  if (column < 0) column = 0;
+  if ((u64)line >= BufferLineCount(buffer)) return BufferEnd(buffer);
+
+  u64 byte = ByteOfColumn(document->server, BufferLine(buffer, (u64)line), (u64)column);
+  return (Position){(u64)line, byte};
+}
+
+// appends the path a file:// uri names, decoding its percent escapes, and leaving out the
+// folder the editor started in when the path is inside it.
+static void
+AppendPathOfUri(StrBuf *path, const char *uri, u64 length)
+{
+  static constexpr char scheme[] = "file://";
+  u64 at = 0;
+  if (length >= sizeof scheme - 1 && memcmp(uri, scheme, sizeof scheme - 1) == 0) {
+    at = sizeof scheme - 1;
+  }
+
+  u64 start = path->length;
+
+  for (; at < length; at++) {
+    char byte = uri[at];
+    u32 value = 0;
+    bool escaped = byte == '%' && at + 2 < length;
+
+    for (u64 digit = at + 1; escaped && digit <= at + 2; digit++) {
+      char hex = uri[digit];
+      bool decimal = hex >= '0' && hex <= '9';
+      bool letter = (hex | 0x20) >= 'a' && (hex | 0x20) <= 'f';
+      escaped = decimal || letter;
+      value = value << 4 | (u32)(decimal ? hex - '0' : (hex | 0x20) - 'a' + 10);
+    }
+
+    if (escaped) {
+      byte = (char)value;
+      at += 2;
+    }
+
+    StrBufAppendByte(path, byte);
+  }
+
+  u64 folder = startFolder.length;
+  bool inside = path->length - start > folder + 1 &&
+    memcmp(path->data + start, startFolder.data, folder) == 0 && path->data[start + folder] == '/';
+  if (inside) StrBufRemove(path, start, folder + 1);
+}
+
+// the related notes of a diagnostic, one "file:line: text" a line.
+static void
+ReadNotes(const Json *json, u32 related, StrBuf *notes)
+{
+  StrBuf text = {};
+
+  u32 note = JsonFirst(json, related);
+
+  for (; note != jsonNone; note = JsonNext(json, related, note)) {
+    u32 location = JsonGet(json, note, "location");
+    StrBufClear(&text);
+    JsonString(json, JsonGet(json, location, "uri"), &text);
+    if (notes->length) StrBufAppendByte(notes, '\n');
+    AppendPathOfUri(notes, text.data ? text.data : "", text.length);
+    u32 start = JsonGet(json, JsonGet(json, location, "range"), "start");
+    StrBufAppendFormat(notes, ":%ld: ", JsonInteger(json, JsonGet(json, start, "line"), 0) + 1);
+    JsonString(json, JsonGet(json, note, "message"), notes);
+  }
+
+  StrBufFree(&text);
+}
+
+// replaces a document's diagnostics with those the server just published, unless they
+// are for text older than the document's (newer changes are pending, or were sent), as
+// another publication will follow for those.
+static void
+Publish(Server *server, const Json *json, u32 params)
+{
+  StrBuf uri = {};
+  JsonString(json, JsonGet(json, params, "uri"), &uri);
+  LspDocument *document = nullptr;
+
+  for (u32 index = 0; index < documentCount && !document; index++) {
+    LspDocument *candidate = documents[index];
+    bool same = candidate->server == server && candidate->uri.length == uri.length &&
+      memcmp(candidate->uri.data, uri.data, uri.length) == 0;
+    if (same) document = candidate;
+  }
+
+  StrBufFree(&uri);
+  if (!document || document->full || document->changeCount) return;
+
+  i64 version = JsonInteger(json, JsonGet(json, params, "version"), -1);
+  if (version >= 0 && version != document->version) return;
+
+  Diagnostics *diagnostics = &document->diagnostics;
+  DiagnosticsClear(diagnostics);
+  u32 list = JsonGet(json, params, "diagnostics");
+  StrBuf text = {};
+
+  for (u32 item = JsonFirst(json, list); item != jsonNone; item = JsonNext(json, list, item)) {
+    u32 range = JsonGet(json, item, "range");
+    i64 severity = JsonInteger(json, JsonGet(json, item, "severity"), 1);
+    if (severity < DiagnosticSeverityError || severity > DiagnosticSeverityHint) severity = 1;
+
+    Diagnostic diagnostic = {
+      .range = {
+        ReadPosition(document, json, JsonGet(json, range, "start")),
+        ReadPosition(document, json, JsonGet(json, range, "end"))
+      },
+      .severity = (enum DiagnosticSeverity)severity
+    };
+
+    if (PositionCompare(diagnostic.range.end, diagnostic.range.start) < 0) {
+      diagnostic.range.end = diagnostic.range.start;
+    }
+
+    StrBufClear(&text);
+    JsonString(json, JsonGet(json, item, "message"), &text);
+    diagnostic.message = DiagnosticsAddText(diagnostics, text.data, text.length);
+
+    // a code may be a string or a number.
+    StrBufClear(&text);
+    u32 code = JsonGet(json, item, "code");
+    if (!JsonString(json, code, &text) && JsonTypeOf(json, code) == JsonTypeNumber) {
+      JsonAppendRaw(&text, json, code);
+    }
+    diagnostic.code = DiagnosticsAddText(diagnostics, text.data, text.length);
+
+    StrBufClear(&text);
+    JsonString(json, JsonGet(json, item, "source"), &text);
+    diagnostic.source = DiagnosticsAddText(diagnostics, text.data, text.length);
+
+    StrBufClear(&text);
+    ReadNotes(json, JsonGet(json, item, "relatedInformation"), &text);
+    diagnostic.notes = DiagnosticsAddText(diagnostics, text.data, text.length);
+    DiagnosticsAdd(diagnostics, &diagnostic);
+  }
+
+  StrBufFree(&text);
+  DiagnosticsSort(diagnostics);
+}
+
 // answers what a server asks of the editor, and takes in what it reports.
 static void
 Handle(void *context, const Json *json, u32 method, u32 params, u32 id)
@@ -416,6 +586,11 @@ Handle(void *context, const Json *json, u32 method, u32 params, u32 id)
     return;
   }
 
+  if (JsonEquals(json, method, "textDocument/publishDiagnostics")) {
+    Publish(server, json, params);
+    return;
+  }
+
   // only errors are worth the message bar (type 1 is an error).
   if (JsonEquals(json, method, "window/showMessage")) {
     if (JsonInteger(json, JsonGet(json, params, "type"), 0) != 1) return;
@@ -447,7 +622,10 @@ SendInitialize(Server *server)
     "}],\"capabilities\":{"
       "\"general\":{\"positionEncodings\":[\"utf-8\",\"utf-16\"]},"
       "\"workspace\":{\"workspaceFolders\":true},"
-      "\"textDocument\":{\"synchronization\":{\"didSave\":true}}"
+      "\"textDocument\":{"
+        "\"synchronization\":{\"didSave\":true},"
+        "\"publishDiagnostics\":{\"relatedInformation\":true,\"versionSupport\":true}"
+      "}"
     "}}");
   RpcRequest(server->rpc, "initialize", params.data, Initialized, server);
   StrBufFree(&params);
@@ -513,6 +691,14 @@ FreeServer(Server *server)
   free(server);
 }
 
+// a document its server no longer knows, and whose diagnostics are gone with it.
+static void
+Forget(LspDocument *document)
+{
+  document->opened = false;
+  DiagnosticsClear(&document->diagnostics);
+}
+
 // a server that stopped no longer knows its documents.
 static void
 Stopped(Server *server)
@@ -522,7 +708,7 @@ Stopped(Server *server)
   server->state = ServerStopped;
 
   for (u32 index = 0; index < documentCount; index++) {
-    if (documents[index]->server == server) documents[index]->opened = false;
+    if (documents[index]->server == server) Forget(documents[index]);
   }
 }
 
@@ -622,6 +808,7 @@ LspClose(LspDocument *document)
   StrBufFree(&document->path);
   StrBufFree(&document->uri);
   StrBufFree(&document->changes);
+  DiagnosticsFree(&document->diagnostics);
   free(document);
 }
 
@@ -654,6 +841,12 @@ LspReloaded(LspDocument *document)
   document->full = true;
   document->changeCount = 0;
   StrBufClear(&document->changes);
+}
+
+const Diagnostics *
+LspDiagnostics(const LspDocument *document)
+{
+  return document ? &document->diagnostics : nullptr;
 }
 
 void
@@ -764,7 +957,7 @@ LspStopAll(void)
     server->state = ServerStopped;
   }
 
-  for (u32 index = 0; index < documentCount; index++) documents[index]->opened = false;
+  for (u32 index = 0; index < documentCount; index++) Forget(documents[index]);
 
   // servers no document shows are gone; the others go with their last document.
   for (u32 index = serverCount; index-- > 0;) {
