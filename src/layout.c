@@ -283,3 +283,25 @@ LayoutShorten(const char *text, u64 length, i32 width, StrBuf *output)
   if (width >= 3) StrBufAppendString(output, ellipsis);
   StrBufAppend(output, text + tailStart, length - tailStart);
 }
+
+void
+LayoutCut(const char *text, u64 length, i32 width, StrBuf *output)
+{
+  // the clusters that fit, and those that leave a column for the ellipsis.
+  LayoutIterator iterator = LayoutBegin(text, length);
+  LayoutCluster cluster;
+  u64 room = width > 0 ? (u64)width : 0;
+  u64 cut = 0;
+
+  while (LayoutNext(&iterator, &cluster)) {
+    if (cluster.column + cluster.width > room) {
+      StrBufAppend(output, text, cut);
+      if (room) StrBufAppendString(output, "\u2026");
+      return;
+    }
+
+    if (cluster.column + cluster.width < room) cut = cluster.end;
+  }
+
+  StrBufAppend(output, text, length);
+}

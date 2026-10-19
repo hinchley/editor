@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "file.h"
 #include "json.h"
 #include "memory.h"
 #include "rpc.h"
@@ -44,10 +45,15 @@ typedef struct Server {
   enum ServerState state;
 
   // from its capabilities: positions in utf-16 code units rather than bytes, how it takes
-  // changes, and whether it wants to hear about saves.
+  // changes, whether it wants to hear about saves, which questions it answers, and whether
+  // it is clangd (which has requests of its own).
   bool utf16;
   enum ServerSync sync;
   bool wantsSave;
+  bool definitions;
+  bool references;
+  bool hovers;
+  bool clangd;
 
   // the documents attached to it, and whether it answered shutdown.
   u32 documentCount;
@@ -82,6 +88,29 @@ static StrBuf startFolder;
 
 static Server *servers[maxServers];
 static u32 serverCount;
+
+// a request a command waits on: the server asked, its id there, when it runs out of time,
+// and what to call with the answer.
+enum PendingKind {
+  PendingLocations,
+  PendingText
+};
+
+typedef struct Pending {
+  LspRequest request;
+  Server *server;
+  u64 id;
+  i64 deadline;
+  enum PendingKind kind;
+  LspLocationsDone locationsDone;
+  LspTextDone textDone;
+  void *context;
+} Pending;
+
+static Pending *pendings;
+static u32 pendingCount;
+static u32 pendingCapacity;
+static LspRequest lastRequest;
 
 static LspDocument **documents;
 static u32 documentCount;
@@ -373,6 +402,18 @@ Initialized(void *context, const Json *json, u32 result, u32 error)
   server->sync = kind == ServerSyncIncremental ? ServerSyncIncremental
     : kind == ServerSyncFull ? ServerSyncFull : ServerSyncNone;
   server->wantsSave = wantsSave;
+
+  // a provider is either true or options.
+  const char *providers[] = {"definitionProvider", "referencesProvider", "hoverProvider"};
+  bool *answers[] = {&server->definitions, &server->references, &server->hovers};
+
+  for (u32 index = 0; index < 3; index++) {
+    u32 provider = JsonGet(json, capabilities, providers[index]);
+    *answers[index] = JsonTrue(json, provider) || JsonTypeOf(json, provider) == JsonTypeObject;
+  }
+
+  u32 serverInfo = JsonGet(json, result, "serverInfo");
+  server->clangd = JsonEquals(json, JsonGet(json, serverInfo, "name"), "clangd");
   server->state = ServerReady;
   RpcNotify(server->rpc, "initialized", "{}");
 
@@ -384,16 +425,16 @@ Initialized(void *context, const Json *json, u32 result, u32 error)
 // the byte at a server's column on a line: the column itself in utf-8, or else the byte
 // after that many utf-16 code units; either way no further than the line's end.
 static u64
-ByteOfColumn(const Server *server, const StrBuf *line, u64 column)
+ByteOfColumn(const Server *server, const char *line, u64 length, u64 column)
 {
-  if (!server->utf16) return column < line->length ? column : line->length;
+  if (!server->utf16) return column < length ? column : length;
 
   u64 units = 0;
   u64 at = 0;
 
-  while (at < line->length && units < column) {
+  while (at < length && units < column) {
     u32 codepoint;
-    at += Utf8Decode(line->data + at, line->length - at, &codepoint);
+    at += Utf8Decode(line + at, length - at, &codepoint);
     units += codepoint >= 0x10000 ? 2 : 1;
   }
 
@@ -411,7 +452,8 @@ ReadPosition(const LspDocument *document, const Json *json, u32 node)
   if (column < 0) column = 0;
   if ((u64)line >= BufferLineCount(buffer)) return BufferEnd(buffer);
 
-  u64 byte = ByteOfColumn(document->server, BufferLine(buffer, (u64)line), (u64)column);
+  const StrBuf *text = BufferLine(buffer, (u64)line);
+  u64 byte = ByteOfColumn(document->server, text->data, text->length, (u64)column);
   return (Position){(u64)line, byte};
 }
 
@@ -624,7 +666,9 @@ SendInitialize(Server *server)
       "\"workspace\":{\"workspaceFolders\":true},"
       "\"textDocument\":{"
         "\"synchronization\":{\"didSave\":true},"
-        "\"publishDiagnostics\":{\"relatedInformation\":true,\"versionSupport\":true}"
+        "\"publishDiagnostics\":{\"relatedInformation\":true,\"versionSupport\":true},"
+        "\"definition\":{},\"references\":{},"
+        "\"hover\":{\"contentFormat\":[\"markdown\",\"plaintext\"]}"
       "}"
     "}}");
   RpcRequest(server->rpc, "initialize", params.data, Initialized, server);
@@ -699,6 +743,35 @@ Forget(LspDocument *document)
   DiagnosticsClear(&document->diagnostics);
 }
 
+// takes the pending request at index out of the list, so its callback may ask again.
+static Pending
+TakePending(u32 index)
+{
+  Pending pending = pendings[index];
+  pendings[index] = pendings[--pendingCount];
+  return pending;
+}
+
+static void
+Unanswered(const Pending *pending)
+{
+  void *context = pending->context;
+  if (pending->kind == PendingLocations) pending->locationsDone(context, nullptr, 0, false);
+  else pending->textDone(context, nullptr, 0, false);
+}
+
+// the requests a server will not answer now that it stopped.
+static void
+FailPendings(Server *server)
+{
+  for (u32 index = pendingCount; index-- > 0;) {
+    if (index >= pendingCount || pendings[index].server != server) continue;
+
+    Pending pending = TakePending(index);
+    Unanswered(&pending);
+  }
+}
+
 // a server that stopped no longer knows its documents.
 static void
 Stopped(Server *server)
@@ -706,6 +779,7 @@ Stopped(Server *server)
   RpcFree(server->rpc, RpcNow());
   server->rpc = nullptr;
   server->state = ServerStopped;
+  FailPendings(server);
 
   for (u32 index = 0; index < documentCount; index++) {
     if (documents[index]->server == server) Forget(documents[index]);
@@ -873,10 +947,24 @@ LspPollFds(struct pollfd *fds)
   return count;
 }
 
+static void Withdraw(const Pending *pending);
+
 void
 LspPump(void)
 {
   for (u32 index = 0; index < documentCount; index++) SendChanges(documents[index]);
+
+  // a request that ran out of time is given up on, and its server told.
+  i64 now = RpcNow();
+
+  for (u32 index = pendingCount; index-- > 0;) {
+    if (index >= pendingCount || pendings[index].deadline > now) continue;
+
+    Pending pending = TakePending(index);
+    Withdraw(&pending);
+    StrBufAppendFormat(Report(), "%s did not answer in time", pending.server->name.data);
+    Unanswered(&pending);
+  }
 
   for (u32 index = 0; index < serverCount; index++) {
     Server *server = servers[index];
@@ -955,6 +1043,7 @@ LspStopAll(void)
     RpcFree(server->rpc, deadline);
     server->rpc = nullptr;
     server->state = ServerStopped;
+    FailPendings(server);
   }
 
   for (u32 index = 0; index < documentCount; index++) Forget(documents[index]);
@@ -970,4 +1059,343 @@ LspSetEnabled(bool on)
 {
   if (enabled && !on) LspStopAll();
   enabled = on;
+}
+
+// tells a server it need not answer a request any more.
+static void
+Withdraw(const Pending *pending)
+{
+  Rpc *rpc = pending->server->rpc;
+  if (!rpc) return;
+
+  RpcForget(rpc, pending->id);
+  StrBuf params = {};
+  StrBufAppendFormat(&params, "{\"id\":%lu}", pending->id);
+  RpcNotify(rpc, "$/cancelRequest", params.data);
+  StrBufFree(&params);
+}
+
+// the position of a server's line and column in text read from a file.
+static Position
+PositionInText(const Server *server, const char *text, u64 length, u64 line, u64 column)
+{
+  u64 start = 0;
+
+  for (u64 at = 0; at < line; at++) {
+    const char *newline = memchr(text + start, '\n', length - start);
+    if (!newline) return (Position){line, 0};
+    start = (u64)(newline - text) + 1;
+  }
+
+  const char *newline = memchr(text + start, '\n', length - start);
+  u64 end = newline ? (u64)(newline - text) : length;
+  if (end > start && text[end - 1] == '\r') end--;
+  return (Position){line, ByteOfColumn(server, text + start, end - start, column)};
+}
+
+// the open document of a server with uri, or nullptr.
+static LspDocument *
+DocumentOfUri(const Server *server, const char *uri, u64 length)
+{
+  for (u32 index = 0; index < documentCount; index++) {
+    LspDocument *document = documents[index];
+    bool same = document->server == server && document->uri.length == length &&
+      memcmp(document->uri.data, uri, length) == 0;
+    if (same) return document;
+  }
+
+  return nullptr;
+}
+
+// the file a utf-16 server's positions are converted in, read once for all its places.
+typedef struct Converting {
+  StrBuf uri;
+  StrBuf text;
+  bool read;
+} Converting;
+
+// a range a server gave in the file at uri, in bytes: from the open document when there
+// is one, or else (for a utf-16 server) from the file as read.
+static Range
+ReadRange(const Server *server, const Json *json, u32 range, const StrBuf *uri,
+  Converting *converting)
+{
+  u32 ends[2] = {JsonGet(json, range, "start"), JsonGet(json, range, "end")};
+  LspDocument *document = DocumentOfUri(server, uri->data, uri->length);
+  Position positions[2];
+
+  for (u32 index = 0; index < 2; index++) {
+    if (document) {
+      positions[index] = ReadPosition(document, json, ends[index]);
+      continue;
+    }
+
+    i64 line = JsonInteger(json, JsonGet(json, ends[index], "line"), 0);
+    i64 column = JsonInteger(json, JsonGet(json, ends[index], "character"), 0);
+    positions[index] = (Position){line > 0 ? (u64)line : 0, column > 0 ? (u64)column : 0};
+    if (!server->utf16) continue;
+
+    bool same = converting->uri.length == uri->length &&
+      memcmp(converting->uri.data, uri->data, uri->length) == 0;
+
+    if (!same) {
+      StrBufClear(&converting->uri);
+      StrBufAppend(&converting->uri, uri->data, uri->length);
+      StrBufClear(&converting->text);
+      StrBuf path = {};
+      AppendPathOfUri(&path, uri->data, uri->length);
+      FileStamp stamp;
+      converting->read = FileRead(path.data, &converting->text, &stamp, nullptr) == FileStatusOk;
+      StrBufFree(&path);
+    }
+
+    if (converting->read) {
+      Position at = positions[index];
+      positions[index] = PositionInText(server, converting->text.data, converting->text.length,
+        at.line, at.byte);
+    }
+  }
+
+  return (Range){positions[0], positions[1]};
+}
+
+// hands a server's answer of places (a location, a list of locations or links, a bare uri,
+// or null) to the request's callback.
+static void
+AnswerLocations(const Pending *pending, const Json *json, u32 result)
+{
+  // a lone location (or uri) is read as a list of one.
+  u32 count = JsonSize(json, result);
+  enum JsonType type = JsonTypeOf(json, result);
+  bool list = type == JsonTypeArray;
+  bool one = type == JsonTypeObject || type == JsonTypeString;
+  if (!list) count = one ? 1 : 0;
+
+  LspLocation *locations = MemoryAllocate((count ? count : 1) * sizeof(LspLocation));
+  u64 *starts = MemoryAllocate((count ? count : 1) * sizeof(u64));
+  StrBuf paths = {};
+  StrBuf uri = {};
+  Converting converting = {};
+  u32 item = list ? JsonFirst(json, result) : result;
+
+  for (u32 index = 0; index < count; index++) {
+    if (index) item = JsonNext(json, result, item);
+    u32 range = jsonNone;
+    StrBufClear(&uri);
+
+    if (!JsonString(json, item, &uri)) {
+      bool link = JsonGet(json, item, "targetUri") != jsonNone;
+      JsonString(json, JsonGet(json, item, link ? "targetUri" : "uri"), &uri);
+      range = JsonGet(json, item, link ? "targetSelectionRange" : "range");
+    }
+
+    starts[index] = paths.length;
+    AppendPathOfUri(&paths, uri.data ? uri.data : "", uri.length);
+    StrBufAppendByte(&paths, '\0');
+    Range found = {};
+    if (range != jsonNone) found = ReadRange(pending->server, json, range, &uri, &converting);
+    locations[index] = (LspLocation){.range = found};
+  }
+
+  for (u32 index = 0; index < count; index++) locations[index].path = paths.data + starts[index];
+  pending->locationsDone(pending->context, locations, count, true);
+
+  free(locations);
+  free(starts);
+  StrBufFree(&paths);
+  StrBufFree(&uri);
+  StrBufFree(&converting.uri);
+  StrBufFree(&converting.text);
+}
+
+// appends a piece of hover contents: markup's value, a string, or a marked string's code
+// in a fence.
+static void
+AppendHover(StrBuf *text, const Json *json, u32 node)
+{
+  if (text->length) StrBufAppendString(text, "\n\n");
+  if (JsonString(json, node, text)) return;
+
+  u32 language = JsonGet(json, node, "language");
+  if (language != jsonNone) StrBufAppendString(text, "```\n");
+  JsonString(json, JsonGet(json, node, "value"), text);
+  if (language != jsonNone) StrBufAppendString(text, "\n```");
+}
+
+static void
+AnswerText(const Pending *pending, const Json *json, u32 result)
+{
+  StrBuf text = {};
+  u32 contents = JsonGet(json, result, "contents");
+
+  if (JsonTypeOf(json, contents) == JsonTypeArray) {
+    u32 item = JsonFirst(json, contents);
+    for (; item != jsonNone; item = JsonNext(json, contents, item)) AppendHover(&text, json, item);
+  } else if (contents != jsonNone) {
+    AppendHover(&text, json, contents);
+  }
+
+  pending->textDone(pending->context, text.data ? text.data : "", text.length, true);
+  StrBufFree(&text);
+}
+
+static void
+Replied(void *context, const Json *json, u32 result, u32 error)
+{
+  LspRequest request = (LspRequest)(uintptr_t)context;
+  u32 index = 0;
+  while (index < pendingCount && pendings[index].request != request) index++;
+  if (index == pendingCount) return;
+
+  Pending pending = TakePending(index);
+
+  // a server that stopped is reported by LspPump, and one that dropped the request
+  // because the text changed (-32801) or it was cancelled (-32800) needs no word.
+  if (json && result == jsonNone) {
+    i64 code = JsonInteger(json, JsonGet(json, error, "code"), 0);
+
+    if (code != -32800 && code != -32801) {
+      StrBuf reason = {};
+      JsonString(json, JsonGet(json, error, "message"), &reason);
+      StrBufAppendFormat(Report(), "%s: %s", pending.server->name.data,
+        reason.data ? reason.data : "the request failed");
+      StrBufFree(&reason);
+    }
+  }
+
+  if (!json || result == jsonNone) Unanswered(&pending);
+  else if (pending.kind == PendingLocations) AnswerLocations(&pending, json, result);
+  else AnswerText(&pending, json, result);
+}
+
+// sends a request about a document, once its pending changes are sent.
+static LspRequest
+Ask(LspDocument *document, bool answers, const char *method, const StrBuf *params,
+  Pending pending)
+{
+  if (!document || !document->opened || !answers) return 0;
+
+  Server *server = document->server;
+  if (server->state != ServerReady) return 0;
+
+  SendChanges(document);
+  pending.request = ++lastRequest;
+  pending.server = server;
+  pending.deadline = RpcNow() + serverRequestTimeout;
+  void *context = (void *)(uintptr_t)pending.request;
+  pending.id = RpcRequest(server->rpc, method, params->data, Replied, context);
+
+  if (pendingCount == pendingCapacity) {
+    pendingCapacity = pendingCapacity ? pendingCapacity * 2 : 8;
+    pendings = MemoryResize(pendings, pendingCapacity, sizeof(Pending));
+  }
+
+  pendings[pendingCount++] = pending;
+  return pending.request;
+}
+
+// the parameters of a question about a position in a document.
+static void
+AppendPositionParams(StrBuf *params, const LspDocument *document, Position position)
+{
+  u64 column = position.byte;
+  const Buffer *buffer = document->buffer;
+
+  if (document->server->utf16 && position.line < BufferLineCount(buffer)) {
+    const StrBuf *line = BufferLine(buffer, position.line);
+    column = Utf16Length(line->data, position.byte < line->length ? position.byte : line->length);
+  }
+
+  StrBufAppendString(params, "{\"textDocument\":{\"uri\":");
+  JsonAppendString(params, document->uri.data, document->uri.length);
+  StrBufAppendString(params, "},\"position\":");
+  AppendPosition(params, position.line, column);
+}
+
+LspRequest
+LspDefinition(LspDocument *document, Position position, LspLocationsDone done, void *context)
+{
+  if (!document) return 0;
+
+  StrBuf params = {};
+  AppendPositionParams(&params, document, position);
+  StrBufAppendByte(&params, '}');
+  Pending pending = {.kind = PendingLocations, .locationsDone = done, .context = context};
+  bool answers = document->server->definitions;
+  LspRequest request = Ask(document, answers, "textDocument/definition", &params, pending);
+  StrBufFree(&params);
+  return request;
+}
+
+LspRequest
+LspReferences(LspDocument *document, Position position, LspLocationsDone done, void *context)
+{
+  if (!document) return 0;
+
+  StrBuf params = {};
+  AppendPositionParams(&params, document, position);
+  StrBufAppendString(&params, ",\"context\":{\"includeDeclaration\":true}}");
+  Pending pending = {.kind = PendingLocations, .locationsDone = done, .context = context};
+  bool answers = document->server->references;
+  LspRequest request = Ask(document, answers, "textDocument/references", &params, pending);
+  StrBufFree(&params);
+  return request;
+}
+
+LspRequest
+LspHover(LspDocument *document, Position position, LspTextDone done, void *context)
+{
+  if (!document) return 0;
+
+  StrBuf params = {};
+  AppendPositionParams(&params, document, position);
+  StrBufAppendByte(&params, '}');
+  Pending pending = {.kind = PendingText, .textDone = done, .context = context};
+  bool answers = document->server->hovers;
+  LspRequest request = Ask(document, answers, "textDocument/hover", &params, pending);
+  StrBufFree(&params);
+  return request;
+}
+
+LspRequest
+LspOtherFile(LspDocument *document, LspLocationsDone done, void *context)
+{
+  if (!document) return 0;
+
+  StrBuf params = {};
+  StrBufAppendString(&params, "{\"uri\":");
+  JsonAppendString(&params, document->uri.data, document->uri.length);
+  StrBufAppendByte(&params, '}');
+  Pending pending = {.kind = PendingLocations, .locationsDone = done, .context = context};
+  bool answers = document->server->clangd;
+  LspRequest request = Ask(document, answers, "textDocument/switchSourceHeader", &params,
+    pending);
+  StrBufFree(&params);
+  return request;
+}
+
+void
+LspCancel(LspRequest request)
+{
+  for (u32 index = 0; index < pendingCount; index++) {
+    if (pendings[index].request != request) continue;
+
+    Pending pending = TakePending(index);
+    Withdraw(&pending);
+    return;
+  }
+}
+
+i32
+LspTimeout(void)
+{
+  if (!pendingCount) return -1;
+
+  i64 first = pendings[0].deadline;
+  for (u32 index = 1; index < pendingCount; index++) {
+    if (pendings[index].deadline < first) first = pendings[index].deadline;
+  }
+
+  i64 left = first - RpcNow();
+  return left > 0 ? (i32)left : 0;
 }

@@ -251,11 +251,8 @@ ReplaceAll(void)
 static void
 OpenFile(LoaderFile *file)
 {
-  u64 index = WorkspaceFind(workspace, file);
-
-  if (index == workspaceNone && Full()) return;
-  if (index == workspaceNone) index = WorkspaceAdd(workspace, file);
-  Switch(index);
+  u64 index = WorkspaceLoad(workspace, file, message);
+  if (index != workspaceNone) Switch(index);
 }
 
 static void

@@ -115,6 +115,8 @@ enum Command {
   CommandPreviousDiagnostic,
   CommandDiagnosticPanel,
   CommandPickDiagnostic,
+  CommandFindReferences,
+  CommandOtherFile,
   CommandReplace,
   CommandToggleExpandTab,
   CommandToggleSoftWrap,

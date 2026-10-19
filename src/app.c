@@ -12,11 +12,13 @@
 #include "keymap.h"
 #include "lang.h"
 #include "learn.h"
+#include "lookup.h"
 #include "lsp.h"
 #include "memory.h"
 #include "move.h"
 #include "multicursor.h"
 #include "picker.h"
+#include "places.h"
 #include "preview.h"
 #include "project.h"
 #include "prompt.h"
@@ -650,8 +652,10 @@ NavigationCommand(enum Command command)
   case CommandFileSymbols: SymbolsPickFile(); break;
   case CommandNextSymbol: SymbolsStep(false); break;
   case CommandPreviousSymbol: SymbolsStep(true); break;
-  case CommandGoToDefinition: SymbolsGoToDefinition(); break;
-  case CommandShowSignature: SymbolsShowSignature(windowSize.width); break;
+  case CommandGoToDefinition: LookupDefinition(); break;
+  case CommandShowSignature: LookupSignature(windowSize.width); break;
+  case CommandFindReferences: LookupReferences(); break;
+  case CommandOtherFile: LookupOtherFile(); break;
   case CommandProjectSymbols: SymbolsPickProject(); break;
   case CommandNextChange: ReviewStep(false); break;
   case CommandPreviousChange: ReviewStep(true); break;
@@ -896,6 +900,14 @@ WaitForInput(void)
   i32 timeout = pending ? escapeTimeout : -1;
   if (ScanBusy() && !pending) timeout = 0;
 
+  // a request running out of time, or the cursor resting long enough for the diagnostics
+  // panel to ask what is under it, wakes the loop too.
+  i32 waits[] = {LspTimeout(), IssuesTimeout()};
+
+  for (u32 index = 0; index < 2; index++) {
+    if (waits[index] >= 0 && (timeout < 0 || waits[index] < timeout)) timeout = waits[index];
+  }
+
   // language servers wake the loop too, and LspPump handles what they sent.
   struct pollfd servers[lspMaxPollFds];
   u32 serverCount = LspPollFds(servers);
@@ -1042,6 +1054,8 @@ AppRun(i32 argc, char **argv)
   SymbolsInit(&workspace, &message);
   ReviewInit(&workspace, &message);
   IssuesInit(&workspace, &message);
+  LookupInit(&workspace, &message);
+  PlacesInit(&workspace, &message);
   LearnInit(&message);
   SessionStart(&workspace, &message, argv + 1, (u64)argc - 1);
 
@@ -1057,6 +1071,7 @@ AppRun(i32 argc, char **argv)
     if (running && ScanBusy()) ScanContinue();
 
     // sends the edits just made, and takes in what the servers said, before drawing.
+    if (running) IssuesTick();
     if (running) LspPump();
     if (running) Draw();
     if (running) WaitForInput();

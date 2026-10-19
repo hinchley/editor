@@ -93,3 +93,11 @@ static constexpr u32 maxServerChanges = 64;
 // how many milliseconds language servers have to exit once asked to, before they are
 // ended.
 static constexpr i64 serverShutdownTime = 500;
+
+// how many milliseconds the cursor rests before the diagnostics panel asks the language
+// server what the symbol under it is.
+static constexpr i64 hoverDelay = 150;
+
+// how many milliseconds a language server has to answer a command (go to definition,
+// references) before the command gives up on it.
+static constexpr i64 serverRequestTimeout = 5000;

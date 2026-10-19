@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "memory.h"
+#include "settings.h"
 
 void
 WorkspaceInit(Workspace *workspace, const DisplayOptions *options)
@@ -94,6 +95,40 @@ WorkspaceFind(const Workspace *workspace, const LoaderFile *file)
   }
 
   return workspaceNone;
+}
+
+u64
+WorkspaceLoad(Workspace *workspace, LoaderFile *file, StrBuf *message)
+{
+  u64 index = WorkspaceFind(workspace, file);
+  if (index != workspaceNone) return index;
+
+  if (workspace->count >= maxFileCount) {
+    StrBufAppendFormat(message, "cannot load more than %lu files", maxFileCount);
+    return workspaceNone;
+  }
+
+  return WorkspaceAdd(workspace, file);
+}
+
+u64
+WorkspaceLoadPath(Workspace *workspace, const char *path, StrBuf *message)
+{
+  StrBuf copy = {};
+  StrBufAppendString(&copy, path);
+  LoaderList list = {};
+  enum LoaderStatus status = LoaderLoad(&list, &copy.data, 1, maxFileCount, message);
+  u64 index = workspaceNone;
+
+  if (status == LoaderStatusOk && list.folders) {
+    StrBufAppendFormat(message, "%s is a folder", path);
+  } else if (status == LoaderStatusOk && list.count) {
+    index = WorkspaceLoad(workspace, &list.files[0], message);
+  }
+
+  LoaderFree(&list);
+  StrBufFree(&copy);
+  return index;
 }
 
 u64

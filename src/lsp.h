@@ -18,6 +18,24 @@
 
 typedef struct LspDocument LspDocument;
 
+// a request a command is waiting on, or 0 for none.
+typedef u64 LspRequest;
+
+// a place a server pointed to: the file's path (relative to the folder the editor started
+// in when inside it) and a range in its text, in bytes.
+typedef struct LspLocation {
+  const char *path;
+  Range range;
+} LspLocation;
+
+// a server's answer of places, valid while the callback runs; answered is false when there
+// is no answer (the server failed, did not answer in time or stopped, which was reported).
+typedef void (*LspLocationsDone)(void *context, const LspLocation *locations, u32 count,
+  bool answered);
+
+// a server's answer of text, as for LspLocationsDone.
+typedef void (*LspTextDone)(void *context, const char *text, u64 length, bool answered);
+
 // the most descriptors LspPollFds fills.
 static constexpr u32 lspMaxPollFds = 16;
 
@@ -66,6 +84,31 @@ LspReloaded(LspDocument *document);
 // or nullptr for no document.
 const Diagnostics *
 LspDiagnostics(const LspDocument *document);
+
+// asks the document's server where the symbol at position is defined, where it is used
+// (with its declaration), or what it is (its hover text, markdown or plain); or, from
+// clangd, which file pairs with the document (a header's source, or a source's header).
+// done is called once, from LspPump, unless the request is cancelled.
+// returns 0, asking nothing, when the server is not ready or cannot answer such a question.
+LspRequest
+LspDefinition(LspDocument *document, Position position, LspLocationsDone done, void *context);
+
+LspRequest
+LspReferences(LspDocument *document, Position position, LspLocationsDone done, void *context);
+
+LspRequest
+LspHover(LspDocument *document, Position position, LspTextDone done, void *context);
+
+LspRequest
+LspOtherFile(LspDocument *document, LspLocationsDone done, void *context);
+
+// stops waiting for a request, telling its server, so done is never called.
+void
+LspCancel(LspRequest request);
+
+// milliseconds until the first request runs out of time, or -1 when none is waiting.
+i32
+LspTimeout(void);
 
 // appends what the status bar says about the document's server: " (clangd)", or with
 // "starting" or "stopped" after the name.

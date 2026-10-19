@@ -2,15 +2,14 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "diagnostics.h"
 #include "jump.h"
 #include "layout.h"
 #include "lsp.h"
-#include "memory.h"
 #include "move.h"
-#include "picker.h"
-#include "preview.h"
+#include "places.h"
 #include "screen.h"
 #include "settings.h"
 #include "theme.h"
@@ -19,17 +18,18 @@ static Workspace *workspace;
 static StrBuf *message;
 static bool panelOpen;
 
-// a diagnostic in the picker: its entry, and where it starts and ends (the end on the same
-// line, or UINT64_MAX).
-typedef struct Place {
+// what the panel shows of the symbol at the cursor: where the cursor was when it last
+// moved (or the text changed), when that was, whether the server was asked, and its
+// answer.
+static struct {
   u64 serial;
-  Position start;
-  u64 end;
-} Place;
-
-static Place *places;
-static u64 placeCount;
-static u64 placeCapacity;
+  u64 revision;
+  Position head;
+  i64 since;
+  bool asked;
+  LspRequest request;
+  StrBuf text;
+} hover;
 
 void
 IssuesInit(Workspace *newWorkspace, StrBuf *newMessage)
@@ -92,10 +92,103 @@ IssuesPanelOpen(void)
   return panelOpen;
 }
 
+static i64
+NowMilliseconds(void)
+{
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  return now.tv_sec * 1000 + now.tv_nsec / 1'000'000;
+}
+
+// forgets the hover, so it is asked for again once the cursor rests.
+static void
+ForgetHover(void)
+{
+  LspCancel(hover.request);
+  hover.request = 0;
+  hover.asked = false;
+  hover.since = NowMilliseconds();
+  StrBufClear(&hover.text);
+}
+
+// keeps the server's answer as plain text: without markdown's fences, rules, heading marks
+// and code quotes.
+static void
+HoverDone([[maybe_unused]] void *context, const char *text, u64 length, bool answered)
+{
+  hover.request = 0;
+  if (!answered) return;
+
+  const char *end = text + length;
+
+  for (const char *at = text, *next; at < end; at = next) {
+    const char *newline = memchr(at, '\n', (u64)(end - at));
+    next = newline ? newline + 1 : end;
+    const char *stop = newline ? newline : end;
+    bool fence = stop - at >= 3 && memcmp(at, "```", 3) == 0;
+    bool rule = stop - at == 3 && memcmp(at, "---", 3) == 0;
+    if (fence) continue;
+
+    const char *start = at;
+    while (!rule && at < stop && *at == '#') at++;
+    while (at > start && at < stop && *at == ' ') at++;
+
+    for (const char *byte = at; byte < stop && !rule; byte++) {
+      if (*byte != '`') StrBufAppendByte(&hover.text, *byte);
+    }
+
+    // a blank line is kept once.
+    bool blank = hover.text.length >= 2 && hover.text.data[hover.text.length - 1] == '\n' &&
+      hover.text.data[hover.text.length - 2] == '\n';
+    if (!blank) StrBufAppendByte(&hover.text, '\n');
+  }
+
+  while (hover.text.length && hover.text.data[hover.text.length - 1] == '\n') {
+    StrBufTruncate(&hover.text, hover.text.length - 1);
+  }
+}
+
+void
+IssuesTick(void)
+{
+  if (!panelOpen) {
+    if (hover.request) ForgetHover();
+    return;
+  }
+
+  Document *document = WorkspaceDocument(workspace);
+  Position head = CursorSetPrimary(&document->view->cursors)->head;
+  u64 serial = workspace->entries[workspace->current].serial;
+  bool moved = serial != hover.serial || document->buffer.revision != hover.revision ||
+    PositionCompare(head, hover.head) != 0;
+
+  if (moved) {
+    hover.serial = serial;
+    hover.revision = document->buffer.revision;
+    hover.head = head;
+    ForgetHover();
+  }
+
+  if (hover.asked || NowMilliseconds() - hover.since < hoverDelay) return;
+
+  hover.asked = true;
+  hover.request = LspHover(document->lsp, head, HoverDone, nullptr);
+}
+
+i32
+IssuesTimeout(void)
+{
+  if (!panelOpen || hover.asked) return -1;
+
+  i64 left = hover.since + hoverDelay - NowMilliseconds();
+  return left > 0 ? (i32)left : 0;
+}
+
 void
 IssuesTogglePanel(i32 width)
 {
   panelOpen = !panelOpen;
+  ForgetHover();
 
   if (panelOpen && width < minSplitWidth) {
     const char *format = "the diagnostics panel needs a window %d columns wide";
@@ -161,6 +254,26 @@ DrawDiagnostic(const Diagnostics *diagnostics, const Diagnostic *diagnostic, i32
   return row;
 }
 
+// says there is no diagnostic on the cursor's line, and where the next one is, from row;
+// returns the row after it.
+static i32
+DrawNone(const Diagnostics *diagnostics, u64 line, i32 row, i32 column)
+{
+  Style faint = ThemeStyle(ThemeGutter);
+  ScreenPutString(row++, column, "no diagnostics on this line", faint);
+  if (!diagnostics->count) return row;
+
+  u32 next;
+  bool wrapped;
+  DiagnosticsStep(diagnostics, (Position){line, UINT64_MAX}, false, &next, &wrapped);
+  StrBuf note = {};
+  u64 at = diagnostics->items[next].range.start.line + 1;
+  StrBufAppendFormat(&note, "%u in this buffer, the next at line %lu", diagnostics->count, at);
+  ScreenPutString(row++, column, note.data, faint);
+  StrBufFree(&note);
+  return row;
+}
+
 void
 IssuesDrawPanel(i32 column, i32 width, i32 height)
 {
@@ -185,7 +298,8 @@ IssuesDrawPanel(i32 column, i32 width, i32 height)
     return;
   }
 
-  // every diagnostic reaching the line, as its underline shows.
+  // every diagnostic reaching the line, as its underline shows, then what the symbol at
+  // the cursor is.
   u32 first;
   u32 end;
   DiagnosticsAround(diagnostics, line, &first, &end);
@@ -201,72 +315,20 @@ IssuesDrawPanel(i32 column, i32 width, i32 height)
     row = DrawDiagnostic(diagnostics, diagnostic, row, height, left, textWidth);
   }
 
-  if (any) return;
-
-  ScreenPutString(1, left, "no diagnostics on this line", faint);
-  if (!diagnostics->count) return;
-
-  u32 next;
-  bool wrapped;
-  DiagnosticsStep(diagnostics, (Position){line, UINT64_MAX}, false, &next, &wrapped);
-  StrBuf note = {};
-  u64 at = diagnostics->items[next].range.start.line + 1;
-  StrBufAppendFormat(&note, "%u in this buffer, the next at line %lu", diagnostics->count, at);
-  ScreenPutString(2, left, note.data, faint);
-  StrBufFree(&note);
-}
-
-// the picker of every diagnostic in the open buffers.
-
-static void
-AddPlace(u64 serial, const Diagnostic *diagnostic)
-{
-  if (placeCount == placeCapacity) {
-    placeCapacity = placeCapacity ? placeCapacity * 2 : 64;
-    places = MemoryResize(places, placeCapacity, sizeof(Place));
+  if (!any) row = DrawNone(diagnostics, line, row, left);
+  if (hover.text.length && row + 1 < height) {
+    DrawWrapped(hover.text.data, row + 1, height, left, textWidth, styleDefault);
   }
-
-  Range range = diagnostic->range;
-  u64 end = range.end.line == range.start.line ? range.end.byte : UINT64_MAX;
-  places[placeCount++] = (Place){serial, range.start, end};
-}
-
-static void
-DrawPlace([[maybe_unused]] void *context, u64 id, i32 column, i32 width, i32 height)
-{
-  const Place *place = &places[id];
-  PreviewDraw(place->serial, place->start.line, place->start.byte, place->end, nullptr, column,
-    width, height);
-}
-
-static void
-Picked([[maybe_unused]] void *context, bool picked, u64 id)
-{
-  if (!picked) return;
-
-  u64 index = WorkspaceEntryOf(workspace, places[id].serial);
-
-  if (index == workspaceNone) {
-    StrBufAppendString(message, "that buffer has been closed");
-    return;
-  }
-
-  JumpRecord();
-  if (index != workspace->current && !WorkspaceSwitch(workspace, index, message)) return;
-
-  View *view = WorkspaceDocument(workspace)->view;
-  Position at = BufferClamp(view->buffer, places[id].start);
-  MoveSelect(view, at, at);
 }
 
 void
 IssuesPick(void)
 {
-  placeCount = 0;
+  u64 count = 0;
   u64 files = 0;
   DiagnosticCounts total = {};
   StrBuf item = {};
-  PickerBegin();
+  PlacesBegin();
 
   for (u64 index = 0; index < workspace->count; index++) {
     const WorkspaceEntry *entry = &workspace->entries[index];
@@ -286,24 +348,23 @@ IssuesPick(void)
       WorkspaceName(workspace, index, &item);
       StrBufAppendFormat(&item, ":%lu: ", diagnostic->range.start.line + 1);
       StrBufAppend(&item, text, FirstLine(text));
-      PickerAdd(item.data, item.length, nullptr, placeCount);
-      PickerMark(DiagnosticSeveritySymbol(diagnostic->severity));
-      AddPlace(entry->serial, diagnostic);
+      const char *mark = DiagnosticSeveritySymbol(diagnostic->severity);
+      PlacesAdd(entry->serial, diagnostic->range, item.data, item.length, nullptr, mark);
+      count++;
     }
   }
 
   StrBufFree(&item);
 
-  if (!placeCount) {
+  if (!count) {
     StrBufAppendString(message, "no diagnostics in the open buffers");
     return;
   }
 
   StrBuf title = {};
   const char *plural = files == 1 ? "" : "s";
-  StrBufAppendFormat(&title, "%lu diagnostics in %lu open buffer%s: E%u W%u", placeCount, files,
+  StrBufAppendFormat(&title, "%lu diagnostics in %lu open buffer%s: E%u W%u", count, files,
     plural, total.errors, total.warnings);
-  PickerOpen(title.data, "filter: ", Picked, nullptr);
-  PickerShowPreview(DrawPlace, nullptr);
+  PlacesOpen(title.data, 0);
   StrBufFree(&title);
 }

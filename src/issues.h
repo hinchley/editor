@@ -31,6 +31,15 @@ IssuesPanelOpen(void);
 void
 IssuesDrawPanel(i32 column, i32 width, i32 height);
 
+// while the panel shows, asks the language server what the symbol at the cursor is once
+// the cursor has rested for hoverDelay, for the panel to show below the diagnostics.
+void
+IssuesTick(void);
+
+// milliseconds until IssuesTick has something to do, or -1 when it waits for nothing.
+i32
+IssuesTimeout(void);
+
 // lists the diagnostics of every open buffer as "file:line: message", with a preview.
 void
 IssuesPick(void);

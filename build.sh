@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# builds ./editor and, on request, the language packages.
+# builds ./editor (and compile_commands.json, for language servers) and, on request, the
+# language packages.
 #
 # usage: ./build.sh [--debug] [--languages] [--install]
 #   --debug      unoptimised build with debug info and address/undefined sanitizers.
@@ -34,7 +35,8 @@ for argument in "$@"; do
 done
 
 common=(-std=c23 -D_DEFAULT_SOURCE)
-strict=(-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror)
+warnings=(-Wall -Wextra -Wpedantic -Wshadow -Wconversion)
+strict=("${warnings[@]}" -Werror)
 if [[ $mode == debug ]]; then
   optimise=(-O0 -g3 -fno-omit-frame-pointer -fsanitize=address,undefined)
 else
@@ -105,6 +107,30 @@ fi
 waitAll
 gcc "${optimise[@]}" "${objects[@]}" -o editor
 echo "build: ./editor ($mode)"
+
+# compile_commands.json tells a language server (clangd) how each source is compiled, so it
+# can index the whole project for references and renames. it leaves out -Werror (or every
+# warning would show as an error) and the optimisation and sanitizer flags, so release and
+# debug builds write the same file, and it is only replaced when it changes, since clangd
+# indexes again when it does.
+directory=$(pwd | sed 's/\\/\\\\/g; s/"/\\"/g')
+{
+  echo "["
+  separator=""
+  for source in src/*.c; do
+    arguments=""
+    command=(gcc "${common[@]}" "${warnings[@]}" -Ivendor/tree-sitter/include -c "$source")
+    for argument in "${command[@]}"; do
+      arguments+="${arguments:+, }\"$argument\""
+    done
+    printf '%s  {"directory": "%s", "file": "%s", "arguments": [%s]}' \
+      "$separator" "$directory" "$source" "$arguments"
+    separator=$',\n'
+  done
+  printf '\n]\n'
+} > build/compile_commands.json
+cmp -s build/compile_commands.json compile_commands.json ||
+  cp build/compile_commands.json compile_commands.json
 
 # a package is the editor's own files for it (languages/<id>: language, tags.scm), the
 # vendored queries and the grammar linked as parser.so.

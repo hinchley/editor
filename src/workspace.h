@@ -96,6 +96,16 @@ WorkspaceFind(const Workspace *workspace, const LoaderFile *file);
 u64
 WorkspaceAdd(Workspace *workspace, LoaderFile *file);
 
+// the index of file's entry, adding it when it is not loaded and there is room for it;
+// workspaceNone, after saying so in message, when there is not.
+u64
+WorkspaceLoad(Workspace *workspace, LoaderFile *file, StrBuf *message);
+
+// the index of the entry of the file at path, loading it as ctrl+o does; workspaceNone,
+// after saying why in message, when it cannot be (a folder, or no room).
+u64
+WorkspaceLoadPath(Workspace *workspace, const char *path, StrBuf *message);
+
 // adds an unnamed buffer and returns its index.
 u64
 WorkspaceAddUnnamed(Workspace *workspace);

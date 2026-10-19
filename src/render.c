@@ -14,7 +14,6 @@ static constexpr char tabSymbol[] = "\u2192";
 static constexpr char rulerSymbol[] = "\u2502";
 static constexpr char invalidSymbol[] = "\uFFFD";
 
-static constexpr char ellipsis[] = "\u2026";
 
 // a hint is only drawn with at least this many columns free after its line.
 static constexpr i64 minHintWidth = 10;
@@ -427,33 +426,13 @@ DrawHint(const Canvas *canvas, i32 row, i64 x)
   StrBufAppendFormat(&hint, "%s ", symbol);
   StrBufAppend(&hint, message, strcspn(message, "\n"));
   if (canvas->lineCount > 1) StrBufAppendFormat(&hint, " (+%u)", canvas->lineCount - 1);
-
-  // the clusters that fit, leaving a column for the ellipsis when some do not.
-  LayoutIterator iterator = LayoutBegin(hint.data, hint.length);
-  LayoutCluster cluster;
-  u64 fits = 0;
-  u64 cut = 0;
-  bool whole = true;
-
-  while (LayoutNext(&iterator, &cluster)) {
-    if ((i64)(cluster.column + cluster.width) <= width - 1) cut = cluster.end;
-    if ((i64)(cluster.column + cluster.width) > width) {
-      whole = false;
-      break;
-    }
-
-    fits = cluster.end;
-  }
-
-  if (!whole) {
-    StrBufTruncate(&hint, cut);
-    StrBufAppendString(&hint, ellipsis);
-    fits = hint.length;
-  }
+  StrBuf shown = {};
+  LayoutCut(hint.data, hint.length, (i32)width, &shown);
 
   Style style = ThemeStyle(canvas->lineGroup);
   style.attributes |= StyleAttributeFaint;
-  ScreenPutText(row, canvas->textColumn + (i32)x, hint.data, fits, style);
+  ScreenPutText(row, canvas->textColumn + (i32)x, shown.data, shown.length, style);
+  StrBufFree(&shown);
   StrBufFree(&hint);
 }
 

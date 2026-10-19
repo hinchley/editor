@@ -104,3 +104,8 @@ LayoutByteAt(const char *text, u64 length, LayoutRow row, u64 column);
 // appends text, shortened in the middle with "..." when it is wider than width columns.
 void
 LayoutShorten(const char *text, u64 length, i32 width, StrBuf *output);
+
+// appends the start of text that fits in width columns, ending with "…" when the rest is
+// cut off.
+void
+LayoutCut(const char *text, u64 length, i32 width, StrBuf *output);
