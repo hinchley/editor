@@ -22,6 +22,7 @@
 #include "preview.h"
 #include "project.h"
 #include "prompt.h"
+#include "refactor.h"
 #include "render.h"
 #include "review.h"
 #include "save.h"
@@ -656,6 +657,9 @@ NavigationCommand(enum Command command)
   case CommandShowSignature: LookupSignature(windowSize.width); break;
   case CommandFindReferences: LookupReferences(); break;
   case CommandOtherFile: LookupOtherFile(); break;
+  case CommandRename: RefactorRename(); break;
+  case CommandFix: RefactorFix(); break;
+  case CommandFormat: RefactorFormat(expandTab); break;
   case CommandProjectSymbols: SymbolsPickProject(); break;
   case CommandNextChange: ReviewStep(false); break;
   case CommandPreviousChange: ReviewStep(true); break;
@@ -1056,6 +1060,7 @@ AppRun(i32 argc, char **argv)
   IssuesInit(&workspace, &message);
   LookupInit(&workspace, &message);
   PlacesInit(&workspace, &message);
+  RefactorInit(&workspace, &message);
   LearnInit(&message);
   SessionStart(&workspace, &message, argv + 1, (u64)argc - 1);
 

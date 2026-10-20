@@ -425,15 +425,10 @@ static bool
 ReplaceInEntry(u64 first, u64 end, u64 *lines, u64 *matches)
 {
   u64 index = WorkspaceEntryOf(workspace, hits[chosen[first]].entry);
-  StrBuf ignored = {};
-  bool opened = index != workspaceNone && WorkspaceOpen(workspace, index, &ignored);
-  StrBufFree(&ignored);
-  if (!opened) return false;
+  Document *document = WorkspaceEditBegin(workspace, index);
+  if (!document) return false;
 
-  Document *document = workspace->entries[index].document;
   Buffer *buffer = &document->buffer;
-  UndoBreak(&document->undo);
-  UndoBegin(&document->undo, UndoKindOther, &document->view->cursors);
   StrBuf rebuilt = {};
 
   for (u64 at = end; at-- > first;) {
@@ -453,7 +448,7 @@ ReplaceInEntry(u64 first, u64 end, u64 *lines, u64 *matches)
   }
 
   StrBufFree(&rebuilt);
-  UndoEnd(&document->undo, &document->view->cursors);
+  WorkspaceEditEnd(document);
   return true;
 }
 

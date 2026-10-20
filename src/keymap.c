@@ -194,6 +194,9 @@ const Binding keymapBindings[] = {
   {{'k', alt | shift}, CommandPickDiagnostic, "pick a diagnostic in the open buffers"},
   {{'u', alt}, CommandFindReferences, "pick a use of the name at the cursor (language server)"},
   {{'a', alt}, CommandOtherFile, "switch between a header and its source (clangd)"},
+  {{'n', alt | shift}, CommandRename, "rename the name at the cursor everywhere (language server)"},
+  {{'y', alt}, CommandFix, "fix a diagnostic on the line (language server)"},
+  {{'i', alt | shift}, CommandFormat, "format the buffer (language server)"},
 
   // display and settings.
   {{'t', alt}, CommandToggleExpandTab, "toggle indenting with spaces or tabs"},

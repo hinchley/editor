@@ -53,6 +53,10 @@ typedef struct Server {
   bool definitions;
   bool references;
   bool hovers;
+  bool renames;
+  bool preparesRenames;
+  bool fixes;
+  bool formats;
   bool clangd;
 
   // the documents attached to it, and whether it answered shutdown.
@@ -91,9 +95,13 @@ static u32 serverCount;
 
 // a request a command waits on: the server asked, its id there, when it runs out of time,
 // and what to call with the answer.
+// it also keeps the uri of the document asked about, for an answer of ranges in it.
 enum PendingKind {
   PendingLocations,
-  PendingText
+  PendingText,
+  PendingPrepare,
+  PendingEdits,
+  PendingActions
 };
 
 typedef struct Pending {
@@ -102,8 +110,12 @@ typedef struct Pending {
   u64 id;
   i64 deadline;
   enum PendingKind kind;
+  StrBuf uri;
+  Position position;
   LspLocationsDone locationsDone;
   LspTextDone textDone;
+  LspEditsDone editsDone;
+  LspActionsDone actionsDone;
   void *context;
 } Pending;
 
@@ -404,13 +416,22 @@ Initialized(void *context, const Json *json, u32 result, u32 error)
   server->wantsSave = wantsSave;
 
   // a provider is either true or options.
-  const char *providers[] = {"definitionProvider", "referencesProvider", "hoverProvider"};
-  bool *answers[] = {&server->definitions, &server->references, &server->hovers};
+  const char *providers[] = {
+    "definitionProvider", "referencesProvider", "hoverProvider", "renameProvider",
+    "codeActionProvider", "documentFormattingProvider"
+  };
+  bool *answers[] = {
+    &server->definitions, &server->references, &server->hovers, &server->renames,
+    &server->fixes, &server->formats
+  };
 
-  for (u32 index = 0; index < 3; index++) {
+  for (u32 index = 0; index < sizeof providers / sizeof providers[0]; index++) {
     u32 provider = JsonGet(json, capabilities, providers[index]);
     *answers[index] = JsonTrue(json, provider) || JsonTypeOf(json, provider) == JsonTypeObject;
   }
+
+  u32 rename = JsonGet(json, capabilities, "renameProvider");
+  server->preparesRenames = JsonTrue(json, JsonGet(json, rename, "prepareProvider"));
 
   u32 serverInfo = JsonGet(json, result, "serverInfo");
   server->clangd = JsonEquals(json, JsonGet(json, serverInfo, "name"), "clangd");
@@ -663,12 +684,16 @@ SendInitialize(Server *server)
   StrBufAppendString(&params,
     "}],\"capabilities\":{"
       "\"general\":{\"positionEncodings\":[\"utf-8\",\"utf-16\"]},"
-      "\"workspace\":{\"workspaceFolders\":true},"
+      "\"workspace\":{\"workspaceFolders\":true,\"workspaceEdit\":{\"documentChanges\":true}},"
       "\"textDocument\":{"
         "\"synchronization\":{\"didSave\":true},"
         "\"publishDiagnostics\":{\"relatedInformation\":true,\"versionSupport\":true},"
         "\"definition\":{},\"references\":{},"
-        "\"hover\":{\"contentFormat\":[\"markdown\",\"plaintext\"]}"
+        "\"hover\":{\"contentFormat\":[\"markdown\",\"plaintext\"]},"
+        "\"rename\":{\"prepareSupport\":true},"
+        "\"codeAction\":{\"isPreferredSupport\":true,\"codeActionLiteralSupport\":"
+          "{\"codeActionKind\":{\"valueSet\":[\"quickfix\"]}}},"
+        "\"formatting\":{}"
       "}"
     "}}");
   RpcRequest(server->rpc, "initialize", params.data, Initialized, server);
@@ -752,12 +777,29 @@ TakePending(u32 index)
   return pending;
 }
 
+// tells the request's callback there is no answer, and lets the request go.
 static void
-Unanswered(const Pending *pending)
+Unanswered(Pending *pending)
 {
   void *context = pending->context;
-  if (pending->kind == PendingLocations) pending->locationsDone(context, nullptr, 0, false);
-  else pending->textDone(context, nullptr, 0, false);
+
+  switch (pending->kind) {
+  case PendingLocations:
+  case PendingPrepare:
+    pending->locationsDone(context, nullptr, 0, false);
+    break;
+  case PendingText:
+    pending->textDone(context, nullptr, 0, false);
+    break;
+  case PendingEdits:
+    pending->editsDone(context, nullptr, 0, false);
+    break;
+  case PendingActions:
+    pending->actionsDone(context, nullptr, 0, false);
+    break;
+  }
+
+  StrBufFree(&pending->uri);
 }
 
 // the requests a server will not answer now that it stopped.
@@ -1239,6 +1281,197 @@ AnswerText(const Pending *pending, const Json *json, u32 result)
   StrBufFree(&text);
 }
 
+// changes being read from an answer: the edits, with the offsets of their paths and texts
+// in one string until every one is read, the file read to convert their positions, and
+// how many file operations (creating, renaming, deleting) were left out.
+typedef struct Collecting {
+  LspEdit *edits;
+  u64 *offsets;
+  u32 count;
+  u32 capacity;
+  StrBuf strings;
+  Converting converting;
+  u32 skipped;
+} Collecting;
+
+// reads a list of text edits for the file at uri.
+static void
+CollectTextEdits(Collecting *collecting, const Server *server, const Json *json,
+  const StrBuf *uri, u32 edits)
+{
+  for (u32 item = JsonFirst(json, edits); item != jsonNone; item = JsonNext(json, edits, item)) {
+    if (collecting->count == collecting->capacity) {
+      collecting->capacity = collecting->capacity ? collecting->capacity * 2 : 32;
+      collecting->edits = MemoryResize(collecting->edits, collecting->capacity, sizeof(LspEdit));
+      collecting->offsets = MemoryResize(collecting->offsets, collecting->capacity * 2,
+        sizeof(u64));
+    }
+
+    StrBuf *strings = &collecting->strings;
+    u64 *offsets = &collecting->offsets[collecting->count * 2];
+    offsets[0] = strings->length;
+    AppendPathOfUri(strings, uri->data ? uri->data : "", uri->length);
+    StrBufAppendByte(strings, '\0');
+    offsets[1] = strings->length;
+    JsonString(json, JsonGet(json, item, "newText"), strings);
+    u64 length = strings->length - offsets[1];
+    StrBufAppendByte(strings, '\0');
+
+    u32 range = JsonGet(json, item, "range");
+    Range found = ReadRange(server, json, range, uri, &collecting->converting);
+    collecting->edits[collecting->count++] = (LspEdit){.range = found, .length = length};
+  }
+}
+
+// reads a workspace edit: its changes by uri, or its document changes, leaving out the
+// file operations among them.
+static void
+CollectWorkspaceEdit(Collecting *collecting, const Server *server, const Json *json, u32 edit)
+{
+  StrBuf uri = {};
+  u32 changes = JsonGet(json, edit, "changes");
+
+  for (u32 key = JsonFirst(json, changes); key != jsonNone; key = JsonNext(json, changes, key)) {
+    StrBufClear(&uri);
+    JsonString(json, key, &uri);
+    CollectTextEdits(collecting, server, json, &uri, key + 1);
+  }
+
+  u32 changed = JsonGet(json, edit, "documentChanges");
+  u32 item = JsonFirst(json, changed);
+
+  for (; item != jsonNone; item = JsonNext(json, changed, item)) {
+    u32 edits = JsonGet(json, item, "edits");
+
+    if (edits == jsonNone) {
+      collecting->skipped++;
+      continue;
+    }
+
+    StrBufClear(&uri);
+    JsonString(json, JsonGet(json, JsonGet(json, item, "textDocument"), "uri"), &uri);
+    CollectTextEdits(collecting, server, json, &uri, edits);
+  }
+
+  StrBufFree(&uri);
+}
+
+// points the edits at their paths and texts, once every one is read.
+static void
+Collected(Collecting *collecting)
+{
+  for (u32 index = 0; index < collecting->count; index++) {
+    collecting->edits[index].path = collecting->strings.data + collecting->offsets[index * 2];
+    collecting->edits[index].text = collecting->strings.data + collecting->offsets[index * 2 + 1];
+  }
+}
+
+static void
+FreeCollecting(Collecting *collecting)
+{
+  free(collecting->edits);
+  free(collecting->offsets);
+  StrBufFree(&collecting->strings);
+  StrBufFree(&collecting->converting.uri);
+  StrBufFree(&collecting->converting.text);
+}
+
+// the answer to prepareRename: the name's range (alone, or with a placeholder), the
+// editor's choice (defaultBehavior), or null when the symbol cannot be renamed.
+static void
+AnswerPrepare(const Pending *pending, const Json *json, u32 result)
+{
+  if (JsonTypeOf(json, result) != JsonTypeObject) {
+    pending->locationsDone(pending->context, nullptr, 0, true);
+    return;
+  }
+
+  StrBuf path = {};
+  AppendPathOfUri(&path, pending->uri.data, pending->uri.length);
+  LspLocation location = {.path = path.data, .range = {pending->position, pending->position}};
+  u32 range = JsonGet(json, result, "range");
+  if (range == jsonNone && JsonGet(json, result, "start") != jsonNone) range = result;
+
+  if (range != jsonNone) {
+    Converting converting = {};
+    location.range = ReadRange(pending->server, json, range, &pending->uri, &converting);
+    StrBufFree(&converting.uri);
+    StrBufFree(&converting.text);
+  }
+
+  pending->locationsDone(pending->context, &location, 1, true);
+  StrBufFree(&path);
+}
+
+// changes: a workspace edit (a rename), or a list of text edits of the document asked
+// about (formatting); null is no change.
+static void
+AnswerEdits(const Pending *pending, const Json *json, u32 result)
+{
+  Collecting collecting = {};
+
+  if (JsonTypeOf(json, result) == JsonTypeArray) {
+    CollectTextEdits(&collecting, pending->server, json, &pending->uri, result);
+  } else {
+    CollectWorkspaceEdit(&collecting, pending->server, json, result);
+  }
+
+  if (collecting.skipped) {
+    StrBufAppendFormat(Report(), "%u file operations left out", collecting.skipped);
+  }
+
+  Collected(&collecting);
+  pending->editsDone(pending->context, collecting.edits, collecting.count, true);
+  FreeCollecting(&collecting);
+}
+
+// fixes: the code actions that carry their changes (commands, which would need the server
+// to change the files, are left out).
+static void
+AnswerActions(const Pending *pending, const Json *json, u32 result)
+{
+  Collecting collecting = {};
+  StrBuf titles = {};
+  u32 count = JsonSize(json, result);
+  LspAction *actions = MemoryAllocate((count ? count : 1) * sizeof(LspAction));
+  u64 *titleStarts = MemoryAllocate((count ? count : 1) * sizeof(u64));
+  u32 *editStarts = MemoryAllocate((count ? count : 1) * sizeof(u32));
+  u32 found = 0;
+  u32 item = JsonFirst(json, result);
+
+  for (; item != jsonNone; item = JsonNext(json, result, item)) {
+    u32 edit = JsonGet(json, item, "edit");
+    if (edit == jsonNone) continue;
+
+    u32 start = collecting.count;
+    CollectWorkspaceEdit(&collecting, pending->server, json, edit);
+    if (collecting.count == start) continue;
+
+    titleStarts[found] = titles.length;
+    JsonString(json, JsonGet(json, item, "title"), &titles);
+    StrBufAppendByte(&titles, '\0');
+    editStarts[found] = start;
+    actions[found++] = (LspAction){
+      .editCount = collecting.count - start,
+      .preferred = JsonTrue(json, JsonGet(json, item, "isPreferred"))
+    };
+  }
+
+  Collected(&collecting);
+
+  for (u32 index = 0; index < found; index++) {
+    actions[index].title = titles.data + titleStarts[index];
+    actions[index].edits = collecting.edits + editStarts[index];
+  }
+
+  pending->actionsDone(pending->context, actions, found, true);
+  free(actions);
+  free(titleStarts);
+  free(editStarts);
+  StrBufFree(&titles);
+  FreeCollecting(&collecting);
+}
+
 static void
 Replied(void *context, const Json *json, u32 result, u32 error)
 {
@@ -1263,9 +1496,20 @@ Replied(void *context, const Json *json, u32 result, u32 error)
     }
   }
 
-  if (!json || result == jsonNone) Unanswered(&pending);
-  else if (pending.kind == PendingLocations) AnswerLocations(&pending, json, result);
-  else AnswerText(&pending, json, result);
+  if (!json || result == jsonNone) {
+    Unanswered(&pending);
+    return;
+  }
+
+  switch (pending.kind) {
+  case PendingLocations: AnswerLocations(&pending, json, result); break;
+  case PendingText: AnswerText(&pending, json, result); break;
+  case PendingPrepare: AnswerPrepare(&pending, json, result); break;
+  case PendingEdits: AnswerEdits(&pending, json, result); break;
+  case PendingActions: AnswerActions(&pending, json, result); break;
+  }
+
+  StrBufFree(&pending.uri);
 }
 
 // sends a request about a document, once its pending changes are sent.
@@ -1281,6 +1525,8 @@ Ask(LspDocument *document, bool answers, const char *method, const StrBuf *param
   SendChanges(document);
   pending.request = ++lastRequest;
   pending.server = server;
+  pending.uri = (StrBuf){};
+  StrBufAppend(&pending.uri, document->uri.data, document->uri.length);
   pending.deadline = RpcNow() + serverRequestTimeout;
   void *context = (void *)(uintptr_t)pending.request;
   pending.id = RpcRequest(server->rpc, method, params->data, Replied, context);
@@ -1294,9 +1540,9 @@ Ask(LspDocument *document, bool answers, const char *method, const StrBuf *param
   return pending.request;
 }
 
-// the parameters of a question about a position in a document.
+// appends a position in a document as its server counts it.
 static void
-AppendPositionParams(StrBuf *params, const LspDocument *document, Position position)
+AppendServerPosition(StrBuf *params, const LspDocument *document, Position position)
 {
   u64 column = position.byte;
   const Buffer *buffer = document->buffer;
@@ -1306,10 +1552,24 @@ AppendPositionParams(StrBuf *params, const LspDocument *document, Position posit
     column = Utf16Length(line->data, position.byte < line->length ? position.byte : line->length);
   }
 
+  AppendPosition(params, position.line, column);
+}
+
+static void
+AppendDocument(StrBuf *params, const LspDocument *document)
+{
   StrBufAppendString(params, "{\"textDocument\":{\"uri\":");
   JsonAppendString(params, document->uri.data, document->uri.length);
-  StrBufAppendString(params, "},\"position\":");
-  AppendPosition(params, position.line, column);
+  StrBufAppendByte(params, '}');
+}
+
+// the parameters of a question about a position in a document.
+static void
+AppendPositionParams(StrBuf *params, const LspDocument *document, Position position)
+{
+  AppendDocument(params, document);
+  StrBufAppendString(params, ",\"position\":");
+  AppendServerPosition(params, document, position);
 }
 
 LspRequest
@@ -1382,6 +1642,7 @@ LspCancel(LspRequest request)
 
     Pending pending = TakePending(index);
     Withdraw(&pending);
+    StrBufFree(&pending.uri);
     return;
   }
 }
@@ -1398,4 +1659,135 @@ LspTimeout(void)
 
   i64 left = first - RpcNow();
   return left > 0 ? (i32)left : 0;
+}
+
+bool
+LspRenames(const LspDocument *document)
+{
+  return document && document->server->renames;
+}
+
+LspRequest
+LspPrepareRename(LspDocument *document, Position position, LspLocationsDone done,
+  void *context)
+{
+  if (!document || !document->server->preparesRenames) return 0;
+
+  StrBuf params = {};
+  AppendPositionParams(&params, document, position);
+  StrBufAppendByte(&params, '}');
+  Pending pending = {
+    .kind = PendingPrepare,
+    .position = position,
+    .locationsDone = done,
+    .context = context
+  };
+  LspRequest request = Ask(document, true, "textDocument/prepareRename", &params, pending);
+  StrBufFree(&params);
+  return request;
+}
+
+LspRequest
+LspRename(LspDocument *document, Position position, const char *name, u64 length,
+  LspEditsDone done, void *context)
+{
+  if (!document) return 0;
+
+  StrBuf params = {};
+  AppendPositionParams(&params, document, position);
+  StrBufAppendString(&params, ",\"newName\":");
+  JsonAppendString(&params, name, length);
+  StrBufAppendByte(&params, '}');
+  Pending pending = {.kind = PendingEdits, .editsDone = done, .context = context};
+  bool answers = document->server->renames;
+  LspRequest request = Ask(document, answers, "textDocument/rename", &params, pending);
+  StrBufFree(&params);
+  return request;
+}
+
+// appends a diagnostic as the server sent it (its range in its own counting), so it can
+// tell which of its diagnostics a question is about.
+static void
+AppendDiagnostic(StrBuf *params, const LspDocument *document, const Diagnostic *diagnostic)
+{
+  const Diagnostics *diagnostics = &document->diagnostics;
+  StrBufAppendString(params, "{\"range\":{\"start\":");
+  AppendServerPosition(params, document, diagnostic->range.start);
+  StrBufAppendString(params, ",\"end\":");
+  AppendServerPosition(params, document, diagnostic->range.end);
+  StrBufAppendFormat(params, "},\"severity\":%d,\"message\":", (i32)diagnostic->severity);
+  const char *text = DiagnosticsText(diagnostics, diagnostic->message);
+  JsonAppendString(params, text, strlen(text));
+
+  const char *code = DiagnosticsText(diagnostics, diagnostic->code);
+  const char *source = DiagnosticsText(diagnostics, diagnostic->source);
+
+  if (*code) {
+    StrBufAppendString(params, ",\"code\":");
+    JsonAppendString(params, code, strlen(code));
+  }
+
+  if (*source) {
+    StrBufAppendString(params, ",\"source\":");
+    JsonAppendString(params, source, strlen(source));
+  }
+
+  StrBufAppendByte(params, '}');
+}
+
+LspRequest
+LspFixes(LspDocument *document, u64 line, LspActionsDone done, void *context)
+{
+  if (!document) return 0;
+
+  // the whole line, with every diagnostic reaching it.
+  const Buffer *buffer = document->buffer;
+  if (line >= BufferLineCount(buffer)) line = BufferLineCount(buffer) - 1;
+  Position end = {line, BufferLine(buffer, line)->length};
+
+  StrBuf params = {};
+  AppendDocument(&params, document);
+  StrBufAppendString(&params, ",\"range\":{\"start\":");
+  AppendPosition(&params, line, 0);
+  StrBufAppendString(&params, ",\"end\":");
+  AppendServerPosition(&params, document, end);
+  StrBufAppendString(&params, "},\"context\":{\"only\":[\"quickfix\"],\"diagnostics\":[");
+
+  const Diagnostics *diagnostics = &document->diagnostics;
+  u32 first;
+  u32 last;
+  DiagnosticsAround(diagnostics, line, &first, &last);
+  bool any = false;
+
+  for (u32 index = first; index < last; index++) {
+    const Diagnostic *diagnostic = &diagnostics->items[index];
+    if (diagnostic->range.end.line < line) continue;
+
+    if (any) StrBufAppendByte(&params, ',');
+    any = true;
+    AppendDiagnostic(&params, document, diagnostic);
+  }
+
+  StrBufAppendString(&params, "]}}");
+  Pending pending = {.kind = PendingActions, .actionsDone = done, .context = context};
+  bool answers = document->server->fixes;
+  LspRequest request = Ask(document, answers, "textDocument/codeAction", &params, pending);
+  StrBufFree(&params);
+  return request;
+}
+
+LspRequest
+LspFormat(LspDocument *document, bool spaces, LspEditsDone done, void *context)
+{
+  if (!document) return 0;
+
+  StrBuf params = {};
+  AppendDocument(&params, document);
+  StrBufAppendFormat(&params, ",\"options\":{\"tabSize\":%d,\"insertSpaces\":%s}}", tabWidth,
+    spaces ? "true" : "false");
+  Pending pending = {.kind = PendingEdits, .editsDone = done, .context = context};
+  bool answers = document->server->formats;
+  LspRequest request = Ask(document, answers, "textDocument/formatting", &params, pending);
+  StrBufFree(&params);
+  return request;
 }

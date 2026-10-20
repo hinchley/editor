@@ -36,6 +36,32 @@ typedef void (*LspLocationsDone)(void *context, const LspLocation *locations, u3
 // a server's answer of text, as for LspLocationsDone.
 typedef void (*LspTextDone)(void *context, const char *text, u64 length, bool answered);
 
+// a change a server wants made: range in the file at path (as for LspLocation) replaced
+// with text. a file's changes never overlap, and each range is in the text as it was
+// before any of them.
+typedef struct LspEdit {
+  const char *path;
+  Range range;
+  const char *text;
+  u64 length;
+} LspEdit;
+
+// a server's answer of changes, as for LspLocationsDone.
+typedef void (*LspEditsDone)(void *context, const LspEdit *edits, u32 count, bool answered);
+
+// a fix a server offers: what it is called, its changes, and whether the server thinks it
+// is the one to take.
+typedef struct LspAction {
+  const char *title;
+  const LspEdit *edits;
+  u32 editCount;
+  bool preferred;
+} LspAction;
+
+// a server's answer of fixes, as for LspLocationsDone.
+typedef void (*LspActionsDone)(void *context, const LspAction *actions, u32 count,
+  bool answered);
+
 // the most descriptors LspPollFds fills.
 static constexpr u32 lspMaxPollFds = 16;
 
@@ -101,6 +127,33 @@ LspHover(LspDocument *document, Position position, LspTextDone done, void *conte
 
 LspRequest
 LspOtherFile(LspDocument *document, LspLocationsDone done, void *context);
+
+// asks the document's server whether the symbol at position can be renamed, answering
+// the range of its name (one location), an empty range at position when the server leaves
+// the name to the editor, or no location when it cannot be renamed.
+// returns 0, asking nothing, when the server does not check names before renaming.
+LspRequest
+LspPrepareRename(LspDocument *document, Position position, LspLocationsDone done,
+  void *context);
+
+// asks the document's server for the changes that rename the symbol at position to name,
+// across the files it knows.
+LspRequest
+LspRename(LspDocument *document, Position position, const char *name, u64 length,
+  LspEditsDone done, void *context);
+
+// asks the document's server for the fixes of the diagnostics reaching line.
+LspRequest
+LspFixes(LspDocument *document, u64 line, LspActionsDone done, void *context);
+
+// asks the document's server for the changes that format the whole document, indenting
+// with spaces (or tabs) to tabWidth.
+LspRequest
+LspFormat(LspDocument *document, bool spaces, LspEditsDone done, void *context);
+
+// true when the document's server can rename symbols.
+bool
+LspRenames(const LspDocument *document);
 
 // stops waiting for a request, telling its server, so done is never called.
 void
