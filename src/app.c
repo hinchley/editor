@@ -14,6 +14,7 @@
 #include "learn.h"
 #include "lookup.h"
 #include "lsp.h"
+#include "markdown.h"
 #include "memory.h"
 #include "move.h"
 #include "multicursor.h"
@@ -54,6 +55,9 @@ static DisplayOptions displayOptions = {
 };
 
 static bool expandTab = expandTabDefault;
+
+// the widest a markdown table column grows, as last asked for.
+static u64 tableColumnWidth = tableColumnWidthDefault;
 
 // the message bar text, cleared by the next key.
 static StrBuf message;
@@ -382,6 +386,57 @@ AskSortOrder(void)
 }
 
 static void
+TableWidthAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
+{
+  if (!answer) return;
+
+  u64 width;
+  u64 minimum = tableColumnWidthMinimum;
+  u64 maximum = tableColumnWidthMaximum;
+
+  if (!ParseNumber(answer, length, minimum, maximum, &width)) {
+    StrBufAppendFormat(&message, "the column width must be from %lu to %lu", minimum, maximum);
+    return;
+  }
+
+  tableColumnWidth = width;
+  MarkdownTableResult result;
+
+  if (!MarkdownAlignTable(Current(), width, &result)) {
+    StrBufAppendString(&message, "not in a markdown table");
+    return;
+  }
+
+  if (!result.changed) {
+    StrBufAppendString(&message, "the table is aligned already");
+    return;
+  }
+
+  const char *columns = result.columns == 1 ? "" : "s";
+  const char *lines = result.lines == 1 ? "" : "s";
+  StrBufAppendFormat(&message, "aligned %u column%s over %lu line%s", result.columns, columns,
+    result.lines, lines);
+}
+
+static void
+AskTableWidth(void)
+{
+  if (!MarkdownInTable(Current())) {
+    StrBufAppendString(&message, "not in a markdown table");
+    return;
+  }
+
+  StrBuf label = {};
+  StrBuf current = {};
+  StrBufAppendFormat(&label, "table column width (%lu-%lu): ", tableColumnWidthMinimum,
+    tableColumnWidthMaximum);
+  StrBufAppendFormat(&current, "%lu", tableColumnWidth);
+  PromptAsk(label.data, current.data, TableWidthAnswered, nullptr);
+  StrBufFree(&current);
+  StrBufFree(&label);
+}
+
+static void
 TrimWhitespace(bool everyLine)
 {
   EditContext edit = Editing();
@@ -598,6 +653,7 @@ EditCommand(enum Command command)
   case CommandTrimWhitespace: TrimWhitespace(true); break;
   case CommandUpperCase: ChangeCase(true); break;
   case CommandLowerCase: ChangeCase(false); break;
+  case CommandAlignTable: AskTableWidth(); break;
   default: return false;
   }
 

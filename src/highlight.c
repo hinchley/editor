@@ -1541,3 +1541,23 @@ HighlightNodeAround(Highlight *highlight, Range range, Range *outer)
   outer->end = PositionOf(ts_node_end_point(best));
   return true;
 }
+
+bool
+HighlightNodeOfType(Highlight *highlight, Position position, const char *type, Range *range)
+{
+  if (!highlight || !ParsedTree(highlight)) return false;
+
+  u32 offset = (u32)(LineOffset(highlight, position.line) + position.byte);
+  TSNode root = ts_tree_root_node(highlight->tree);
+  TSNode node = ts_node_descendant_for_byte_range(root, offset, offset);
+
+  for (; !ts_node_is_null(node); node = ts_node_parent(node)) {
+    if (strcmp(ts_node_type(node), type) != 0) continue;
+
+    range->start = PositionOf(ts_node_start_point(node));
+    range->end = PositionOf(ts_node_end_point(node));
+    return true;
+  }
+
+  return false;
+}

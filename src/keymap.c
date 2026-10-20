@@ -91,6 +91,7 @@ const Binding keymapBindings[] = {
   {{'t', control | shift}, CommandTrimWhitespace, "trim trailing whitespace from every line"},
   {{'u', alt | shift}, CommandUpperCase, "convert the selection to upper case"},
   {{'l', alt | shift}, CommandLowerCase, "convert the selection to lower case"},
+  {{'g', alt | shift}, CommandAlignTable, "align the columns of the markdown table"},
   {{'c', alt}, CommandSpellCheck, "spell check the buffer"},
   {
     {'c', alt | shift},

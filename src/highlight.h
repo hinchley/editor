@@ -104,3 +104,9 @@ HighlightSymbolsOfText(
 // returns false when there is none or the buffer is not highlighted.
 bool
 HighlightNodeAround(Highlight *highlight, Range range, Range *outer);
+
+// the range of the smallest node of a type (the grammar's name for it, such as
+// "pipe_table") that holds position, in the buffer's own language.
+// returns false when there is none or the buffer is not highlighted.
+bool
+HighlightNodeOfType(Highlight *highlight, Position position, const char *type, Range *range);

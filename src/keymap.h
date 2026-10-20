@@ -66,6 +66,7 @@ enum Command {
   CommandTrimWhitespace,
   CommandUpperCase,
   CommandLowerCase,
+  CommandAlignTable,
   CommandSpellCheck,
   CommandSpellWord,
   CommandAddCursorWord,

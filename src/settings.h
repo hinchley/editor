@@ -34,6 +34,12 @@ static constexpr i32 rulerColumnDefault = 100;
 static constexpr i32 rulerColumnMinimum = 1;
 static constexpr i32 rulerColumnMaximum = 500;
 
+// the widest a markdown table column grows before its cells wrap.
+// alt+shift+g asks for it each time, starting from the last width given.
+static constexpr u64 tableColumnWidthDefault = 50;
+static constexpr u64 tableColumnWidthMinimum = 3;
+static constexpr u64 tableColumnWidthMaximum = 10'000;
+
 // insert spaces up to the next tab stop instead of a tab character.
 static constexpr bool expandTabDefault = true;
 
