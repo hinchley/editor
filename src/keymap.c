@@ -113,6 +113,7 @@ const Binding keymapBindings[] = {
   {{'e', control | shift}, CommandAddCursorAll, "add a cursor at every occurrence"},
   {{KeyUp, control | alt}, CommandAddCursorAbove, "add a cursor on the line above"},
   {{KeyDown, control | alt}, CommandAddCursorBelow, "add a cursor on the line below"},
+  {{'=', alt}, CommandAlignCursors, "align the cursors in a column by inserting spaces"},
 
   // buffers and files.
   {{'n', control}, CommandNewBuffer, "create a new empty buffer"},

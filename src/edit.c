@@ -1288,6 +1288,80 @@ EditChangeCase(const EditContext *edit, bool upper)
   return changed;
 }
 
+static Position
+StartOf(const CursorSet *set, u32 index)
+{
+  return CursorRange(&set->cursors[index]).start;
+}
+
+u64
+EditAlignCursors(const EditContext *edit)
+{
+  Buffer *buffer = edit->view->buffer;
+  CursorSet *set = &edit->view->cursors;
+  CursorSetMerge(set);
+
+  // each cursor's place among the cursors on its line, which padding never changes, as it
+  // only inserts spaces on the cursor's own line.
+  // the cursors of a line are next to each other, so a line's first is index - ranks[index].
+  u32 *ranks = MemoryAllocate(set->count * sizeof(u32));
+  u64 *columns = MemoryAllocate(set->count * sizeof(u64));
+  bool *padded = MemoryAllocate(set->count * sizeof(bool));
+  u32 rankCount = 0;
+
+  for (u32 index = 0; index < set->count; index++) {
+    bool sameLine = index > 0 && StartOf(set, index).line == StartOf(set, index - 1).line;
+    ranks[index] = sameLine ? ranks[index - 1] + 1 : 0;
+    padded[index] = false;
+    if (ranks[index] == rankCount) rankCount++;
+  }
+
+  StrBuf padding = {};
+  u64 changed = 0;
+  Begin(edit, UndoKindOther);
+
+  // rank by rank from the left, so padding an earlier rank moves the later ones first.
+  for (u32 rank = 0; rank < rankCount; rank++) {
+    u64 target = 0;
+    u32 lines = 0;
+
+    for (u32 index = 0; index < set->count; index++) {
+      if (ranks[index] != rank) continue;
+
+      Position start = StartOf(set, index);
+      const StrBuf *line = BufferLine(buffer, start.line);
+      columns[index] = LayoutColumn(line->data, line->length, start.byte);
+      if (columns[index] > target) target = columns[index];
+      lines++;
+    }
+
+    // no rank is on more lines than the one before, so none after this one has two.
+    if (lines < 2) break;
+
+    for (u32 index = 0; index < set->count; index++) {
+      if (ranks[index] != rank || columns[index] == target) continue;
+
+      u64 missing = target - columns[index];
+      while (padding.length < missing) StrBufAppend(&padding, spaces, sizeof spaces - 1);
+
+      // the cursor is at the end of the insertion, so it moves along with its text.
+      Position start = StartOf(set, index);
+      BufferReplace(buffer, (Range){start, start}, padding.data, missing);
+
+      u32 first = index - ranks[index];
+      if (!padded[first]) changed++;
+      padded[first] = true;
+    }
+  }
+
+  End(edit);
+  StrBufFree(&padding);
+  free(padded);
+  free(columns);
+  free(ranks);
+  return changed;
+}
+
 bool
 EditUndo(const EditContext *edit)
 {

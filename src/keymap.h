@@ -74,6 +74,7 @@ enum Command {
   CommandAddCursorAll,
   CommandAddCursorAbove,
   CommandAddCursorBelow,
+  CommandAlignCursors,
   CommandNewBuffer,
   CommandOpen,
   CommandReload,

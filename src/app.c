@@ -464,6 +464,28 @@ ChangeCase(bool upper)
 }
 
 static void
+AlignCursors(void)
+{
+  EditContext edit = Editing();
+  CursorSet *set = &edit.view->cursors;
+  CursorSetMerge(set);
+
+  // merged cursors are in order, so the first and last are on different lines when any are.
+  u64 first = CursorRange(&set->cursors[0]).start.line;
+  u64 last = CursorRange(&set->cursors[set->count - 1]).start.line;
+
+  if (first == last) {
+    StrBufAppendString(&message, "align needs cursors on two or more lines");
+    return;
+  }
+
+  u64 count = EditAlignCursors(&edit);
+
+  if (count) StrBufAppendFormat(&message, "aligned %lu line%s", count, count == 1 ? "" : "s");
+  else StrBufAppendString(&message, "already aligned");
+}
+
+static void
 CopyPath(void)
 {
   const StrBuf *path = &Current()->file.path;
@@ -654,6 +676,7 @@ EditCommand(enum Command command)
   case CommandUpperCase: ChangeCase(true); break;
   case CommandLowerCase: ChangeCase(false); break;
   case CommandAlignTable: AskTableWidth(); break;
+  case CommandAlignCursors: AlignCursors(); break;
   default: return false;
   }
 

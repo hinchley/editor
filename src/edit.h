@@ -144,6 +144,16 @@ EditTrimLines(const EditContext *edit);
 u64
 EditChangeCase(const EditContext *edit, bool upper);
 
+// lines up the cursors in columns by inserting spaces before them, and returns how many
+// lines changed.
+// the first cursor on each line (the start of its selection) is padded out to the display
+// column of the furthest one, then the second cursor of each line that has one, and so on,
+// each needing cursors on two or more lines.
+// cursors and selections move along with their text, and the whole alignment is one undo
+// step.
+u64
+EditAlignCursors(const EditContext *edit);
+
 // undo and redo return false when there is nothing to undo or redo.
 bool
 EditUndo(const EditContext *edit);
