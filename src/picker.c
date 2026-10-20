@@ -267,6 +267,12 @@ PickerShownId(u64 position)
 }
 
 void
+PickerClose(void)
+{
+  if (active) PromptCancel();
+}
+
+void
 PickerSuspend(void)
 {
   const StrBuf *filter = PromptText();

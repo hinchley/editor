@@ -7,6 +7,7 @@
 #include "jump.h"
 #include "memory.h"
 #include "move.h"
+#include "multifile.h"
 #include "picker.h"
 #include "preview.h"
 #include "prompt.h"
@@ -425,7 +426,7 @@ static bool
 ReplaceInEntry(u64 first, u64 end, u64 *lines, u64 *matches)
 {
   u64 index = WorkspaceEntryOf(workspace, hits[chosen[first]].entry);
-  Document *document = WorkspaceEditBegin(workspace, index);
+  Document *document = MultifileEditBegin(index);
   if (!document) return false;
 
   Buffer *buffer = &document->buffer;
@@ -448,7 +449,7 @@ ReplaceInEntry(u64 first, u64 end, u64 *lines, u64 *matches)
   }
 
   StrBufFree(&rebuilt);
-  WorkspaceEditEnd(document);
+  MultifileEditEnd(document);
   return true;
 }
 
@@ -460,6 +461,7 @@ ReplaceChosen(void)
   u64 changedFiles = 0;
   u64 failed = 0;
   u64 first = 0;
+  MultifileBegin("replace");
 
   while (first < chosenCount) {
     u64 end = first + 1;
@@ -480,7 +482,7 @@ ReplaceChosen(void)
     StrBufAppendFormat(
       message, format, matches, plural, lines, Plural(lines), changedFiles, Plural(changedFiles)
     );
-    StrBufAppendString(message, " (ctrl+u reviews, ctrl+shift+s saves)");
+    StrBufAppendString(message, " (alt+shift+z reviews or undoes, ctrl+shift+s saves)");
   } else {
     StrBufAppendString(message, "no match left on those lines");
   }

@@ -48,6 +48,10 @@ PromptText(void);
 void
 PromptChoose(const char *question, const char *choices, PromptDone done, void *context);
 
+// closes the open prompt as escape does, handing over no answer.
+void
+PromptCancel(void);
+
 bool
 PromptActive(void);
 

@@ -67,6 +67,10 @@ PickerShownCount(void);
 u64
 PickerShownId(u64 position);
 
+// closes the open list as escape does, as when a key handler has done what it was asked.
+void
+PickerClose(void);
+
 // closes the open list for a while, as when a key handler asks a question, keeping its
 // items, filter and selection.
 void

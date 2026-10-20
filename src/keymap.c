@@ -197,6 +197,11 @@ const Binding keymapBindings[] = {
   {{'n', alt | shift}, CommandRename, "rename the name at the cursor everywhere (language server)"},
   {{'y', alt}, CommandFix, "fix a diagnostic on the line (language server)"},
   {{'i', alt | shift}, CommandFormat, "format the buffer (language server)"},
+  {
+    {'z', alt | shift},
+    CommandReviewMultifile,
+    "list the last change across files (ctrl+z and ctrl+y in the list undo and redo it)"
+  },
 
   // display and settings.
   {{'t', alt}, CommandToggleExpandTab, "toggle indenting with spaces or tabs"},

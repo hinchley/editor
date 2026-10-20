@@ -106,15 +106,6 @@ WorkspaceLoad(Workspace *workspace, LoaderFile *file, StrBuf *message);
 u64
 WorkspaceLoadPath(Workspace *workspace, const char *path, StrBuf *message);
 
-// opens the entry at index for a change made to it from elsewhere (a replace or a rename
-// across files), and starts one undo step for all of the change; nullptr when it cannot be
-// opened. WorkspaceEditEnd ends the step.
-Document *
-WorkspaceEditBegin(Workspace *workspace, u64 index);
-
-void
-WorkspaceEditEnd(Document *document);
-
 // adds an unnamed buffer and returns its index.
 u64
 WorkspaceAddUnnamed(Workspace *workspace);

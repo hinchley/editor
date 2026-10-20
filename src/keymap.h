@@ -120,6 +120,7 @@ enum Command {
   CommandRename,
   CommandFix,
   CommandFormat,
+  CommandReviewMultifile,
   CommandReplace,
   CommandToggleExpandTab,
   CommandToggleSoftWrap,

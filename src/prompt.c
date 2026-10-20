@@ -111,6 +111,12 @@ Finish(const char *answer, u64 length)
   StrBufFree(&copy);
 }
 
+void
+PromptCancel(void)
+{
+  if (PromptActive()) Finish(nullptr, 0);
+}
+
 // inserts text at the cursor, leaving out control characters, which cannot be shown.
 static void
 Insert(const char *data, u64 length)

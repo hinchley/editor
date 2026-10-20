@@ -131,26 +131,6 @@ WorkspaceLoadPath(Workspace *workspace, const char *path, StrBuf *message)
   return index;
 }
 
-Document *
-WorkspaceEditBegin(Workspace *workspace, u64 index)
-{
-  StrBuf ignored = {};
-  bool opened = index != workspaceNone && WorkspaceOpen(workspace, index, &ignored);
-  StrBufFree(&ignored);
-  if (!opened) return nullptr;
-
-  Document *document = workspace->entries[index].document;
-  UndoBreak(&document->undo);
-  UndoBegin(&document->undo, UndoKindOther, &document->view->cursors);
-  return document;
-}
-
-void
-WorkspaceEditEnd(Document *document)
-{
-  UndoEnd(&document->undo, &document->view->cursors);
-}
-
 u64
 WorkspaceAdd(Workspace *workspace, LoaderFile *file)
 {

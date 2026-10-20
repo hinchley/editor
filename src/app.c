@@ -17,6 +17,7 @@
 #include "memory.h"
 #include "move.h"
 #include "multicursor.h"
+#include "multifile.h"
 #include "picker.h"
 #include "places.h"
 #include "preview.h"
@@ -665,6 +666,7 @@ NavigationCommand(enum Command command)
   case CommandPreviousChange: ReviewStep(true); break;
   case CommandChangePanel: TogglePanel(true); break;
   case CommandRevertChange: ReviewRevert(); break;
+  case CommandReviewMultifile: MultifileReview(); break;
   case CommandPickChanged: ReviewPickChanged(); break;
   case CommandNextDiagnostic: IssuesStep(false); break;
   case CommandPreviousDiagnostic: IssuesStep(true); break;
@@ -1061,6 +1063,7 @@ AppRun(i32 argc, char **argv)
   LookupInit(&workspace, &message);
   PlacesInit(&workspace, &message);
   RefactorInit(&workspace, &message);
+  MultifileInit(&workspace, &message);
   LearnInit(&message);
   SessionStart(&workspace, &message, argv + 1, (u64)argc - 1);
 

@@ -6,6 +6,7 @@
 #include "lsp.h"
 #include "memory.h"
 #include "move.h"
+#include "multifile.h"
 #include "picker.h"
 #include "prompt.h"
 
@@ -99,10 +100,11 @@ CompareEdits(const void *first, const void *second)
   return a < b ? 1 : -1;
 }
 
-// makes a server's changes, each file's as one undo step, and returns how many files
-// changed; files that could not be loaded or opened are counted in failed.
+// makes a server's changes, named by what, each file's as one undo step (see
+// multifile.h), and returns how many files changed; files that could not be loaded or
+// opened are counted in failed.
 static u64
-Apply(const LspEdit *edits, u32 count, u64 *failed)
+Apply(const char *what, const LspEdit *edits, u32 count, u64 *failed)
 {
   u32 *order = MemoryAllocate((count ? count : 1) * sizeof(u32));
   for (u32 index = 0; index < count; index++) order[index] = index;
@@ -111,6 +113,7 @@ Apply(const LspEdit *edits, u32 count, u64 *failed)
 
   u64 files = 0;
   *failed = 0;
+  MultifileBegin(what);
 
   for (u32 first = 0, end; first < count; first = end) {
     const char *path = edits[order[first]].path;
@@ -119,7 +122,7 @@ Apply(const LspEdit *edits, u32 count, u64 *failed)
 
     StrBuf ignored = {};
     u64 index = WorkspaceLoadPath(workspace, path, &ignored);
-    Document *document = WorkspaceEditBegin(workspace, index);
+    Document *document = MultifileEditBegin(index);
     StrBufFree(&ignored);
 
     if (!document) {
@@ -132,7 +135,7 @@ Apply(const LspEdit *edits, u32 count, u64 *failed)
       BufferReplace(&document->buffer, edit->range, edit->text, edit->length);
     }
 
-    WorkspaceEditEnd(document);
+    MultifileEditEnd(document);
     files++;
   }
 
@@ -159,10 +162,10 @@ Renamed([[maybe_unused]] void *context, const LspEdit *edits, u32 count, bool an
   }
 
   u64 failed;
-  u64 files = Apply(edits, count, &failed);
+  u64 files = Apply("rename", edits, count, &failed);
   StrBufAppendFormat(message, "renamed %u place%s in %lu file%s", count, Plural(count), files,
     Plural(files));
-  StrBufAppendString(message, " (ctrl+u reviews, ctrl+shift+s saves)");
+  StrBufAppendString(message, " (alt+shift+z reviews or undoes, ctrl+shift+s saves)");
   ReportFailed(failed);
 }
 
@@ -260,9 +263,11 @@ static void
 ApplyFix(const char *title, const LspEdit *edits, u32 count)
 {
   u64 failed;
-  u64 files = Apply(edits, count, &failed);
+  u64 files = Apply("fix", edits, count, &failed);
   StrBufAppendFormat(message, "fixed: %s", title);
-  if (files > 1) StrBufAppendFormat(message, " (in %lu files)", files);
+  if (files > 1) {
+    StrBufAppendFormat(message, " (in %lu files: alt+shift+z reviews or undoes)", files);
+  }
   ReportFailed(failed);
 }
 
@@ -377,7 +382,7 @@ Formatted([[maybe_unused]] void *context, const LspEdit *edits, u32 count, bool 
   }
 
   u64 failed;
-  Apply(edits, count, &failed);
+  Apply("formatting", edits, count, &failed);
   StrBufAppendFormat(message, "formatted (%u change%s)", count, Plural(count));
   ReportFailed(failed);
 }

@@ -27,6 +27,8 @@ typedef struct UndoRecord {
 } UndoRecord;
 
 typedef struct UndoGroup {
+  // tells the group apart from every other group of every buffer: ids are never reused.
+  u64 id;
   UndoRecord *records;
   u32 count;
   u32 capacity;
@@ -98,6 +100,14 @@ UndoUndo(Undo *undo, CursorSet *cursors);
 // returns false when there is nothing to redo.
 bool
 UndoRedo(Undo *undo, CursorSet *cursors);
+
+// the id of the group undo would undo, or 0 when there is none.
+u64
+UndoLastId(const Undo *undo);
+
+// the index of the group with id, or undo->count when the history no longer has it.
+u64
+UndoFind(const Undo *undo, u64 id);
 
 // marks the current text as the one on disk.
 void

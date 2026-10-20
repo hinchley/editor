@@ -5,6 +5,9 @@
 #include "fatal.h"
 #include "memory.h"
 
+// the last id given to a group, in any buffer.
+static u64 groupIds;
+
 static const char *
 TextOf(const StrBuf *text)
 {
@@ -109,7 +112,7 @@ StartGroup(Undo *undo)
   }
 
   UndoGroup *group = &undo->groups[undo->count++];
-  *group = (UndoGroup){.kind = undo->kind};
+  *group = (UndoGroup){.id = ++groupIds, .kind = undo->kind};
   CursorSetCopy(&group->before, &undo->before);
   undo->current = undo->count;
 }
@@ -218,6 +221,20 @@ UndoRedo(Undo *undo, CursorSet *cursors)
   undo->replaying = false;
   CursorSetCopy(cursors, &group->after);
   return true;
+}
+
+u64
+UndoLastId(const Undo *undo)
+{
+  return undo->current ? undo->groups[undo->current - 1].id : 0;
+}
+
+u64
+UndoFind(const Undo *undo, u64 id)
+{
+  u64 index = 0;
+  while (index < undo->count && undo->groups[index].id != id) index++;
+  return index;
 }
 
 void
