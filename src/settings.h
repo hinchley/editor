@@ -18,6 +18,12 @@ static constexpr bool softWrapDefault = false;
 // rows and columns kept between the cursor and the window edge.
 static constexpr i32 scrollOffset = 4;
 
+// rows the mouse wheel scrolls per notch.
+static constexpr i64 wheelRows = 3;
+
+// most milliseconds between the presses of a double or triple click.
+static constexpr i64 multiClickInterval = 400;
+
 // show the line number gutter.
 static constexpr bool lineNumbersDefault = true;
 

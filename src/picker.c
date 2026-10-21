@@ -74,6 +74,10 @@ static u64 selected;
 static u64 top;
 static u64 pageRows = 1;
 
+// the rows and columns of the list as last drawn, for the mouse; none until it is drawn.
+static i32 drawnRows;
+static i32 drawnWidth;
+
 // appends text with every code point case folded.
 static void
 Fold(const char *text, u64 length, StrBuf *output)
@@ -214,6 +218,7 @@ PickerOpen(const char *newTitle, const char *newLabel, PickerDone done, void *co
   doneContext = context;
   preview = nullptr;
   keyHandler = nullptr;
+  drawnRows = 0;
   active = true;
   Filter(nullptr, "", 0);
 
@@ -308,6 +313,35 @@ Select(i64 step)
 }
 
 void
+PickerClick(i32 row, i32 column)
+{
+  if (row < 0 || row >= drawnRows || column >= drawnWidth) return;
+
+  u64 index = top + (u64)row;
+  if (index >= matchCount) return;
+
+  if (index == selected) PromptKey((Key){KeyEnter, 0});
+  else selected = index;
+}
+
+void
+PickerWheel(i32 row, i32 column, i64 count)
+{
+  if (row < 0 || row >= drawnRows) return;
+
+  if (column < drawnWidth) {
+    Select(count);
+    return;
+  }
+
+  if (!keyHandler) return;
+
+  Key key = {count < 0 ? KeyUp : KeyDown, KeyModifierShift};
+  u64 rows = count < 0 ? (u64)-count : (u64)count;
+  for (u64 index = 0; index < rows; index++) keyHandler(keyContext, key);
+}
+
+void
 PickerKey(Key key)
 {
   i64 page = (i64)pageRows;
@@ -394,6 +428,9 @@ PickerDraw(i32 width, i32 height)
     u64 wanted = widest + 2 + (marking ? markWidth : 0);
     listWidth = wanted < (u64)half ? (i32)wanted : half;
   }
+
+  drawnRows = listRows;
+  drawnWidth = listWidth;
 
   for (i32 row = 0; row < listRows; row++) {
     u64 index = top + (u64)row;

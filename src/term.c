@@ -38,6 +38,8 @@ static constexpr i32 handshakeTimeout = 1000;
 // leaving the alternate screen.
 // clang-format off
 static constexpr char leaveSequence[] =
+  "\x1b[?1006l"  // stop sgr mouse coordinates
+  "\x1b[?1002l"  // stop mouse reporting
   "\x1b[<u"      // pop the keyboard protocol flags
   "\x1b[?2004l"  // disable bracketed paste
   "\x1b[0 q"     // default cursor shape
@@ -168,11 +170,13 @@ EnterEditorMode(void)
     shape = cursorBlink ? CursorShapeBlinkingBlock : CursorShapeSteadyBlock;
   }
 
+  // mouse reports cover presses, releases and motion while a button is held (1002), in the
+  // sgr form, which has no limit on the coordinates (1006).
   char sequence[64];
   i32 length = snprintf(
     sequence,
     sizeof(sequence),
-    "\x1b[?1049h\x1b[>%du\x1b[?2004h\x1b[%d q",
+    "\x1b[?1049h\x1b[>%du\x1b[?2004h\x1b[%d q\x1b[?1002h\x1b[?1006h",
     KeyboardFlagDisambiguate,
     shape
   );

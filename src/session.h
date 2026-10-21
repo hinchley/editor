@@ -30,6 +30,11 @@ SessionNew(void);
 void
 SessionOpen(void);
 
+// the folder the buffers were loaded from (at startup or by Ctrl-O), as given, or nullptr
+// when there was none or several.
+const char *
+SessionFolder(void);
+
 // walks the folders the buffers were loaded from again (at startup or by Ctrl-O) and adds
 // the files that appeared in them since, leaving the current buffer alone.
 // files that were already found by the last walk are not added again, so a closed buffer

@@ -1,7 +1,7 @@
 #pragma once
 
-// commands that add cursors: at occurrences of the selection, or on the row above or below
-// the others.
+// commands that add cursors: at occurrences of the selection, on the row above or below
+// the others, or at a position (where a cursor already there is removed instead).
 // a cursor added on its own becomes the primary one, so the view follows it.
 #include "match.h"
 #include "strbuf.h"
@@ -30,6 +30,12 @@ MultiCursorSkip(View *view, MatchSet marks, StrBuf *message);
 // with no selection, first selects the word at every cursor.
 void
 MultiCursorAddAll(View *view, MatchSet marks, StrBuf *message);
+
+// removes the cursor whose head is at position, or whose selection holds it, unless it is
+// the only one; otherwise adds a cursor there and makes it the primary one.
+// returns true when a cursor was added.
+bool
+MultiCursorToggleAt(View *view, Position position);
 
 // adds a cursor on the visual row above the first cursor, or below the last one (above or
 // below its whole selection), at that cursor's desired column.

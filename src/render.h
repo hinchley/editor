@@ -69,3 +69,15 @@ typedef struct Frame {
 // a split or panel narrower than minSplitWidth shows only the focused pane.
 void
 RenderFrame(const Frame *frame);
+
+static constexpr u32 renderNoPane = UINT32_MAX;
+
+// the index, among the last frame's panes, of the one whose text or gutter holds a screen
+// cell, or renderNoPane for a status bar, the separator, a panel or the message bar.
+u32
+RenderPaneAt(i32 row, i32 column);
+
+// the index, among the last frame's panes, of the one whose status bar holds a screen cell,
+// or renderNoPane.
+u32
+RenderStatusAt(i32 row, i32 column);

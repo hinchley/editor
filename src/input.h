@@ -2,7 +2,8 @@
 
 // decodes the byte stream from the terminal into input events.
 // it understands the kitty keyboard protocol, the legacy sequences terminals still send
-// for some keys under it, bracketed paste and the replies to terminal queries.
+// for some keys under it, bracketed paste, sgr mouse reports and the replies to terminal
+// queries.
 // the decoder only parses bytes; term.c reads them and feeds them in.
 #include "key.h"
 #include "types.h"
@@ -11,8 +12,37 @@ enum InputEventType {
   InputEventKey,
   InputEventPaste,
   InputEventCursorReport,
-  InputEventKeyboardReport
+  InputEventKeyboardReport,
+  InputEventMouse
 };
+
+enum MouseButton {
+  MouseButtonLeft,
+  MouseButtonMiddle,
+  MouseButtonRight,
+  MouseButtonWheelUp,
+  MouseButtonWheelDown,
+
+  // a sideways wheel, an extra button, or motion with no button held.
+  MouseButtonOther
+};
+
+enum MouseAction {
+  MouseActionPress,
+
+  // motion while the button is held.
+  MouseActionDrag,
+  MouseActionRelease
+};
+
+// one mouse report: the button, the KeyModifier bits held, and the screen cell (from 0).
+typedef struct MouseEvent {
+  enum MouseButton button;
+  enum MouseAction action;
+  u8 modifiers;
+  i32 row;
+  i32 column;
+} MouseEvent;
 
 typedef struct InputEvent {
   enum InputEventType type;
@@ -30,6 +60,9 @@ typedef struct InputEvent {
 
   // InputEventKeyboardReport: the active kitty keyboard protocol flags.
   u32 flags;
+
+  // InputEventMouse.
+  MouseEvent mouse;
 
   // the bytes the event was decoded from.
   const char *raw;

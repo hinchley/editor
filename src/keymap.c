@@ -125,6 +125,7 @@ const Binding keymapBindings[] = {
   {{'q', alt}, CommandCloseBuffer, "close the buffer (offers to save changes)"},
   {{'x', alt}, CommandFileMenu, "rename, copy or delete the buffer's file"},
   {{'x', alt | shift}, CommandCopyPath, "copy the path of the buffer's file"},
+  {{'`', control}, CommandOpenTerminal, "open a terminal in the buffer's folder"},
   {{';', alt}, CommandToggleLineEndings, "toggle line endings between LF and CRLF"},
   {{'i', alt},
     CommandStatistics,

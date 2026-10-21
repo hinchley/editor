@@ -1,5 +1,6 @@
 #include "app.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -11,11 +12,13 @@
 #include "jump.h"
 #include "keymap.h"
 #include "lang.h"
+#include "launch.h"
 #include "learn.h"
 #include "lookup.h"
 #include "lsp.h"
 #include "markdown.h"
 #include "memory.h"
+#include "mouse.h"
 #include "move.h"
 #include "multicursor.h"
 #include "multifile.h"
@@ -61,6 +64,9 @@ static u64 tableColumnWidth = tableColumnWidthDefault;
 
 // the message bar text, cleared by the next key.
 static StrBuf message;
+
+// the index, among the last frame's panes, of the focused one.
+static u32 drawnFocus;
 
 static bool running = true;
 
@@ -510,6 +516,32 @@ CopyPath(void)
   StrBufAppendString(&message, "copied ");
   StrBufAppend(&message, path->data, path->length);
   if (!system) StrBufAppendString(&message, " (the system clipboard is not available)");
+}
+
+// opens a terminal in the folder of the buffer's file, or for an unnamed buffer in the
+// folder the buffers were loaded from, or else the one the editor was started in.
+static void
+OpenTerminal(void)
+{
+  const StrBuf *path = &Current()->file.path;
+  StrBuf folder = {};
+
+  if (path->length) {
+    const char *slash = strrchr(path->data, '/');
+    if (!slash) StrBufAppendString(&folder, ".");
+    else if (slash == path->data) StrBufAppendString(&folder, "/");
+    else StrBufAppend(&folder, path->data, (u64)(slash - path->data));
+  } else {
+    const char *opened = SessionFolder();
+    StrBufAppendString(&folder, opened ? opened : ".");
+  }
+
+  char real[PATH_MAX];
+
+  if (realpath(folder.data, real)) LaunchTerminal(real, &message);
+  else StrBufAppendFormat(&message, "the folder %s does not exist (save first)", folder.data);
+
+  StrBufFree(&folder);
 }
 
 // what statistics counts.
@@ -1074,6 +1106,9 @@ RunCommand(const Binding *binding)
     case CommandCopyPath:
       CopyPath();
       break;
+    case CommandOpenTerminal:
+      OpenTerminal();
+      break;
     case CommandStatistics:
       ShowStatistics();
       break;
@@ -1180,11 +1215,101 @@ HandlePaste(const char *text, u64 length)
   EditPaste(&edit, text, length, false);
 }
 
+// the view the last frame drew at a screen cell, and its document, or nullptr when it drew
+// none there (or the split it was part of has closed since).
+static View *
+ViewAt(i32 row, i32 column, Document **document)
+{
+  u32 pane = RenderPaneAt(row, column);
+  if (pane == renderNoPane) return nullptr;
+
+  if (pane == drawnFocus) {
+    *document = Current();
+    return CurrentView();
+  }
+
+  if (!workspace.split) return nullptr;
+
+  *document = workspace.entries[workspace.other].document;
+  return WorkspaceOtherView(&workspace);
+}
+
+static void
+HandleMouse(const MouseEvent *mouse)
+{
+  i32 row = mouse->row;
+  i32 column = mouse->column;
+  bool press = mouse->button == MouseButtonLeft && mouse->action == MouseActionPress;
+  bool wheel = mouse->button == MouseButtonWheelUp || mouse->button == MouseButtonWheelDown;
+  i64 rows = mouse->button == MouseButtonWheelUp ? -wheelRows : wheelRows;
+
+  // a scan, learning mode and the prompts take the keys and leave the mouse alone, but a
+  // picker takes clicks and the wheel on its list.
+  if (ScanBusy() || LearnActive()) return;
+  if (press) StrBufClear(&message);
+
+  if (PickerActive()) {
+    if (press) PickerClick(row, column);
+    else if (wheel) PickerWheel(row, column, rows);
+    return;
+  }
+
+  if (SearchActive() || PromptActive()) return;
+
+  if (mouse->action == MouseActionRelease) {
+    MouseRelease();
+    return;
+  }
+
+  // a drag stays in the view it started in, which the press gave focus, wherever the
+  // pointer goes; past an edge of the view it reaches the text beyond, scrolling to it.
+  if (mouse->action == MouseActionDrag) {
+    if (mouse->button == MouseButtonLeft) MouseDrag(CurrentView(), row, column);
+    return;
+  }
+
+  // a press on the status bar of the other side of a split moves the focus there.
+  u32 status = RenderStatusAt(row, column);
+
+  if (status != renderNoPane) {
+    if (press && status != drawnFocus && workspace.split) SessionFocusOther();
+    return;
+  }
+
+  Document *document;
+  View *view = ViewAt(row, column, &document);
+  if (!view) return;
+
+  // the wheel scrolls the view under the pointer without giving it focus.
+  // cursors carried along, like cursors put somewhere else, end a run of typing.
+  if (wheel) {
+    UndoBreak(&document->undo);
+    MoveScroll(view, rows);
+    return;
+  }
+
+  // alt adds a cursor, or removes one, and ctrl+alt selects columns.
+  if (!press) return;
+
+  enum MouseMode mode = MouseModePlace;
+  if (mouse->modifiers == KeyModifierAlt) mode = MouseModeAdd;
+  else if (mouse->modifiers == (KeyModifierAlt | KeyModifierControl)) mode = MouseModeColumn;
+  else if (mouse->modifiers) return;
+
+  // a press on the other side of a split moves the focus there first, as ctrl+j does.
+  UndoBreak(&document->undo);
+  if (view != CurrentView()) SessionFocusOther();
+  MousePress(view, row, column, mode);
+}
+
 static void
 HandleEvent(const InputEvent *event)
 {
+  if (event->type != InputEventMouse) MouseInterrupt();
+
   if (event->type == InputEventKey) HandleKey(event->key);
   else if (event->type == InputEventPaste) HandlePaste(event->text, event->length);
+  else if (event->type == InputEventMouse) HandleMouse(&event->mouse);
 }
 
 static void
@@ -1325,6 +1450,7 @@ Draw(void)
 
   if (ReviewPanelOpen() || IssuesPanelOpen()) frame.panel = (FramePanel){DrawPanel, nullptr};
   RenderFrame(&frame);
+  drawnFocus = frame.focused;
 
   for (u32 index = 0; index < 2; index++) {
     StrBufFree(&panes[index].name);

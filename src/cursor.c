@@ -47,6 +47,15 @@ CursorSetAdd(CursorSet *set, Cursor cursor)
 }
 
 void
+CursorSetRemove(CursorSet *set, u32 index)
+{
+  Cursor *cursors = set->cursors;
+  memmove(cursors + index, cursors + index + 1, (set->count - index - 1) * sizeof(Cursor));
+  set->count--;
+  if (set->primary > index || (set->primary == index && index > 0)) set->primary--;
+}
+
+void
 CursorSetCollapse(CursorSet *set)
 {
   set->cursors[0] = set->cursors[set->primary];

@@ -182,6 +182,40 @@ CursorReport(Parse *parse, const Csi *csi)
 }
 
 static enum ParseResult
+Mouse(Parse *parse, const Csi *csi, bool released)
+{
+  // the first parameter packs the button into its low two bits, with a bit each for
+  // shift, alt, ctrl, motion and the wheel above them.
+  // the cell is 1-based.
+  u32 code = csi->fields[0][0];
+  u32 column = csi->fields[1][0];
+  u32 row = csi->fields[2][0];
+  if (!column || !row) return ParseSkip;
+
+  static constexpr enum MouseButton buttons[] =
+    {MouseButtonLeft, MouseButtonMiddle, MouseButtonRight, MouseButtonOther};
+  static constexpr enum MouseButton wheels[] =
+    {MouseButtonWheelUp, MouseButtonWheelDown, MouseButtonOther, MouseButtonOther};
+
+  enum MouseButton button = buttons[code & 3];
+  if (code & 64) button = wheels[code & 3];
+  if (code & 128) button = MouseButtonOther;
+
+  u8 modifiers = 0;
+  if (code & 4) modifiers |= KeyModifierShift;
+  if (code & 8) modifiers |= KeyModifierAlt;
+  if (code & 16) modifiers |= KeyModifierControl;
+
+  enum MouseAction action = MouseActionPress;
+  if (code & 32) action = MouseActionDrag;
+  if (released) action = MouseActionRelease;
+
+  parse->event->type = InputEventMouse;
+  parse->event->mouse = (MouseEvent){button, action, modifiers, (i32)row - 1, (i32)column - 1};
+  return ParseEvent;
+}
+
+static enum ParseResult
 Paste(Parse *parse)
 {
   // the text runs from the end of the start marker to the end marker.
@@ -222,6 +256,8 @@ InterpretCsi(Parse *parse, const Csi *csi)
     return ParseEvent;
   }
 
+  if (csi->marker == '<' && csi->final == 'M') return Mouse(parse, csi, false);
+  if (csi->marker == '<' && csi->final == 'm') return Mouse(parse, csi, true);
   if (csi->marker) return ParseSkip;
 
   switch (csi->final) {

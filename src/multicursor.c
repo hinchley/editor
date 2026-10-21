@@ -254,6 +254,39 @@ MultiCursorAddAll(View *view, MatchSet marks, StrBuf *message)
   PatternFree(&occurrences.pattern);
 }
 
+// the index of the cursor whose head is at position, or whose selection holds it, or the
+// cursor count when there is none.
+static u32
+CursorAt(const CursorSet *set, Position position)
+{
+  for (u32 index = 0; index < set->count; index++) {
+    Range range = CursorRange(&set->cursors[index]);
+    if (PositionCompare(position, range.start) < 0) continue;
+    if (PositionCompare(position, range.end) <= 0) return index;
+  }
+
+  return set->count;
+}
+
+bool
+MultiCursorToggleAt(View *view, Position position)
+{
+  CursorSet *set = &view->cursors;
+  u32 index = CursorAt(set, position);
+
+  if (index < set->count && set->count > 1) {
+    CursorSetRemove(set, index);
+    ViewScrollToCursor(view);
+    return false;
+  }
+
+  u64 column = ViewRowColumn(view, position);
+  CursorSetAdd(set, (Cursor){position, position, column});
+  CursorSetMerge(set);
+  ViewScrollToCursor(view);
+  return true;
+}
+
 bool
 MultiCursorAddRow(View *view, bool up)
 {

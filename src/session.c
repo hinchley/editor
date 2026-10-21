@@ -312,6 +312,12 @@ Loaded(const LoaderFile *file)
   return WorkspaceFind(workspace, &byPath) != workspaceNone;
 }
 
+const char *
+SessionFolder(void)
+{
+  return folders.count == 1 ? folders.paths[0] : nullptr;
+}
+
 void
 SessionLoadNew(void)
 {

@@ -230,6 +230,28 @@ MoveCursors(View *view, enum Move move, bool extend)
 }
 
 void
+MoveScroll(View *view, i64 count)
+{
+  i64 step = count < 0 ? -1 : 1;
+  u64 rows = count < 0 ? (u64)-count : (u64)count;
+
+  for (u64 index = 0; index < rows; index++) {
+    if (!ViewCanScroll(view, step)) return;
+
+    // the cursors move on until the view can go a row further, which near the start of
+    // the buffer (where the margin is smaller) can take several rows.
+    // moving them may scroll the view for them, which is the row wanted.
+    while (!ViewScroll(view, step)) {
+      ViewRow top = view->top;
+      Position head = CursorSetPrimary(&view->cursors)->head;
+      MoveCursors(view, step < 0 ? MoveUp : MoveDown, false);
+      if (top.line != view->top.line || top.row != view->top.row) break;
+      if (!PositionCompare(head, CursorSetPrimary(&view->cursors)->head)) return;
+    }
+  }
+}
+
+void
 MoveSelect(View *view, Position anchor, Position head)
 {
   CursorSetCollapse(&view->cursors);

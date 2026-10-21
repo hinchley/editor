@@ -391,7 +391,7 @@ ViewScrollToCursor(View *view)
 }
 
 bool
-ViewScroll(View *view, i64 count)
+ViewCanScroll(View *view, i64 count)
 {
   if (view->height <= 0) return false;
 
@@ -401,8 +401,16 @@ ViewScroll(View *view, i64 count)
   if (moved == 0) return false;
 
   ViewRow highest = ViewStep(view, LastRow(view), -(i64)(height - 1), &moved);
-  if (count > 0 && RowCompare(top, highest) > 0) return false;
+  return count < 0 || RowCompare(top, highest) <= 0;
+}
 
+bool
+ViewScroll(View *view, i64 count)
+{
+  if (!ViewCanScroll(view, count)) return false;
+
+  u64 moved;
+  ViewRow top = ViewStep(view, view->top, count, &moved);
   Sight sight = SightOf(view);
   if (!InSight(view, top, &sight)) return false;
 
@@ -431,6 +439,37 @@ ViewScreenOf(View *view, Position position, i32 *row, i32 *column)
   *row = view->row + (i32)distance;
   *column = view->column + ViewGutterWidth(view) + (i32)x;
   return true;
+}
+
+// the visual row and column at a screen cell, as ViewRowAtScreen gives them; past is set
+// when the cell is below the last row of the buffer.
+static ViewRow
+RowAtScreen(View *view, i32 row, i32 screenColumn, u64 *column, bool *past)
+{
+  u64 moved;
+  i64 rows = row - view->row;
+  ViewRow at = ViewStep(view, view->top, rows, &moved);
+  *past = rows > 0 && moved < (u64)rows;
+
+  i32 x = screenColumn - view->column - ViewGutterWidth(view);
+  *column = view->leftColumn + (u64)(x > 0 ? x : 0);
+  return at;
+}
+
+ViewRow
+ViewRowAtScreen(View *view, i32 row, i32 screenColumn, u64 *column)
+{
+  bool past;
+  return RowAtScreen(view, row, screenColumn, column, &past);
+}
+
+Position
+ViewPositionAtScreen(View *view, i32 row, i32 column)
+{
+  bool past;
+  u64 rowColumn;
+  ViewRow at = RowAtScreen(view, row, column, &rowColumn, &past);
+  return past ? BufferEnd(view->buffer) : ViewPositionAt(view, at, rowColumn);
 }
 
 bool

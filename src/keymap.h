@@ -81,6 +81,7 @@ enum Command {
   CommandLoadNewFiles,
   CommandToggleLineEndings,
   CommandCopyPath,
+  CommandOpenTerminal,
   CommandStatistics,
   CommandNextBuffer,
   CommandPreviousBuffer,

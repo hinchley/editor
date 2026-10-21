@@ -5,7 +5,8 @@
 // part of an item, ignoring case, and "^" at its start or "$" at its end ties it to the
 // start or end.
 // up, down, page up, page down, home and end move through the list, enter picks the
-// selected item and escape cancels.
+// selected item and escape cancels; with the mouse, a click selects an item and a click on
+// the selected one picks it, and the wheel moves through the list.
 // one picker is open at a time, and while it is open it takes every key.
 #include "key.h"
 #include "types.h"
@@ -85,6 +86,18 @@ PickerActive(void);
 
 void
 PickerKey(Key key);
+
+// a press of the left button at a screen cell: selects the item shown there, or picks it
+// when it was selected already.
+// cells outside the list, as last drawn, are ignored.
+void
+PickerClick(i32 row, i32 column);
+
+// a turn of the mouse wheel at a screen cell by count rows (up when negative).
+// over the list it moves the selection; over a preview it passes shift+up or shift+down to
+// the list's key handler, which is how a preview scrolls.
+void
+PickerWheel(i32 row, i32 column, i64 count);
 
 // draws the list over every row above the message bar, which the prompt uses.
 void

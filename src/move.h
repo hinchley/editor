@@ -26,6 +26,12 @@ enum Move {
 void
 MoveCursors(View *view, enum Move move, bool extend);
 
+// scrolls by count rows (up when negative), as the mouse wheel does.
+// whenever the cursors would leave sight, they move on a row, without their selections,
+// so the view can go further; scrolling stops at either end of the buffer.
+void
+MoveScroll(View *view, i64 count);
+
 // where a movement would take a cursor's head.
 Position
 MovePosition(View *view, const Cursor *cursor, enum Move move);

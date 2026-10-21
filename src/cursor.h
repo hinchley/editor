@@ -37,6 +37,11 @@ CursorSetCopy(CursorSet *target, const CursorSet *source);
 void
 CursorSetAdd(CursorSet *set, Cursor cursor);
 
+// removes a cursor, which must not be the only one.
+// when it was the primary one, the cursor before it (or else the new first) becomes primary.
+void
+CursorSetRemove(CursorSet *set, u32 index);
+
 // keeps only the primary cursor.
 void
 CursorSetCollapse(CursorSet *set);

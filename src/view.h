@@ -116,6 +116,11 @@ ViewPositionAt(View *view, ViewRow row, u64 column);
 void
 ViewScrollToCursor(View *view);
 
+// true when the view could scroll by count rows without passing either end of the buffer,
+// wherever its cursors are.
+bool
+ViewCanScroll(View *view, i64 count);
+
 // scrolls by count rows without moving the cursor.
 // returns false, without scrolling, when a cursor kept in sight would end up inside the
 // scroll margin or out of view, or the view would pass either end of the buffer.
@@ -126,6 +131,20 @@ ViewScroll(View *view, i64 count);
 // returns false when it is outside the view.
 bool
 ViewScreenOf(View *view, Position position, i32 *row, i32 *column);
+
+// the visual row shown at a screen cell, and in column the display column within that row:
+// the first one for a cell in the gutter, and the row that far beyond the edge for a cell
+// above or below the view (stopping at the first or last row of the buffer).
+ViewRow
+ViewRowAtScreen(View *view, i32 row, i32 screenColumn, u64 *column);
+
+// the position shown at a screen cell, or the nearest one to it.
+// a cell in the gutter gives the start of its row, one past the end of a row gives the
+// end, and one below the last line gives the end of the buffer.
+// a cell above or below the view gives the row that far beyond its edge, so a drag past
+// an edge reaches text not shown yet.
+Position
+ViewPositionAtScreen(View *view, i32 row, i32 column);
 
 // where the primary cursor is on screen.
 // returns false when it is outside the view.

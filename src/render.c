@@ -92,6 +92,16 @@ typedef struct Canvas {
   enum ThemeGroup matchGroup;
 } Canvas;
 
+// the text area, gutter included, of each pane the last frame drew, by its index among
+// the frame's panes; a pane not drawn has no width.
+typedef struct PaneArea {
+  i32 column;
+  i32 width;
+  i32 height;
+} PaneArea;
+
+static PaneArea drawnAreas[2];
+
 static void
 PutSymbol(i32 row, i32 column, const char *symbol, Style style)
 {
@@ -654,8 +664,10 @@ DrawStatus(View *view, const StatusInfo *info, bool focused, i32 row)
 }
 
 static void
-DrawPane(const FramePane *pane, bool focused, i32 column, i32 width, i32 height)
+DrawPane(const Frame *frame, const FramePane *pane, i32 column, i32 width, i32 height)
 {
+  bool focused = pane == &frame->panes[frame->focused];
+  drawnAreas[pane - frame->panes] = (PaneArea){column, width, height};
   View *view = pane->view;
   ViewSetArea(view, 0, column, width, height);
   ViewScrollToCursor(view);
@@ -667,6 +679,7 @@ void
 RenderFrame(const Frame *frame)
 {
   ScreenBegin();
+  drawnAreas[0] = drawnAreas[1] = (PaneArea){};
 
   if (frame->width < minWindowWidth || frame->height < minWindowHeight) {
     ScreenPutString(0, 0, "terminal too small", styleDefault);
@@ -685,15 +698,15 @@ RenderFrame(const Frame *frame)
   Style separator = ThemeStyle(ThemeGutter);
 
   if (frame->panel.draw && wide) {
-    DrawPane(focused, true, 0, leftWidth, height);
+    DrawPane(frame, focused, 0, leftWidth, height);
     frame->panel.draw(frame->panel.context, rightColumn, rightWidth, height + 1);
     for (i32 row = 0; row <= height; row++) PutSymbol(row, leftWidth, rulerSymbol, separator);
   } else if (frame->paneCount == 2 && wide) {
-    DrawPane(&frame->panes[0], frame->focused == 0, 0, leftWidth, height);
-    DrawPane(&frame->panes[1], frame->focused == 1, rightColumn, rightWidth, height);
+    DrawPane(frame, &frame->panes[0], 0, leftWidth, height);
+    DrawPane(frame, &frame->panes[1], rightColumn, rightWidth, height);
     for (i32 row = 0; row <= height; row++) PutSymbol(row, leftWidth, rulerSymbol, separator);
   } else {
-    DrawPane(focused, true, 0, frame->width, height);
+    DrawPane(frame, focused, 0, frame->width, height);
   }
 
   const StrBuf *message = frame->message;
@@ -711,4 +724,29 @@ RenderFrame(const Frame *frame)
   i32 row;
   i32 column;
   if (ViewCursorScreen(view, &row, &column)) ScreenSetCursor(row, column);
+}
+
+u32
+RenderPaneAt(i32 row, i32 column)
+{
+  for (u32 index = 0; index < 2; index++) {
+    const PaneArea *area = &drawnAreas[index];
+    if (row < 0 || row >= area->height) continue;
+    if (column >= area->column && column < area->column + area->width) return index;
+  }
+
+  return renderNoPane;
+}
+
+u32
+RenderStatusAt(i32 row, i32 column)
+{
+  // the status bar is the row below the text.
+  for (u32 index = 0; index < 2; index++) {
+    const PaneArea *area = &drawnAreas[index];
+    if (row != area->height) continue;
+    if (column >= area->column && column < area->column + area->width) return index;
+  }
+
+  return renderNoPane;
 }
