@@ -113,9 +113,7 @@ const Binding keymapBindings[] = {
 
   // buffers and files.
   {{'n', control}, CommandNewBuffer, "create a new empty buffer"},
-  {{'o', control},
-    CommandOpen,
-    "open a file (in a new buffer) or a folder (replacing every buffer)"},
+  {{'o', control}, CommandOpen, "open a file or a folder (asks whether to add or replace)"},
   {{'s', control}, CommandSave, "save the buffer (asks for a name if it has none)"},
   {{'s', control | shift}, CommandSaveAll, "save every buffer with unsaved changes"},
   {{'r', alt}, CommandReload, "reload the buffer from disk (asks before discarding changes)"},

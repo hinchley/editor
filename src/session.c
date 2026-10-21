@@ -263,6 +263,121 @@ OpenFile(LoaderFile *file)
   if (index != workspaceNone) Switch(index);
 }
 
+// true when the file is one of the loaded entries, by file or by path (a save replaces
+// the file, so its file id changes).
+static bool
+Loaded(const LoaderFile *file)
+{
+  LoaderFile byPath = {.path = file->path};
+  if (WorkspaceFind(workspace, file) != workspaceNone) return true;
+  return WorkspaceFind(workspace, &byPath) != workspaceNone;
+}
+
+// true when path is one of the remembered folders, as given or once resolved.
+static bool
+FolderOpen(const char *path)
+{
+  char real[PATH_MAX];
+  char other[PATH_MAX];
+  bool resolved = realpath(path, real) != nullptr;
+
+  for (u64 index = 0; index < folders.count; index++) {
+    if (strcmp(folders.paths[index], path) == 0) return true;
+    if (resolved && realpath(folders.paths[index], other) && !strcmp(real, other)) return true;
+  }
+
+  return false;
+}
+
+// adds the files of the pending folder that are not loaded yet, remembers the folder and
+// makes the first file added current.
+// files there is no room for are left out of the known list, so Alt-Shift-R offers them
+// again.
+static void
+AddPending(void)
+{
+  u64 added = 0;
+  u64 first = workspaceNone;
+  u64 left = 0;
+
+  for (u64 index = 0; index < pending.count; index++) {
+    LoaderFile *file = &pending.files[index];
+    if (Loaded(file)) continue;
+
+    if (workspace->count >= maxFileCount) {
+      left++;
+      continue;
+    }
+
+    PathsAdd(&known, file->path.data, file->path.length);
+    u64 entry = WorkspaceAdd(workspace, file);
+    if (first == workspaceNone) first = entry;
+    added++;
+  }
+
+  PathsSort(&known);
+  const char *folder = pendingFolder.data;
+  if (!FolderOpen(folder)) PathsAdd(&folders, folder, pendingFolder.length);
+  if (first != workspaceNone) Switch(first);
+  if (message->length) StrBufAppendString(message, "; ");
+
+  if (!added && !left) {
+    StrBufAppendFormat(message, "%s: no new files", folder);
+  } else if (added == 1) {
+    const StrBuf *path = WorkspacePath(workspace, first);
+    StrBufAppendFormat(message, "added %.*s", (i32)path->length, path->data);
+  } else if (added) {
+    StrBufAppendFormat(message, "added %lu files from %s (ctrl+p lists them)", added, folder);
+  }
+
+  if (left) {
+    if (added) StrBufAppendString(message, "; ");
+    const char *text = "cannot load more than %lu files (%lu left out)";
+    StrBufAppendFormat(message, text, maxFileCount, left);
+  }
+
+  ReportUnreadable(pending.unreadable);
+  LoaderFree(&pending);
+}
+
+static void
+FolderAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]] u64 length)
+{
+  if (answer && *answer == 'a') AddPending();
+  else if (answer && *answer == 'r') AskAboutUnsaved(ReplaceAll);
+}
+
+// true when every entry is an unnamed buffer without changes, so replacing them loses
+// nothing and there is nothing to add to.
+static bool
+Untouched(void)
+{
+  for (u64 index = 0; index < workspace->count; index++) {
+    if (!workspace->entries[index].unnamed || WorkspaceModified(workspace, index)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// asks whether the pending folder is added to the buffers or replaces them, unless there
+// is nothing to replace.
+static void
+AskAboutFolder(void)
+{
+  if (Untouched()) {
+    ReplaceAll();
+    return;
+  }
+
+  StrBuf question = {};
+  const char *text = "%s: (a)dd to the buffers, (r)eplace every buffer, (c)ancel";
+  StrBufAppendFormat(&question, text, pendingFolder.data);
+  PromptChoose(question.data, "arc", FolderAnswered, nullptr);
+  StrBufFree(&question);
+}
+
 static void
 OpenAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
 {
@@ -287,7 +402,7 @@ OpenAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
     list = (LoaderList){};
     StrBufClear(&pendingFolder);
     StrBufAppend(&pendingFolder, path.data, path.length);
-    AskAboutUnsaved(ReplaceAll);
+    AskAboutFolder();
   } else if (status == LoaderStatusOk) {
     OpenFile(&list.files[0]);
   }
@@ -307,16 +422,6 @@ SessionOpen(void)
 {
   PromptAsk("open: ", "", OpenAnswered, nullptr);
   PromptHandle(nullptr, CompleteOpen);
-}
-
-// true when the file is one of the loaded entries, by file or by path (a save replaces
-// the file, so its file id changes).
-static bool
-Loaded(const LoaderFile *file)
-{
-  LoaderFile byPath = {.path = file->path};
-  if (WorkspaceFind(workspace, file) != workspaceNone) return true;
-  return WorkspaceFind(workspace, &byPath) != workspaceNone;
 }
 
 const char *

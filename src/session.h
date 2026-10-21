@@ -26,7 +26,9 @@ SessionNew(void);
 
 // asks for a file or folder to open, with tab completion.
 // a file is added (or found among the loaded ones) and made current.
-// a folder replaces every buffer, after offering to save unsaved changes.
+// for a folder it asks whether to add its files to the buffers (those not loaded already)
+// or replace every buffer with them, after offering to save unsaved changes; with only
+// unnamed buffers without changes it replaces them without asking.
 void
 SessionOpen(void);
 
