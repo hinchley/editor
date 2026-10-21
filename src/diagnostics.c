@@ -8,10 +8,14 @@ const char *
 DiagnosticSeverityName(enum DiagnosticSeverity severity)
 {
   switch (severity) {
-  case DiagnosticSeverityError: return "error";
-  case DiagnosticSeverityWarning: return "warning";
-  case DiagnosticSeverityInformation: return "information";
-  case DiagnosticSeverityHint: return "hint";
+    case DiagnosticSeverityError:
+      return "error";
+    case DiagnosticSeverityWarning:
+      return "warning";
+    case DiagnosticSeverityInformation:
+      return "information";
+    case DiagnosticSeverityHint:
+      return "hint";
   }
 
   return "error";
@@ -61,8 +65,8 @@ DiagnosticsAdd(Diagnostics *diagnostics, const Diagnostic *diagnostic)
 {
   if (diagnostics->count == diagnostics->capacity) {
     diagnostics->capacity = diagnostics->capacity ? diagnostics->capacity * 2 : 32;
-    diagnostics->items = MemoryResize(diagnostics->items, diagnostics->capacity,
-      sizeof(Diagnostic));
+    diagnostics->items =
+      MemoryResize(diagnostics->items, diagnostics->capacity, sizeof(Diagnostic));
   }
 
   diagnostics->items[diagnostics->count++] = *diagnostic;
@@ -151,8 +155,13 @@ DiagnosticsOnLine(const Diagnostics *diagnostics, u64 line, u32 *worst, u32 *cou
 }
 
 bool
-DiagnosticsStep(const Diagnostics *diagnostics, Position position, bool backward, u32 *index,
-  bool *wrapped)
+DiagnosticsStep(
+  const Diagnostics *diagnostics,
+  Position position,
+  bool backward,
+  u32 *index,
+  bool *wrapped
+)
 {
   u32 count = diagnostics->count;
   if (!count) return false;

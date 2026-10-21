@@ -80,19 +80,19 @@ Files over 100 MB, files with a nul byte in their first 4 KB, and anything that 
 - Patterns: search text is literal unless regular expressions are on. `^` at the start ties it to the start of a line and `$` at the end to the end of one. `\t`, `\r`, `\\`, `\^` and `\$` stand for a tab, a carriage return, a backslash, `^` and `$`, in both the pattern and the replacement. `\n` is a line break in a replacement, but a match never crosses lines, so a pattern holding it never matches.
 - Regular expressions (Ctrl-R in a search prompt) match within one line and find the leftmost match, preferring alternatives and repetitions in the order Perl does. A match is never empty, so `x*` finds runs of `x` and nothing between them. Ctrl-W and Ctrl-E always search literally.
 
-  | Syntax | Matches |
-  |---|---|
-  | `.` | any character (one code point) |
-  | `[abc]` `[a-z]` `[^...]` | one character from the set, or not in it; `\d`, `\w` and `\s` work inside |
-  | `\d` `\w` `\s` | a digit `0`-`9`; a word character (letter, digit, `_` or any non-ASCII character, as Ctrl-W uses); a blank (space, tab, `\r`, `\f`, `\v`) |
-  | `\D` `\W` `\S` | anything else |
-  | `^` `$` | the start and end of the line |
-  | `\b` `\B` | a word boundary, and anywhere else |
-  | `*` `+` `?` | 0 or more, 1 or more, 0 or 1 (as many as possible; add `?` for as few as possible) |
-  | `{m}` `{m,}` `{m,n}` | m, at least m, m to n times (at most 1000; `?` after makes it lazy) |
-  | `(...)` `(?:...)` | a group, captured for the replacement, or not |
-  | `a\|b` | either |
-  | `\t` `\r` `\n` `\f` `\v` | control characters; `\` before any punctuation matches it literally |
+  | Syntax                   | Matches                                                                                                                                   |
+  | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+  | `.`                      | any character (one code point)                                                                                                            |
+  | `[abc]` `[a-z]` `[^...]` | one character from the set, or not in it; `\d`, `\w` and `\s` work inside                                                                 |
+  | `\d` `\w` `\s`           | a digit `0`-`9`; a word character (letter, digit, `_` or any non-ASCII character, as Ctrl-W uses); a blank (space, tab, `\r`, `\f`, `\v`) |
+  | `\D` `\W` `\S`           | anything else                                                                                                                             |
+  | `^` `$`                  | the start and end of the line                                                                                                             |
+  | `\b` `\B`                | a word boundary, and anywhere else                                                                                                        |
+  | `*` `+` `?`              | 0 or more, 1 or more, 0 or 1 (as many as possible; add `?` for as few as possible)                                                        |
+  | `{m}` `{m,}` `{m,n}`     | m, at least m, m to n times (at most 1000; `?` after makes it lazy)                                                                       |
+  | `(...)` `(?:...)`        | a group, captured for the replacement, or not                                                                                             |
+  | `a\|b`                   | either                                                                                                                                    |
+  | `\t` `\r` `\n` `\f` `\v` | control characters; `\` before any punctuation matches it literally                                                                       |
 
   Without case matching, letters match either case, and so do sets: `[A-Z]` also matches `a`. There are no backreferences, lookarounds, POSIX classes or Unicode properties. Search time grows with the line length times the pattern's size, never exponentially; a pattern too large (over 4096 steps, such as `(a{1000}){5}`) is refused. In the replacement, `\0` is the whole match and `\1` to `\9` are the groups (empty when a group took no part), and `\t`, `\r`, `\n` and `\\` work as in a literal replacement, so `(\w+)=(\w+)` replaced with `\2=\1` swaps the two sides.
 - Spell check: Alt-C highlights the words that are not in the word list (`~/.config/editor/words.txt`, see Build), counts them and selects the next one. Alt-N and Alt-P then step through unknown words instead of search matches, and the highlights follow your edits. Words in capitals only, words with digits or `_`, and URLs and email addresses are skipped. A capitalised word is accepted when its lowercase form is in the list. In the programming and data languages (everything highlighted except Markdown) only comments and strings are checked. In Markdown everything is checked except code (fenced and indented blocks and code spans) and link targets. Other files are checked in full. Alt-Shift-C asks whether to add the word at the cursor (or the unknown word Alt-C selected) to the list, or, when the list knows it, whether to remove it (for a capitalised word known through its lowercase form, the lowercase entry). The list is saved straight away, and read again when another program changes it.
@@ -108,187 +108,187 @@ Ctrl-H lists every binding, filterable, and runs the one picked. The tables belo
 
 **Movement**
 
-| Key | Action |
-|---|---|
-| Up | move up |
-| Down | move down |
-| Left | move left |
-| Right | move right |
-| Home | move to the first non-blank, then the line start |
-| End | move to the line end |
-| PgUp | move up a page |
-| PgDn | move down a page |
-| Ctrl-Left | move to the previous word |
-| Ctrl-Right | move to the next word |
-| Ctrl-Home | move to the start of the buffer |
-| Ctrl-End | move to the end of the buffer |
-| Alt-Up | scroll up a line (the cursor stays put) |
-| Alt-Down | scroll down a line (the cursor stays put) |
+| Key        | Action                                           |
+| ---------- | ------------------------------------------------ |
+| Up         | move up                                          |
+| Down       | move down                                        |
+| Left       | move left                                        |
+| Right      | move right                                       |
+| Home       | move to the first non-blank, then the line start |
+| End        | move to the line end                             |
+| PgUp       | move up a page                                   |
+| PgDn       | move down a page                                 |
+| Ctrl-Left  | move to the previous word                        |
+| Ctrl-Right | move to the next word                            |
+| Ctrl-Home  | move to the start of the buffer                  |
+| Ctrl-End   | move to the end of the buffer                    |
+| Alt-Up     | scroll up a line (the cursor stays put)          |
+| Alt-Down   | scroll down a line (the cursor stays put)        |
 
 **Selection**
 
-| Key | Action |
-|---|---|
-| Shift-Up | extend the selection up |
-| Shift-Down | extend the selection down |
-| Shift-Left | extend the selection left |
-| Shift-Right | extend the selection right |
-| Shift-Home | extend the selection to the first non-blank, then the line start |
-| Shift-End | extend the selection to the line end |
-| Shift-PgUp | extend the selection up a page |
-| Shift-PgDn | extend the selection down a page |
-| Ctrl-Shift-Left | extend the selection to the previous word |
-| Ctrl-Shift-Right | extend the selection to the next word |
-| Ctrl-Shift-Home | extend the selection to the start of the buffer |
-| Ctrl-Shift-End | extend the selection to the end of the buffer |
-| Ctrl-A | select the whole buffer |
-| Ctrl-M | select inside the closest brackets (again to widen) |
-| Alt-Right | expand the selection to the enclosing syntax node (or brackets) |
-| Alt-Left | shrink the selection back a step |
-| Ctrl-Shift-Up | grow the selection by a line above |
-| Ctrl-Shift-Down | grow the selection by a line below |
-| Alt-Shift-Down | shrink the selection by a line at the top |
-| Alt-Shift-Up | shrink the selection by a line at the bottom |
-| Esc | collapse to one cursor, clear the selection, or clear highlights |
+| Key              | Action                                                           |
+| ---------------- | ---------------------------------------------------------------- |
+| Shift-Up         | extend the selection up                                          |
+| Shift-Down       | extend the selection down                                        |
+| Shift-Left       | extend the selection left                                        |
+| Shift-Right      | extend the selection right                                       |
+| Shift-Home       | extend the selection to the first non-blank, then the line start |
+| Shift-End        | extend the selection to the line end                             |
+| Shift-PgUp       | extend the selection up a page                                   |
+| Shift-PgDn       | extend the selection down a page                                 |
+| Ctrl-Shift-Left  | extend the selection to the previous word                        |
+| Ctrl-Shift-Right | extend the selection to the next word                            |
+| Ctrl-Shift-Home  | extend the selection to the start of the buffer                  |
+| Ctrl-Shift-End   | extend the selection to the end of the buffer                    |
+| Ctrl-A           | select the whole buffer                                          |
+| Ctrl-M           | select inside the closest brackets (again to widen)              |
+| Alt-Right        | expand the selection to the enclosing syntax node (or brackets)  |
+| Alt-Left         | shrink the selection back a step                                 |
+| Ctrl-Shift-Up    | grow the selection by a line above                               |
+| Ctrl-Shift-Down  | grow the selection by a line below                               |
+| Alt-Shift-Down   | shrink the selection by a line at the top                        |
+| Alt-Shift-Up     | shrink the selection by a line at the bottom                     |
+| Esc              | collapse to one cursor, clear the selection, or clear highlights |
 
 **Editing**
 
-| Key | Action |
-|---|---|
-| Enter | insert a line break |
-| Tab | insert a tab (or indent the selected lines) |
-| Shift-Tab | dedent the line (or the selected lines) |
-| Backspace | delete the character before the cursor |
-| Delete | delete the character after the cursor |
-| Ctrl-Backspace | delete the word before the cursor |
-| Ctrl-Z | undo |
-| Ctrl-Y | redo |
-| Ctrl-C | copy the selection (or the line) |
-| Ctrl-X | cut the selection (or the line) |
-| Ctrl-V | paste |
-| Ctrl-Up | move the line (or the selected lines) up |
-| Ctrl-Down | move the line (or the selected lines) down |
-| Ctrl-D | duplicate the line (or the selected lines) |
-| Ctrl-K | delete the line (or the selected lines) |
-| Ctrl-/ | toggle comments on the line (or the selected lines) |
-| Alt-J | join the selected lines (or the line and the next) |
-| Alt-O | sort the selected lines |
-| Ctrl-T | trim trailing whitespace from the line (or the selected lines) |
-| Ctrl-Shift-T | trim trailing whitespace from every line |
-| Alt-Shift-U | convert the selection to upper case |
-| Alt-Shift-L | convert the selection to lower case |
-| Alt-Shift-G | align the columns of the markdown table |
-| Alt-C | spell check the buffer |
-| Alt-Shift-C | add the word at the cursor to the word list (or remove it) |
+| Key            | Action                                                         |
+| -------------- | -------------------------------------------------------------- |
+| Enter          | insert a line break                                            |
+| Tab            | insert a tab (or indent the selected lines)                    |
+| Shift-Tab      | dedent the line (or the selected lines)                        |
+| Backspace      | delete the character before the cursor                         |
+| Delete         | delete the character after the cursor                          |
+| Ctrl-Backspace | delete the word before the cursor                              |
+| Ctrl-Z         | undo                                                           |
+| Ctrl-Y         | redo                                                           |
+| Ctrl-C         | copy the selection (or the line)                               |
+| Ctrl-X         | cut the selection (or the line)                                |
+| Ctrl-V         | paste                                                          |
+| Ctrl-Up        | move the line (or the selected lines) up                       |
+| Ctrl-Down      | move the line (or the selected lines) down                     |
+| Ctrl-D         | duplicate the line (or the selected lines)                     |
+| Ctrl-K         | delete the line (or the selected lines)                        |
+| Ctrl-/         | toggle comments on the line (or the selected lines)            |
+| Alt-J          | join the selected lines (or the line and the next)             |
+| Alt-O          | sort the selected lines                                        |
+| Ctrl-T         | trim trailing whitespace from the line (or the selected lines) |
+| Ctrl-Shift-T   | trim trailing whitespace from every line                       |
+| Alt-Shift-U    | convert the selection to upper case                            |
+| Alt-Shift-L    | convert the selection to lower case                            |
+| Alt-Shift-G    | align the columns of the markdown table                        |
+| Alt-C          | spell check the buffer                                         |
+| Alt-Shift-C    | add the word at the cursor to the word list (or remove it)     |
 
 **Multiple cursors**
 
-| Key | Action |
-|---|---|
-| Ctrl-E | select the word, then add a cursor at the next occurrence (or search match) |
-| Alt-E | move the newest cursor to the next occurrence, skipping this one |
-| Ctrl-Shift-E | add a cursor at every occurrence |
-| Ctrl-Alt-Up | add a cursor on the line above |
-| Ctrl-Alt-Down | add a cursor on the line below |
-| Alt-= | align the cursors in a column by inserting spaces |
+| Key           | Action                                                                      |
+| ------------- | --------------------------------------------------------------------------- |
+| Ctrl-E        | select the word, then add a cursor at the next occurrence (or search match) |
+| Alt-E         | move the newest cursor to the next occurrence, skipping this one            |
+| Ctrl-Shift-E  | add a cursor at every occurrence                                            |
+| Ctrl-Alt-Up   | add a cursor on the line above                                              |
+| Ctrl-Alt-Down | add a cursor on the line below                                              |
+| Alt-=         | align the cursors in a column by inserting spaces                           |
 
 **Buffers and files**
 
-| Key | Action |
-|---|---|
-| Ctrl-N | create a new empty buffer |
-| Ctrl-O | open a file (in a new buffer) or a folder (replacing every buffer) |
-| Ctrl-S | save the buffer (asks for a name if it has none) |
-| Ctrl-Shift-S | save every buffer with unsaved changes |
-| Alt-R | reload the buffer from disk (asks before discarding changes) |
-| Alt-Shift-R | load files added to the folder since it was opened |
-| Alt-Q | close the buffer (offers to save changes) |
-| Alt-X | rename, copy or delete the buffer's file |
-| Alt-Shift-X | copy the path of the buffer's file |
-| Alt-; | toggle line endings between LF and CRLF |
-| Alt-I | count the lines, words, characters and bytes (of the selection) |
-| Ctrl-PgDn | switch to the next buffer |
-| Ctrl-PgUp | switch to the previous buffer |
-| Ctrl-Tab | switch to the buffer used before this one |
-| Ctrl-P | pick a buffer |
-| Ctrl-U | pick a buffer with unsaved changes |
-| Ctrl-Q | quit (offers to save changes) |
+| Key          | Action                                                             |
+| ------------ | ------------------------------------------------------------------ |
+| Ctrl-N       | create a new empty buffer                                          |
+| Ctrl-O       | open a file (in a new buffer) or a folder (replacing every buffer) |
+| Ctrl-S       | save the buffer (asks for a name if it has none)                   |
+| Ctrl-Shift-S | save every buffer with unsaved changes                             |
+| Alt-R        | reload the buffer from disk (asks before discarding changes)       |
+| Alt-Shift-R  | load files added to the folder since it was opened                 |
+| Alt-Q        | close the buffer (offers to save changes)                          |
+| Alt-X        | rename, copy or delete the buffer's file                           |
+| Alt-Shift-X  | copy the path of the buffer's file                                 |
+| Alt-;        | toggle line endings between LF and CRLF                            |
+| Alt-I        | count the lines, words, characters and bytes (of the selection)    |
+| Ctrl-PgDn    | switch to the next buffer                                          |
+| Ctrl-PgUp    | switch to the previous buffer                                      |
+| Ctrl-Tab     | switch to the buffer used before this one                          |
+| Ctrl-P       | pick a buffer                                                      |
+| Ctrl-U       | pick a buffer with unsaved changes                                 |
+| Ctrl-Q       | quit (offers to save changes)                                      |
 
 **Split view**
 
-| Key | Action |
-|---|---|
-| Ctrl-Alt-Right | split the window, showing this buffer in both views |
-| Ctrl-B | split the window, with a new empty buffer in the new view |
-| Ctrl-Alt-Left | close this view |
-| Ctrl-J | move focus to the other view |
-| Ctrl-I | swap the two views |
+| Key            | Action                                                    |
+| -------------- | --------------------------------------------------------- |
+| Ctrl-Alt-Right | split the window, showing this buffer in both views       |
+| Ctrl-B         | split the window, with a new empty buffer in the new view |
+| Ctrl-Alt-Left  | close this view                                           |
+| Ctrl-J         | move focus to the other view                              |
+| Ctrl-I         | swap the two views                                        |
 
 **Search**
 
-| Key | Action |
-|---|---|
-| Ctrl-F | search the buffer |
-| Alt-N | go to the next match |
-| Alt-P | go to the previous match |
-| Ctrl-W | go to the next occurrence of the word at the cursor |
-| Ctrl-R | search and replace in the buffer |
-| Alt-Shift-F | search the loaded files |
-| Alt-F | reopen the list of matches in the loaded files |
-| Ctrl-L | go to a line number |
+| Key         | Action                                              |
+| ----------- | --------------------------------------------------- |
+| Ctrl-F      | search the buffer                                   |
+| Alt-N       | go to the next match                                |
+| Alt-P       | go to the previous match                            |
+| Ctrl-W      | go to the next occurrence of the word at the cursor |
+| Ctrl-R      | search and replace in the buffer                    |
+| Alt-Shift-F | search the loaded files                             |
+| Alt-F       | reopen the list of matches in the loaded files      |
+| Ctrl-L      | go to a line number                                 |
 
 **Navigation**
 
-| Key | Action |
-|---|---|
-| Alt-[ | go back to where the cursor was before a jump |
-| Alt-] | go forward again after going back |
-| Ctrl-[ | go to the previous definition |
-| Ctrl-] | go to the next definition |
-| Alt-M | go to the matching bracket |
-| Alt-S | pick a symbol in this buffer |
-| Alt-Shift-S | pick a symbol in any loaded file |
-| Alt-D | go to the definition of the name at the cursor |
+| Key         | Action                                                 |
+| ----------- | ------------------------------------------------------ |
+| Alt-[       | go back to where the cursor was before a jump          |
+| Alt-]       | go forward again after going back                      |
+| Ctrl-[      | go to the previous definition                          |
+| Ctrl-]      | go to the next definition                              |
+| Alt-M       | go to the matching bracket                             |
+| Alt-S       | pick a symbol in this buffer                           |
+| Alt-Shift-S | pick a symbol in any loaded file                       |
+| Alt-D       | go to the definition of the name at the cursor         |
 | Alt-Shift-D | show the signature of the name (or call) at the cursor |
 
 **Changes since the last git commit**
 
-| Key | Action |
-|---|---|
-| Alt-Shift-] | go to the next change |
-| Alt-Shift-[ | go to the previous change |
-| Alt-G | show or hide the change at the cursor beside the buffer |
-| Alt-Z | revert the change at the cursor to the last commit |
-| Ctrl-G | pick a change since the last commit |
+| Key         | Action                                                  |
+| ----------- | ------------------------------------------------------- |
+| Alt-Shift-] | go to the next change                                   |
+| Alt-Shift-[ | go to the previous change                               |
+| Alt-G       | show or hide the change at the cursor beside the buffer |
+| Alt-Z       | revert the change at the cursor to the last commit      |
+| Ctrl-G      | pick a change since the last commit                     |
 
 **Diagnostics from language servers**
 
-| Key | Action |
-|---|---|
-| Ctrl-Shift-] | go to the next diagnostic |
-| Ctrl-Shift-[ | go to the previous diagnostic |
-| Alt-K | show or hide the diagnostics at the cursor beside the buffer |
-| Alt-Shift-K | pick a diagnostic in the open buffers |
-| Alt-U | pick a use of the name at the cursor (language server) |
-| Alt-A | switch between a header and its source (clangd) |
-| Alt-Shift-N | rename the name at the cursor everywhere (language server) |
-| Alt-Y | fix a diagnostic on the line (language server) |
-| Alt-Shift-I | format the buffer (language server) |
-| Alt-Shift-Z | list the last change across files (ctrl+z and ctrl+y in the list undo and redo it) |
+| Key          | Action                                                                             |
+| ------------ | ---------------------------------------------------------------------------------- |
+| Ctrl-Shift-] | go to the next diagnostic                                                          |
+| Ctrl-Shift-[ | go to the previous diagnostic                                                      |
+| Alt-K        | show or hide the diagnostics at the cursor beside the buffer                       |
+| Alt-Shift-K  | pick a diagnostic in the open buffers                                              |
+| Alt-U        | pick a use of the name at the cursor (language server)                             |
+| Alt-A        | switch between a header and its source (clangd)                                    |
+| Alt-Shift-N  | rename the name at the cursor everywhere (language server)                         |
+| Alt-Y        | fix a diagnostic on the line (language server)                                     |
+| Alt-Shift-I  | format the buffer (language server)                                                |
+| Alt-Shift-Z  | list the last change across files (ctrl+z and ctrl+y in the list undo and redo it) |
 
 **Display and settings**
 
-| Key | Action |
-|---|---|
-| Alt-T | toggle indenting with spaces or tabs |
-| Alt-W | toggle soft wrap |
-| Alt-L | toggle line numbers |
-| Alt-. | toggle showing whitespace |
-| Alt-\ | toggle the vertical ruler |
-| Alt-V | toggle language servers (or restart stopped ones) |
-| Alt-Shift-\ | set the ruler column (and show the ruler) |
-| Ctrl-H | show this list of shortcuts |
-| Alt-H | practise the shortcuts (esc to stop) |
+| Key         | Action                                            |
+| ----------- | ------------------------------------------------- |
+| Alt-T       | toggle indenting with spaces or tabs              |
+| Alt-W       | toggle soft wrap                                  |
+| Alt-L       | toggle line numbers                               |
+| Alt-.       | toggle showing whitespace                         |
+| Alt-\       | toggle the vertical ruler                         |
+| Alt-V       | toggle language servers (or restart stopped ones) |
+| Alt-Shift-\ | set the ruler column (and show the ruler)         |
+| Ctrl-H      | show this list of shortcuts                       |
+| Alt-H       | practise the shortcuts (esc to stop)              |
 
 <!-- bindings end -->
 
@@ -329,21 +329,21 @@ languages/go/
 
 `language` holds one `key = value` per line. A line starting with `#` is a comment (there are no comments after a value, since `#` can be a comment marker):
 
-| Key | Value |
-| --- | --- |
-| `name` | The display name, shown in the status bar. Required with `extensions`, `files` or `interpreters`, and left out for a grammar that is only embedded in others (`markdown-inline`). |
-| `extensions` | Extensions without the dot, separated by spaces, matched ignoring case. |
-| `files` | Whole file names for files without an extension, matching case (`PKGBUILD .bashrc`). |
-| `interpreters` | Programs a `#!` first line may name, directly or through `env`, for files without an extension (`sh bash`). |
-| `comment` | What Ctrl-/ puts before a line (`//`). Left out, the language has no comments. |
-| `comment-end` | What it puts after a line, for block comments (`-->`). |
-| `inject` | The names other grammars embed it by, such as `bash shell`. The default is the id. Markdown fences also find a language by its extensions. |
-| `symbol` | The function of `parser.so` that gives the grammar. The default is `tree_sitter_` and the id with `-` as `_`. |
-| `prose` | `yes` to spell check all text outside code, as in Markdown, rather than only comments and strings. |
-| `fresh-parse` | `yes` to parse from scratch after every edit, for a grammar whose scanner gives different trees when parsing incrementally (Markdown's inline grammar). |
-| `first-pattern-wins` | `yes` when the highlight query puts its specific patterns first (Go's does): for captures of the same node, the earlier pattern wins rather than the later one. |
-| `server` | The language server to start for files of the language: the program (looked up in `PATH`) and its arguments, separated by blanks, with no quoting (`clangd --background-index`). It must speak the Language Server Protocol over its standard input and output. |
-| `server-roots` | Names of files or folders that mark a project's root for the server, separated by blanks: the first folder above a file holding one of them is the root. The default is `.git`. Needs `server`. |
+| Key                  | Value                                                                                                                                                                                                                                                           |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`               | The display name, shown in the status bar. Required with `extensions`, `files` or `interpreters`, and left out for a grammar that is only embedded in others (`markdown-inline`).                                                                               |
+| `extensions`         | Extensions without the dot, separated by spaces, matched ignoring case.                                                                                                                                                                                         |
+| `files`              | Whole file names for files without an extension, matching case (`PKGBUILD .bashrc`).                                                                                                                                                                            |
+| `interpreters`       | Programs a `#!` first line may name, directly or through `env`, for files without an extension (`sh bash`).                                                                                                                                                     |
+| `comment`            | What Ctrl-/ puts before a line (`//`). Left out, the language has no comments.                                                                                                                                                                                  |
+| `comment-end`        | What it puts after a line, for block comments (`-->`).                                                                                                                                                                                                          |
+| `inject`             | The names other grammars embed it by, such as `bash shell`. The default is the id. Markdown fences also find a language by its extensions.                                                                                                                      |
+| `symbol`             | The function of `parser.so` that gives the grammar. The default is `tree_sitter_` and the id with `-` as `_`.                                                                                                                                                   |
+| `prose`              | `yes` to spell check all text outside code, as in Markdown, rather than only comments and strings.                                                                                                                                                              |
+| `fresh-parse`        | `yes` to parse from scratch after every edit, for a grammar whose scanner gives different trees when parsing incrementally (Markdown's inline grammar).                                                                                                         |
+| `first-pattern-wins` | `yes` when the highlight query puts its specific patterns first (Go's does): for captures of the same node, the earlier pattern wins rather than the later one.                                                                                                 |
+| `server`             | The language server to start for files of the language: the program (looked up in `PATH`) and its arguments, separated by blanks, with no quoting (`clangd --background-index`). It must speak the Language Server Protocol over its standard input and output. |
+| `server-roots`       | Names of files or folders that mark a project's root for the server, separated by blanks: the first folder above a file holding one of them is the root. The default is `.git`. Needs `server`.                                                                 |
 
 Without `parser.so` a language still has its files and comment markers, just no colours or symbols. A package whose `language` file is wrong is left out, and the problem is shown when the editor starts. A `parser.so` that does not load (a missing entry point, or a tree-sitter ABI other than 13 to 15) or a query that does not compile is reported when a file of that language first opens, and that language is left uncoloured. Packages are read only at startup, so a new or changed package takes effect the next time the editor starts. Removing a language is deleting its folder.
 

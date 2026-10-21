@@ -1,15 +1,17 @@
 #pragma once
 
 // diff: the lines that differ between two texts, as a list of hunks.
-// lines are compared as whole byte strings. the common start and end are passed over
-// first, then the rest is compared with Myers' algorithm (finding the middle of an
-// optimal path and dividing there), which gives a shortest edit script.
+// lines are compared as whole byte strings.
+// the common start and end are passed over first, then the rest is compared with Myers'
+// algorithm (finding the middle of an optimal path and dividing there), which gives a
+// shortest edit script.
 // a part that would cost more than a limit to compare is given up on and reported as one
 // hunk, so two unrelated texts take bounded time.
 #include "types.h"
 
 // count lines from oldStart of the old text replaced by newCount lines from newStart of
-// the new one. one of the counts may be zero (lines added, or lines removed).
+// the new one.
+// one of the counts may be zero (lines added, or lines removed).
 typedef struct DiffHunk {
   u64 oldStart;
   u64 oldCount;

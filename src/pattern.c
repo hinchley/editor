@@ -11,13 +11,20 @@ static char
 Escaped(char character)
 {
   switch (character) {
-  case 't': return '\t';
-  case 'r': return '\r';
-  case 'n': return '\n';
-  case '\\': return '\\';
-  case '^': return '^';
-  case '$': return '$';
-  default: return '\0';
+    case 't':
+      return '\t';
+    case 'r':
+      return '\r';
+    case 'n':
+      return '\n';
+    case '\\':
+      return '\\';
+    case '^':
+      return '^';
+    case '$':
+      return '$';
+    default:
+      return '\0';
   }
 }
 
@@ -258,7 +265,8 @@ PatternFind(
   u64 length,
   u64 from,
   PatternMatch *match
-) {
+)
+{
   if (pattern->impossible || from >= length) return false;
   if (pattern->lineStart && from > 0) return false;
 
@@ -275,7 +283,8 @@ PatternExpand(
   PatternMatch match,
   const StrBuf *replacement,
   StrBuf *output
-) {
+)
+{
   const char *source = replacement->data ? replacement->data : "";
   u64 size = replacement->length;
   bool regex = pattern->options.regex;
@@ -310,7 +319,9 @@ PatternExpand(
       span = groups[next - '0'];
     }
 
-    if (span.start != regexUnset) StrBufAppend(output, text + span.start, span.end - span.start);
+    if (span.start != regexUnset) {
+      StrBufAppend(output, text + span.start, span.end - span.start);
+    }
     at++;
   }
 }
@@ -325,7 +336,8 @@ PatternReplaceLine(
   const StrBuf *replacement,
   StrBuf *rebuilt,
   u64 *count
-) {
+)
+{
   PatternMatch hit = first;
   u64 copied = hit.start;
   StrBufClear(rebuilt);

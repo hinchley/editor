@@ -186,7 +186,7 @@ SymbolsPickFile(void)
     while (item.length < width + 2) StrBufAppendByte(&item, ' ');
     if (item.length > width + 2) StrBufAppendString(&item, "  ");
     StrBufAppendString(&item, symbol->kind);
-    snprintf(note, sizeof note, "%lu", symbol->name.start.line + 1);
+    snprintf(note, sizeof(note), "%lu", symbol->name.start.line + 1);
     PickerAdd(item.data, item.length, note, index);
   }
 
@@ -238,7 +238,8 @@ SymbolsStep(bool backward)
 }
 
 // the project index: the symbols of every loaded file whose language has them, kept
-// sorted by name. open documents are taken from their buffer and the others from disk.
+// sorted by name.
+// open documents are taken from their buffer and the others from disk.
 
 enum Kind : u8 {
   KindFunction,
@@ -251,15 +252,8 @@ enum Kind : u8 {
   KindCount
 };
 
-static const char *const kindNames[KindCount] = {
-  "function",
-  "prototype",
-  "type",
-  "struct",
-  "enum",
-  "macro",
-  "heading"
-};
+static const char *const kindNames[KindCount] =
+  {"function", "prototype", "type", "struct", "enum", "macro", "heading"};
 
 // one file of the index, by its entry's serial.
 typedef struct IndexFile {
@@ -459,7 +453,8 @@ CompareSymbols(const void *a, const void *b)
 {
   const IndexSymbol *first = a;
   const IndexSymbol *second = b;
-  u32 shorter = first->nameLength < second->nameLength ? first->nameLength : second->nameLength;
+  u32 shorter = first->nameLength < second->nameLength ? first->nameLength
+                                                       : second->nameLength;
   i32 order = memcmp(NameOf(first), NameOf(second), shorter);
   if (order) return order;
   u32 lengths[2] = {first->nameLength, second->nameLength};
@@ -548,8 +543,11 @@ static void
 Refresh(void)
 {
   for (u64 place = 0; place < fileCount;) {
-    if (WorkspaceEntryOf(workspace, files[place].serial) == workspaceNone) DropFile(&files[place]);
-    else place++;
+    if (WorkspaceEntryOf(workspace, files[place].serial) == workspaceNone) {
+      DropFile(&files[place]);
+    } else {
+      place++;
+    }
   }
 
   for (u64 index = 0; index < workspace->count; index++) {
@@ -623,7 +621,8 @@ Progress([[maybe_unused]] void *context, u64 done, u64 count, StrBuf *text)
   StrBufAppendFormat(text, format, done, count);
 }
 
-static void RunPending(bool mayScan);
+static void
+RunPending(bool mayScan);
 
 static void
 Finished([[maybe_unused]] void *context, ScanResult result)
@@ -652,16 +651,13 @@ StartScan(enum Want want)
 
   for (u64 index = 0; index < workspace->count; index++) {
     const WorkspaceEntry *entry = &workspace->entries[index];
-    bool usable = !entry->document && entry->refusal == WorkspaceRefusalNone && entry->path.length;
+    bool usable = !entry->document && entry->refusal == WorkspaceRefusalNone &&
+      entry->path.length;
     if (usable && PathLang(&entry->path)) queue[count++] = index;
   }
 
-  static const ScanClient client = {
-    .wants = Wants,
-    .visit = Visit,
-    .progress = Progress,
-    .finish = Finished
-  };
+  static const ScanClient client =
+    {.wants = Wants, .visit = Visit, .progress = Progress, .finish = Finished};
 
   ScanStart(queue, count, &client, nullptr);
   free(queue);
@@ -865,7 +861,8 @@ OnName(const IndexSymbol *symbol)
 }
 
 // goes to the definition of the name in pendingNames[0]: straight there when there is
-// one, or through a picker. returns false when there is none.
+// one, or through a picker.
+// returns false when there is none.
 static bool
 Define(void)
 {
@@ -940,7 +937,8 @@ AppendCut(StrBuf *text, const char *data, u64 length, u64 width)
 }
 
 // shows the signature of the first name in pendingNames that has symbols: one in the
-// current file, else a prototype, else a definition. returns false when none has.
+// current file, else a prototype, else a definition.
+// returns false when none has.
 static bool
 Sign(void)
 {
@@ -1040,8 +1038,9 @@ PickProject(void)
   StrBufFree(&note);
 }
 
-// does what is pending on an index that is up to date with the open documents. a name
-// that is not found first indexes again the files that changed on disk, when mayScan.
+// does what is pending on an index that is up to date with the open documents.
+// a name that is not found first indexes again the files that changed on disk, when
+// mayScan.
 static void
 RunPending(bool mayScan)
 {

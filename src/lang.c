@@ -79,7 +79,7 @@ static const Directive directives[] = {
   {"first-pattern-wins", DirectiveFlag}
 };
 
-static constexpr u32 directiveCount = sizeof directives / sizeof directives[0];
+static constexpr u32 directiveCount = sizeof(directives) / sizeof(directives[0]);
 
 static Lang *langs;
 static u32 langCount;
@@ -154,52 +154,53 @@ Apply(
   const char *value,
   u64 length,
   StrBuf *problem
-) {
+)
+{
   const char *key = directives[directive].key;
 
   switch (directives[directive].kind) {
-  case DirectiveWord:
-    if (HasBlank(value, length)) {
-      StrBufAppendFormat(problem, "%s takes one word", key);
-      return false;
-    }
-    [[fallthrough]];
+    case DirectiveWord:
+      if (HasBlank(value, length)) {
+        StrBufAppendFormat(problem, "%s takes one word", key);
+        return false;
+      }
+      [[fallthrough]];
 
-  case DirectiveText: {
-    u64 text = AddText(reading, value, length);
-    if (strcmp(key, "name") == 0) draft->name = text;
-    else if (strcmp(key, "symbol") == 0) draft->symbol = text;
-    else if (strcmp(key, "comment") == 0) draft->commentStart = text;
-    else if (strcmp(key, "server") == 0) draft->server = text;
-    else draft->commentEnd = text;
-    return true;
-  }
-
-  case DirectiveList: {
-    u64 first = AddList(reading, value, length);
-    enum ListKind list = ListInjections;
-    if (strcmp(key, "extensions") == 0) list = ListExtensions;
-    else if (strcmp(key, "files") == 0) list = ListNames;
-    else if (strcmp(key, "interpreters") == 0) list = ListInterpreters;
-    else if (strcmp(key, "server-roots") == 0) list = ListRoots;
-    draft->lists[list] = first;
-    return true;
-  }
-
-  case DirectiveFlag: {
-    bool yes = length == 3 && memcmp(value, "yes", 3) == 0;
-    bool no = length == 2 && memcmp(value, "no", 2) == 0;
-
-    if (!yes && !no) {
-      StrBufAppendFormat(problem, "%s takes yes or no", key);
-      return false;
+    case DirectiveText: {
+      u64 text = AddText(reading, value, length);
+      if (strcmp(key, "name") == 0) draft->name = text;
+      else if (strcmp(key, "symbol") == 0) draft->symbol = text;
+      else if (strcmp(key, "comment") == 0) draft->commentStart = text;
+      else if (strcmp(key, "server") == 0) draft->server = text;
+      else draft->commentEnd = text;
+      return true;
     }
 
-    if (strcmp(key, "prose") == 0) draft->prose = yes;
-    else if (strcmp(key, "fresh-parse") == 0) draft->freshParse = yes;
-    else draft->firstPatternWins = yes;
-    return true;
-  }
+    case DirectiveList: {
+      u64 first = AddList(reading, value, length);
+      enum ListKind list = ListInjections;
+      if (strcmp(key, "extensions") == 0) list = ListExtensions;
+      else if (strcmp(key, "files") == 0) list = ListNames;
+      else if (strcmp(key, "interpreters") == 0) list = ListInterpreters;
+      else if (strcmp(key, "server-roots") == 0) list = ListRoots;
+      draft->lists[list] = first;
+      return true;
+    }
+
+    case DirectiveFlag: {
+      bool yes = length == 3 && memcmp(value, "yes", 3) == 0;
+      bool no = length == 2 && memcmp(value, "no", 2) == 0;
+
+      if (!yes && !no) {
+        StrBufAppendFormat(problem, "%s takes yes or no", key);
+        return false;
+      }
+
+      if (strcmp(key, "prose") == 0) draft->prose = yes;
+      else if (strcmp(key, "fresh-parse") == 0) draft->freshParse = yes;
+      else draft->firstPatternWins = yes;
+      return true;
+    }
   }
 
   return false;
@@ -248,8 +249,13 @@ ParseLanguage(Reading *reading, Draft *draft, const StrBuf *file, StrBuf *proble
     }
 
     if (directive == directiveCount) {
-      StrBufAppendFormat(problem, "line %lu: unknown key \"%.*s\"", line + 1, (int)keyLength,
-        text + keyStart);
+      StrBufAppendFormat(
+        problem,
+        "line %lu: unknown key \"%.*s\"",
+        line + 1,
+        (int)keyLength,
+        text + keyStart
+      );
       return false;
     }
 
@@ -267,8 +273,8 @@ ParseLanguage(Reading *reading, Draft *draft, const StrBuf *file, StrBuf *proble
 
     seen[directive] = true;
     StrBuf reason = {};
-    bool applied = Apply(reading, draft, directive, text + valueStart, valueEnd - valueStart,
-      &reason);
+    bool applied =
+      Apply(reading, draft, directive, text + valueStart, valueEnd - valueStart, &reason);
     if (!applied) StrBufAppendFormat(problem, "line %lu: %s", line + 1, reason.data);
     StrBufFree(&reason);
     if (!applied) return false;
@@ -278,7 +284,10 @@ ParseLanguage(Reading *reading, Draft *draft, const StrBuf *file, StrBuf *proble
     draft->lists[ListInterpreters] != noText;
 
   if (named && draft->name == noText) {
-    StrBufAppendString(problem, "a language with extensions, files or interpreters needs a name");
+    StrBufAppendString(
+      problem,
+      "a language with extensions, files or interpreters needs a name"
+    );
     return false;
   }
 

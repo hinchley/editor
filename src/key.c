@@ -48,7 +48,7 @@ KeyName(Key key, StrBuf *name)
   if (key.modifiers & KeyModifierShift) StrBufAppendString(name, "shift+");
   if (key.modifiers & KeyModifierSuper) StrBufAppendString(name, "super+");
 
-  for (u32 index = 0; index < sizeof keyLabels / sizeof keyLabels[0]; index++) {
+  for (u32 index = 0; index < sizeof(keyLabels) / sizeof(keyLabels[0]); index++) {
     if (keyLabels[index].code != key.code) continue;
 
     StrBufAppendString(name, keyLabels[index].name);

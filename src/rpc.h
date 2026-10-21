@@ -21,20 +21,19 @@ typedef void (*RpcReply)(void *context, const Json *message, u32 result, u32 err
 
 // a message from the process: a notification when id is jsonNone, otherwise a request
 // that must be answered with RpcRespond.
-typedef void (*RpcHandler)(
-  void *context,
-  const Json *message,
-  u32 method,
-  u32 params,
-  u32 id
-);
+typedef void (*RpcHandler)(void *context, const Json *message, u32 method, u32 params, u32 id);
 
 // starts arguments[0] (looked up in PATH) in folder, with its standard error appended to
 // the file at log (or discarded when log is nullptr).
 // returns nullptr when it cannot be started.
 Rpc *
-RpcStart(char *const arguments[], const char *folder, const char *log, RpcHandler handler,
-  void *context);
+RpcStart(
+  char *const arguments[],
+  const char *folder,
+  const char *log,
+  RpcHandler handler,
+  void *context
+);
 
 // ends the process if it is still running (closing its input, then SIGTERM, then SIGKILL,
 // waiting at most until the deadline in milliseconds of CLOCK_MONOTONIC) and frees it.

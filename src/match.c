@@ -15,20 +15,18 @@ FindUnknown(const MatchSet *set, const StrBuf *text, u64 line, u64 from, Pattern
 }
 
 bool
-MatchInLine(
-  const MatchSet *set,
-  const Buffer *buffer,
-  u64 line,
-  u64 from,
-  PatternMatch *match
-) {
+MatchInLine(const MatchSet *set, const Buffer *buffer, u64 line, u64 from, PatternMatch *match)
+{
   const StrBuf *text = BufferLine(buffer, line);
   const Pattern *pattern = set->pattern;
 
   switch (set->kind) {
-  case MatchKindSearch: return PatternFind(pattern, text->data, text->length, from, match);
-  case MatchKindSpell: return FindUnknown(set, text, line, from, match);
-  case MatchKindNone: return false;
+    case MatchKindSearch:
+      return PatternFind(pattern, text->data, text->length, from, match);
+    case MatchKindSpell:
+      return FindUnknown(set, text, line, from, match);
+    case MatchKindNone:
+      return false;
   }
 
   return false;
@@ -69,7 +67,8 @@ FindForward(
   Position from,
   Range *found,
   bool *wrapped
-) {
+)
+{
   u64 lineCount = BufferLineCount(buffer);
 
   for (u64 line = from.line; line < lineCount; line++) {
@@ -92,7 +91,8 @@ FindBackward(
   Position from,
   Range *found,
   bool *wrapped
-) {
+)
+{
   for (u64 line = from.line + 1; line-- > 0;) {
     u64 before = line == from.line ? from.byte : UINT64_MAX;
     if (LastOnLine(set, buffer, line, before, found)) return true;
@@ -115,7 +115,8 @@ MatchFind(
   bool backward,
   Range *found,
   bool *wrapped
-) {
+)
+{
   *wrapped = false;
   if (set->kind == MatchKindNone) return false;
   if (backward) return FindBackward(set, buffer, from, found, wrapped);

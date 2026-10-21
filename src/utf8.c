@@ -185,8 +185,7 @@ EndsUnpairedIndicator(const char *text, u64 at)
 static bool
 IsControlBreak(enum GraphemeBreak value)
 {
-  return value == GraphemeBreakControl || value == GraphemeBreakCr ||
-    value == GraphemeBreakLf;
+  return value == GraphemeBreakControl || value == GraphemeBreakCr || value == GraphemeBreakLf;
 }
 
 // decides whether a cluster boundary lies between the code points either side of at.

@@ -213,7 +213,8 @@ DescribeResult(StrBuf *text)
   if (skipped) StrBufAppendFormat(text, ", %lu skipped", skipped);
 }
 
-static void ShowList(u64 position);
+static void
+ShowList(u64 position);
 
 static void
 Finish([[maybe_unused]] void *context, ScanResult result)
@@ -327,7 +328,8 @@ ScopeAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
   matchedFiles = 0;
   stopped = false;
   capped = false;
-  static const ScanClient client = {.visit = SearchEntry, .progress = Progress, .finish = Finish};
+  static const ScanClient client =
+    {.visit = SearchEntry, .progress = Progress, .finish = Finish};
   ScanStart(queue, queueCount, &client, nullptr);
   free(queue);
   StrBufAppendFormat(message, "searching %lu files (escape stops)", queueCount);
@@ -441,7 +443,14 @@ ReplaceInEntry(u64 first, u64 end, u64 *lines, u64 *matches)
     if (!PatternFind(&pattern, text->data, text->length, 0, &match)) continue;
 
     u64 stop = PatternReplaceLine(
-      &pattern, text->data, text->length, match, UINT64_MAX, &replacement, &rebuilt, matches
+      &pattern,
+      text->data,
+      text->length,
+      match,
+      UINT64_MAX,
+      &replacement,
+      &rebuilt,
+      matches
     );
     Range range = {{line, match.start}, {line, stop}};
     BufferReplace(buffer, range, TextOf(&rebuilt), rebuilt.length);
@@ -480,7 +489,14 @@ ReplaceChosen(void)
     const char *format = "replaced %lu match%s on %lu line%s in %lu file%s";
     const char *plural = matches == 1 ? "" : "es";
     StrBufAppendFormat(
-      message, format, matches, plural, lines, Plural(lines), changedFiles, Plural(changedFiles)
+      message,
+      format,
+      matches,
+      plural,
+      lines,
+      Plural(lines),
+      changedFiles,
+      Plural(changedFiles)
     );
     StrBufAppendString(message, " (alt+shift+z reviews or undoes, ctrl+shift+s saves)");
   } else {
@@ -513,7 +529,14 @@ ReplacementGiven(const StrBuf *text)
   StrBuf question = {};
   u64 files = ChosenFiles();
   const char *format = "replace in %lu line%s of %lu file%s? (y/n)";
-  StrBufAppendFormat(&question, format, chosenCount, Plural(chosenCount), files, Plural(files));
+  StrBufAppendFormat(
+    &question,
+    format,
+    chosenCount,
+    Plural(chosenCount),
+    files,
+    Plural(files)
+  );
   PromptChoose(question.data, "yn", Confirmed, nullptr);
   StrBufFree(&question);
 }

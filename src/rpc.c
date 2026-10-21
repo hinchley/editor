@@ -61,8 +61,13 @@ RpcNow(void)
 }
 
 Rpc *
-RpcStart(char *const arguments[], const char *folder, const char *log, RpcHandler handler,
-  void *context)
+RpcStart(
+  char *const arguments[],
+  const char *folder,
+  const char *log,
+  RpcHandler handler,
+  void *context
+)
 {
   i32 inputPipe[2];
   i32 outputPipe[2];
@@ -250,8 +255,11 @@ RpcRespond(Rpc *rpc, const Json *request, u32 id, const char *result)
   JsonAppendRaw(&body, request, id);
 
   // -32601 is json-rpc's "method not found".
-  if (result) StrBufAppendFormat(&body, ",\"result\":%s}", result);
-  else StrBufAppendString(&body, ",\"error\":{\"code\":-32601,\"message\":\"not supported\"}}");
+  if (result) {
+    StrBufAppendFormat(&body, ",\"result\":%s}", result);
+  } else {
+    StrBufAppendString(&body, ",\"error\":{\"code\":-32601,\"message\":\"not supported\"}}");
+  }
 
   Send(rpc, &body);
   StrBufFree(&body);
@@ -318,7 +326,7 @@ ParseHeader(const char *text, u64 length, u64 *header, u64 *body)
   *header = (u64)(end - text) + 4;
   *body = 0;
   static constexpr char name[] = "content-length:";
-  static constexpr u64 nameLength = sizeof name - 1;
+  static constexpr u64 nameLength = sizeof(name) - 1;
 
   for (const char *line = text; line < end;) {
     const char *lineEnd = memmem(line, (u64)(end - line) + 2, "\r\n", 2);

@@ -69,8 +69,8 @@ SearchReplacement(const Pattern *pattern, SearchReplacementDone done);
 void
 SearchShow(Document *document, const Pattern *pattern);
 
-// true while a find, replace or project search or replace prompt is open, which takes keys before
-// the prompt does.
+// true while a find, replace or project search or replace prompt is open, which takes keys
+// before the prompt does.
 bool
 SearchActive(void);
 

@@ -176,7 +176,12 @@ ReviewRevert(void)
 
   if (hunk.oldCount) {
     const char *plural = hunk.oldCount == 1 ? "" : "s";
-    StrBufAppendFormat(message, "restored %lu line%s of the last commit", hunk.oldCount, plural);
+    StrBufAppendFormat(
+      message,
+      "restored %lu line%s of the last commit",
+      hunk.oldCount,
+      plural
+    );
   } else {
     const char *plural = hunk.newCount == 1 ? "" : "s";
     StrBufAppendFormat(message, "removed %lu added line%s", hunk.newCount, plural);
@@ -222,7 +227,8 @@ DrawText(
   u64 length,
   const LayoutRows *rows,
   Style style
-) {
+)
+{
   LayoutIterator iterator = LayoutBegin(text, length);
   LayoutCluster cluster;
   Style control = ThemeStyle(ThemeControl);
@@ -248,19 +254,19 @@ DrawText(
     char symbol[2] = {'^', (char)(text[cluster.start] ^ 0x40)};
 
     switch (cluster.kind) {
-    case LayoutKindText:
-      u64 size = cluster.end - cluster.start;
-      ScreenPutCluster(row + index, at, text + cluster.start, size, cluster.width, style);
-      break;
-    case LayoutKindSpace:
-    case LayoutKindTab:
-      break;
-    case LayoutKindControl:
-      ScreenPutText(row + index, at, symbol, 2, control);
-      break;
-    case LayoutKindInvalid:
-      ScreenPutCluster(row + index, at, invalidSymbol, strlen(invalidSymbol), 1, control);
-      break;
+      case LayoutKindText:
+        u64 size = cluster.end - cluster.start;
+        ScreenPutCluster(row + index, at, text + cluster.start, size, cluster.width, style);
+        break;
+      case LayoutKindSpace:
+      case LayoutKindTab:
+        break;
+      case LayoutKindControl:
+        ScreenPutText(row + index, at, symbol, 2, control);
+        break;
+      case LayoutKindInvalid:
+        ScreenPutCluster(row + index, at, invalidSymbol, strlen(invalidSymbol), 1, control);
+        break;
     }
   }
 }
@@ -720,7 +726,8 @@ LastTop(
   u64 rowCount,
   i32 width,
   i32 digits
-) {
+)
+{
   u64 top = rowCount;
   u64 used = 0;
 
@@ -810,11 +817,20 @@ PreviewKey([[maybe_unused]] void *context, Key key)
   if (key.modifiers != KeyModifierShift) return false;
 
   switch (key.code) {
-  case KeyUp: ScrollPreview(-1); return true;
-  case KeyDown: ScrollPreview(1); return true;
-  case KeyPageUp: ScrollPreview(-page); return true;
-  case KeyPageDown: ScrollPreview(page); return true;
-  default: return false;
+    case KeyUp:
+      ScrollPreview(-1);
+      return true;
+    case KeyDown:
+      ScrollPreview(1);
+      return true;
+    case KeyPageUp:
+      ScrollPreview(-page);
+      return true;
+    case KeyPageDown:
+      ScrollPreview(page);
+      return true;
+    default:
+      return false;
   }
 }
 
@@ -908,7 +924,8 @@ ReviewPickChanged(void)
     if (named && entry->refusal == WorkspaceRefusalNone) queue[queueCount++] = index;
   }
 
-  static const ScanClient client = {.visit = VisitEntry, .progress = Progress, .finish = Finish};
+  static const ScanClient client =
+    {.visit = VisitEntry, .progress = Progress, .finish = Finish};
   ScanStart(queue, queueCount, &client, nullptr);
   free(queue);
   StrBufAppendFormat(message, "comparing %lu files with the last commit", queueCount);

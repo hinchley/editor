@@ -36,6 +36,7 @@ static constexpr i32 handshakeTimeout = 1000;
 // leaves editor mode in the reverse order of entering it.
 // the keyboard protocol keeps a separate stack per screen, so it is popped before
 // leaving the alternate screen.
+// clang-format off
 static constexpr char leaveSequence[] =
   "\x1b[<u"      // pop the keyboard protocol flags
   "\x1b[?2004l"  // disable bracketed paste
@@ -43,6 +44,7 @@ static constexpr char leaveSequence[] =
   "\x1b[0m"      // default colours
   "\x1b[?25h"    // show the cursor
   "\x1b[?1049l"; // leave the alternate screen
+// clang-format on
 
 static struct termios savedMode;
 static i32 wakePipe[2] = {-1, -1};
@@ -110,13 +112,12 @@ InstallSignals(void)
   // a clipboard command that exits early must not end the editor through its pipe.
   signal(SIGPIPE, SIG_IGN);
 
-  static constexpr i32 stopSignals[] = {
-    SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT
-  };
+  static constexpr i32 stopSignals[] =
+    {SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT};
   action.sa_handler = StopHandler;
   action.sa_flags = (i32)SA_RESETHAND;
 
-  for (u32 index = 0; index < sizeof stopSignals / sizeof stopSignals[0]; index++) {
+  for (u32 index = 0; index < sizeof(stopSignals) / sizeof(stopSignals[0]); index++) {
     sigaction(stopSignals[index], &action, nullptr);
   }
 }
@@ -136,7 +137,7 @@ Handshake(void)
   // every terminal answers the second, so a cursor report without a keyboard report
   // before it means the protocol is not supported.
   static constexpr char query[] = "\x1b[?u\x1b[6n";
-  TermWrite(query, sizeof query - 1);
+  TermWrite(query, sizeof(query) - 1);
 
   bool keyboardProtocol = false;
   i64 deadline = NowMilliseconds() + handshakeTimeout;
@@ -170,7 +171,7 @@ EnterEditorMode(void)
   char sequence[64];
   i32 length = snprintf(
     sequence,
-    sizeof sequence,
+    sizeof(sequence),
     "\x1b[?1049h\x1b[>%du\x1b[?2004h\x1b[%d q",
     KeyboardFlagDisambiguate,
     shape
@@ -211,7 +212,7 @@ TermStop(void)
 {
   if (screenActive) {
     screenActive = 0;
-    WriteAll(leaveSequence, sizeof leaveSequence - 1);
+    WriteAll(leaveSequence, sizeof(leaveSequence) - 1);
   }
 
   // discard unread input so leftover key sequences do not reach the shell.
@@ -262,7 +263,7 @@ TermWait(i32 timeoutMilliseconds, const struct pollfd *others, u32 count)
 
     // several resize signals may have arrived, one redraw covers them all.
     char drain[64];
-    while (read(wakePipe[0], drain, sizeof drain) > 0) {}
+    while (read(wakePipe[0], drain, sizeof(drain)) > 0) {}
     return TermWaitResize;
   }
 }
@@ -271,7 +272,7 @@ void
 TermReadInput(void)
 {
   char buffer[65536];
-  i64 count = read(STDIN_FILENO, buffer, sizeof buffer);
+  i64 count = read(STDIN_FILENO, buffer, sizeof(buffer));
 
   if (count < 0) {
     if (errno == EINTR || errno == EAGAIN) return;

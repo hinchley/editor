@@ -53,7 +53,7 @@ IndentLength(const StrBuf *line)
 
 // enough spaces for any indentation step, which is at most one tab stop.
 static constexpr char spaces[] = "                ";
-static_assert((u64)tabWidth < sizeof spaces);
+static_assert((u64)tabWidth < sizeof(spaces));
 
 // one level of indentation.
 static const char *
@@ -225,10 +225,14 @@ static char
 CloserOf(char opener)
 {
   switch (opener) {
-  case '(': return ')';
-  case '[': return ']';
-  case '{': return '}';
-  default: return '\0';
+    case '(':
+      return ')';
+    case '[':
+      return ']';
+    case '{':
+      return '}';
+    default:
+      return '\0';
   }
 }
 
@@ -1342,7 +1346,7 @@ EditAlignCursors(const EditContext *edit)
       if (ranks[index] != rank || columns[index] == target) continue;
 
       u64 missing = target - columns[index];
-      while (padding.length < missing) StrBufAppend(&padding, spaces, sizeof spaces - 1);
+      while (padding.length < missing) StrBufAppend(&padding, spaces, sizeof(spaces) - 1);
 
       // the cursor is at the end of the insertion, so it moves along with its text.
       Position start = StartOf(set, index);

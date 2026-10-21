@@ -106,7 +106,9 @@ ParseNumber(Parser *parser)
 
   if (parser->at < length && (text[parser->at] == 'e' || text[parser->at] == 'E')) {
     parser->at++;
-    if (parser->at < length && (text[parser->at] == '+' || text[parser->at] == '-')) parser->at++;
+    if (parser->at < length && (text[parser->at] == '+' || text[parser->at] == '-')) {
+      parser->at++;
+    }
     if (parser->at == length || !IsDigit(text[parser->at])) return false;
     while (parser->at < length && IsDigit(text[parser->at])) parser->at++;
   }
@@ -114,7 +116,8 @@ ParseNumber(Parser *parser)
   return parser->at > start;
 }
 
-static bool ParseValue(Parser *parser, u32 depth);
+static bool
+ParseValue(Parser *parser, u32 depth);
 
 // parses the values of an array, or the members of an object, up to its closing bracket.
 static bool
@@ -175,12 +178,24 @@ ParseValue(Parser *parser, u32 depth)
   bool parsed = false;
 
   switch (type) {
-  case JsonTypeNull: parsed = ParseLiteral(parser, "null"); break;
-  case JsonTypeBool: parsed = ParseLiteral(parser, byte == 't' ? "true" : "false"); break;
-  case JsonTypeNumber: parsed = ParseNumber(parser); break;
-  case JsonTypeString: parsed = ParseString(parser); break;
-  case JsonTypeArray: parsed = ParseContainer(parser, node, false, depth); break;
-  case JsonTypeObject: parsed = ParseContainer(parser, node, true, depth); break;
+    case JsonTypeNull:
+      parsed = ParseLiteral(parser, "null");
+      break;
+    case JsonTypeBool:
+      parsed = ParseLiteral(parser, byte == 't' ? "true" : "false");
+      break;
+    case JsonTypeNumber:
+      parsed = ParseNumber(parser);
+      break;
+    case JsonTypeString:
+      parsed = ParseString(parser);
+      break;
+    case JsonTypeArray:
+      parsed = ParseContainer(parser, node, false, depth);
+      break;
+    case JsonTypeObject:
+      parsed = ParseContainer(parser, node, true, depth);
+      break;
   }
 
   // the nodes may have moved while the children were added.
@@ -331,23 +346,35 @@ JsonString(const Json *json, u32 node, StrBuf *text)
     at = backslash + 2;
 
     switch (escape) {
-    case 'b': StrBufAppendByte(text, '\b'); break;
-    case 'f': StrBufAppendByte(text, '\f'); break;
-    case 'n': StrBufAppendByte(text, '\n'); break;
-    case 'r': StrBufAppendByte(text, '\r'); break;
-    case 't': StrBufAppendByte(text, '\t'); break;
+      case 'b':
+        StrBufAppendByte(text, '\b');
+        break;
+      case 'f':
+        StrBufAppendByte(text, '\f');
+        break;
+      case 'n':
+        StrBufAppendByte(text, '\n');
+        break;
+      case 'r':
+        StrBufAppendByte(text, '\r');
+        break;
+      case 't':
+        StrBufAppendByte(text, '\t');
+        break;
 
-    case 'u': {
-      u32 used;
-      char encoded[4];
-      u32 codepoint = DecodeEscape(at, end, &used);
-      StrBufAppend(text, encoded, Utf8Encode(codepoint, encoded));
-      at += used;
-      break;
-    }
+      case 'u': {
+        u32 used;
+        char encoded[4];
+        u32 codepoint = DecodeEscape(at, end, &used);
+        StrBufAppend(text, encoded, Utf8Encode(codepoint, encoded));
+        at += used;
+        break;
+      }
 
-    // a quote, backslash or slash stands for itself.
-    default: StrBufAppendByte(text, escape); break;
+      // a quote, backslash or slash stands for itself.
+      default:
+        StrBufAppendByte(text, escape);
+        break;
     }
   }
 
@@ -404,12 +431,24 @@ JsonAppendString(StrBuf *out, const char *text, u64 length)
       at += used;
     } else {
       switch (byte) {
-      case '"': StrBufAppendString(out, "\\\""); break;
-      case '\\': StrBufAppendString(out, "\\\\"); break;
-      case '\n': StrBufAppendString(out, "\\n"); break;
-      case '\r': StrBufAppendString(out, "\\r"); break;
-      case '\t': StrBufAppendString(out, "\\t"); break;
-      default: StrBufAppendFormat(out, "\\u%04x", byte); break;
+        case '"':
+          StrBufAppendString(out, "\\\"");
+          break;
+        case '\\':
+          StrBufAppendString(out, "\\\\");
+          break;
+        case '\n':
+          StrBufAppendString(out, "\\n");
+          break;
+        case '\r':
+          StrBufAppendString(out, "\\r");
+          break;
+        case '\t':
+          StrBufAppendString(out, "\\t");
+          break;
+        default:
+          StrBufAppendFormat(out, "\\u%04x", byte);
+          break;
       }
 
       at++;

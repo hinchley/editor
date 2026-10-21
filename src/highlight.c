@@ -187,7 +187,9 @@ CompileGroups(Compiled *grammar)
 static void
 Prepare(void)
 {
-  if (!compiled) compiled = MemoryAllocateZeroed(LangCount() ? LangCount() : 1, sizeof(Compiled));
+  if (!compiled) {
+    compiled = MemoryAllocateZeroed(LangCount() ? LangCount() : 1, sizeof(Compiled));
+  }
 }
 
 // loads a language's grammar from its parser.so the first time it is asked for.
@@ -223,7 +225,7 @@ Load(u32 index)
 
   // posix allows a function pointer to be read from what dlsym gives.
   const TSLanguage *(*make)(void);
-  memcpy(&make, &symbol, sizeof make);
+  memcpy(&make, &symbol, sizeof(make));
   const TSLanguage *language = make();
   u32 abi = ts_language_abi_version(language);
   u32 newest = TREE_SITTER_LANGUAGE_VERSION;
@@ -231,8 +233,14 @@ Load(u32 index)
 
   if (abi < oldest || abi > newest) {
     const char *age = abi > newest ? "newer" : "older";
-    StrBufAppendFormat(failure, "parser.so has ABI %u, %s than the editor supports (%u to %u)",
-      abi, age, oldest, newest);
+    StrBufAppendFormat(
+      failure,
+      "parser.so has ABI %u, %s than the editor supports (%u to %u)",
+      abi,
+      age,
+      oldest,
+      newest
+    );
     return nullptr;
   }
 
@@ -268,7 +276,8 @@ CompileQuery(
   bool optional,
   Query *query,
   StrBuf *error
-) {
+)
+{
   StrBuf text = {};
   bool missing;
   bool ready = ReadQuery(lang, name, &text, &missing, error);
@@ -316,7 +325,8 @@ Compile(u32 index, StrBuf *message)
   }
 
   StrBuf error = {};
-  bool ready = CompileQuery(lang, language, "highlights.scm", false, &grammar->highlights, &error);
+  bool ready =
+    CompileQuery(lang, language, "highlights.scm", false, &grammar->highlights, &error);
 
   if (ready) {
     Query *query = &grammar->injections;
@@ -581,11 +591,8 @@ Parse(Highlight *highlight, u32 grammar, TSTree *old, const TSRange *ranges, u32
   ts_parser_set_language(parser, compiled[grammar].language);
   ts_parser_set_included_ranges(parser, ranges, count);
 
-  TSInput input = {
-    .payload = highlight->buffer,
-    .read = Read,
-    .encoding = TSInputEncodingUTF8
-  };
+  TSInput input =
+    {.payload = highlight->buffer, .read = Read, .encoding = TSInputEncodingUTF8};
 
   i64 deadline = Milliseconds() + maxParseTime;
   TSParseOptions options = {.payload = &deadline, .progress_callback = PastDeadline};
@@ -696,13 +703,8 @@ PaintRows(Highlight *highlight, Window *window, Segment segment, const Paint *pa
 }
 
 static void
-PaintCaptures(
-  Highlight *highlight,
-  u32 grammar,
-  TSNode root,
-  Window *window,
-  Segment segment
-) {
+PaintCaptures(Highlight *highlight, u32 grammar, TSNode root, Window *window, Segment segment)
+{
   const Compiled *queries = &compiled[grammar];
   TSQueryCursor *cursor = CursorOver(&queries->highlights, root, segment);
   PaintList list = {};
@@ -1103,8 +1105,8 @@ CompileTags(u32 index)
   for (u32 capture = 0; capture < count; capture++) {
     u32 length;
     const char *name = ts_query_capture_name_for_id(query->query, capture, &length);
-    bool definition = strncmp(name, prefix, sizeof prefix - 1) == 0;
-    if (definition) grammar->kinds[capture] = name + sizeof prefix - 1;
+    bool definition = strncmp(name, prefix, sizeof(prefix) - 1) == 0;
+    if (definition) grammar->kinds[capture] = name + sizeof(prefix) - 1;
   }
 
   grammar->nameCapture = QueryCapture(query, "name");
@@ -1307,7 +1309,10 @@ CompareFound(const void *a, const void *b)
 {
   const Found *first = a;
   const Found *second = b;
-  u32 starts[2] = {ts_node_start_byte(first->definition), ts_node_start_byte(second->definition)};
+  u32 starts[2] = {
+    ts_node_start_byte(first->definition),
+    ts_node_start_byte(second->definition)
+  };
   if (starts[0] != starts[1]) return starts[0] < starts[1] ? -1 : 1;
 
   u32 names[2] = {ts_node_start_byte(first->name), ts_node_start_byte(second->name)};
@@ -1326,7 +1331,13 @@ PositionOf(TSPoint point)
 // runs a grammar's tags query over a tree and visits its symbols in order.
 // a definition that several patterns match is visited once, for the earliest pattern.
 static void
-VisitSymbols(u32 grammar, TSNode root, const Source *source, HighlightVisit visit, void *context)
+VisitSymbols(
+  u32 grammar,
+  TSNode root,
+  const Source *source,
+  HighlightVisit visit,
+  void *context
+)
 {
   const Compiled *queries = &compiled[grammar];
   const Query *query = &queries->tags;
@@ -1390,10 +1401,9 @@ VisitSymbols(u32 grammar, TSNode root, const Source *source, HighlightVisit visi
     HighlightSymbol symbol = {
       .kind = item->kind,
       .start = PositionOf(ts_node_start_point(item->definition)),
-      .name = {
-        PositionOf(ts_node_start_point(item->name)),
-        PositionOf(ts_node_end_point(item->name))
-      },
+      .name =
+        {PositionOf(ts_node_start_point(item->name)),
+          PositionOf(ts_node_end_point(item->name))},
       .nameText = name.data ? name.data : "",
       .nameLength = name.length,
       .signature = signature.data ? signature.data : "",
@@ -1453,7 +1463,8 @@ HighlightSymbolsOfText(
   u64 length,
   HighlightVisit visit,
   void *context
-) {
+)
+{
   u32 grammar = lang->index;
   if (length > maxHighlightSize || !CompileTags(grammar)) return false;
 

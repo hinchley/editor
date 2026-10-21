@@ -21,8 +21,14 @@ PlacesBegin(void);
 // and marked with a symbol one column wide (or nullptr).
 // the preview picks out the range when it is on one line.
 void
-PlacesAdd(u64 serial, Range range, const char *text, u64 length, const char *note,
-  const char *mark);
+PlacesAdd(
+  u64 serial,
+  Range range,
+  const char *text,
+  u64 length,
+  const char *note,
+  const char *mark
+);
 
 // opens the picker of the places added, with title, starting on the place added at
 // selected.

@@ -48,7 +48,8 @@ DocumentOpen(
   const char *path,
   const DisplayOptions *options,
   StrBuf *message
-) {
+)
+{
   *document = (Document){};
   BufferInit(&document->buffer);
   UndoInit(&document->undo, &document->buffer);

@@ -208,7 +208,9 @@ ReadConfig(GitRepo *repo)
 
       if (core && strcasecmp(line, "bare") == 0) ok = strcasecmp(value, "true") != 0;
       if (core && strcasecmp(line, "repositoryformatversion") == 0) ok = atoi(value) <= 1;
-      if (extensions && strcasecmp(line, "refstorage") == 0) ok = strcasecmp(value, "files") == 0;
+      if (extensions && strcasecmp(line, "refstorage") == 0) {
+        ok = strcasecmp(value, "files") == 0;
+      }
 
       if (extensions && strcasecmp(line, "objectformat") == 0) {
         if (strcasecmp(value, "sha256") == 0) {
@@ -308,7 +310,9 @@ FindPacks(GitRepo *repo)
 
   while ((entry = readdir(folder))) {
     u64 length = strlen(entry->d_name);
-    if (length > 4 && strcmp(entry->d_name + length - 4, ".idx") == 0) MapPack(repo, entry->d_name);
+    if (length > 4 && strcmp(entry->d_name + length - 4, ".idx") == 0) {
+      MapPack(repo, entry->d_name);
+    }
   }
 
   closedir(folder);
@@ -452,7 +456,8 @@ CacheAdd(const Pack *pack, u64 offset, enum ObjectType type, const StrBuf *data)
   StrBufAppend(&oldest->data, TextOf(data), data->length);
 }
 
-static bool ReadObject(GitRepo *repo, const GitHash *hash, enum ObjectType *type, StrBuf *out);
+static bool
+ReadObject(GitRepo *repo, const GitHash *hash, enum ObjectType *type, StrBuf *out);
 
 // one entry of a pack: its type, its size once inflated, and where its data starts.
 // a delta also gives its base, by offset in the same pack or by name.
@@ -475,7 +480,8 @@ ParseEntry(const GitRepo *repo, const Pack *pack, u64 offset, PackEntry *entry)
   if (at >= end) return false;
 
   u8 byte = data[at++];
-  *entry = (PackEntry){.pack = pack, .offset = offset, .type = (enum ObjectType)((byte >> 4) & 7)};
+  *entry =
+    (PackEntry){.pack = pack, .offset = offset, .type = (enum ObjectType)((byte >> 4) & 7)};
   entry->size = byte & 0x0F;
 
   for (u32 shift = 4; byte & 0x80; shift += 7) {
@@ -669,7 +675,9 @@ ReadObject(GitRepo *repo, const GitHash *hash, enum ObjectType *type, StrBuf *ou
     for (u32 index = 0; index < repo->packCount; index++) {
       u64 offset;
       Pack *pack = repo->packs[index];
-      if (PackFind(repo, pack, hash, &offset)) return ReadPacked(repo, pack, offset, type, out);
+      if (PackFind(repo, pack, hash, &offset)) {
+        return ReadPacked(repo, pack, offset, type, out);
+      }
     }
 
     if (ReadLoose(repo, hash, type, out)) return true;
@@ -722,7 +730,7 @@ ReadRef(GitRepo *repo, const char *name, GitHash *hash, StrBuf *target, FileStam
     u64 hexLength = repo->hashSize * 2;
 
     if (*line != '#' && *line != '^' && length == hexLength + 1 + nameLength &&
-        line[hexLength] == ' ' && memcmp(line + hexLength + 1, name, nameLength) == 0) {
+      line[hexLength] == ' ' && memcmp(line + hexLength + 1, name, nameLength) == 0) {
       found = ParseHex(repo, line, hexLength, hash);
     }
 
@@ -923,7 +931,8 @@ TreeFind(
   u64 nameLength,
   u32 *mode,
   GitHash *hash
-) {
+)
+{
   const char *at = TextOf(tree);
   const char *end = at + tree->length;
 

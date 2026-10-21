@@ -100,8 +100,13 @@ DiagnosticsOnLine(const Diagnostics *diagnostics, u64 line, u32 *worst, u32 *cou
 // it, going round the end of the buffer; wrapped says whether it went round.
 // false when there are none.
 bool
-DiagnosticsStep(const Diagnostics *diagnostics, Position position, bool backward, u32 *index,
-  bool *wrapped);
+DiagnosticsStep(
+  const Diagnostics *diagnostics,
+  Position position,
+  bool backward,
+  u32 *index,
+  bool *wrapped
+);
 
 DiagnosticCounts
 DiagnosticsCount(const Diagnostics *diagnostics);

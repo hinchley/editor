@@ -79,9 +79,8 @@ typedef struct Parser {
 } Parser;
 
 static const RegexRange digitRanges[] = {{'0', '9'}};
-static const RegexRange wordRanges[] = {
-  {'0', '9'}, {'A', 'Z'}, {'_', '_'}, {'a', 'z'}, {0x80, 0x10FFFF}
-};
+static const RegexRange wordRanges[] =
+  {{'0', '9'}, {'A', 'Z'}, {'_', '_'}, {'a', 'z'}, {0x80, 0x10FFFF}};
 static const RegexRange spaceRanges[] = {{'\t', '\t'}, {'\v', '\r'}, {' ', ' '}};
 
 static void
@@ -167,20 +166,20 @@ AddNamedClass(RangeList *list, char letter)
   u32 count;
 
   switch (letter | 0x20) {
-  case 'd':
-    ranges = digitRanges;
-    count = sizeof digitRanges / sizeof *digitRanges;
-    break;
-  case 'w':
-    ranges = wordRanges;
-    count = sizeof wordRanges / sizeof *wordRanges;
-    break;
-  case 's':
-    ranges = spaceRanges;
-    count = sizeof spaceRanges / sizeof *spaceRanges;
-    break;
-  default:
-    return false;
+    case 'd':
+      ranges = digitRanges;
+      count = sizeof(digitRanges) / sizeof(*digitRanges);
+      break;
+    case 'w':
+      ranges = wordRanges;
+      count = sizeof(wordRanges) / sizeof(*wordRanges);
+      break;
+    case 's':
+      ranges = spaceRanges;
+      count = sizeof(spaceRanges) / sizeof(*spaceRanges);
+      break;
+    default:
+      return false;
   }
 
   if (letter >= 'a') {
@@ -200,12 +199,23 @@ static bool
 EscapedCodepoint(char letter, u32 *codepoint)
 {
   switch (letter) {
-  case 't': *codepoint = '\t'; return true;
-  case 'r': *codepoint = '\r'; return true;
-  case 'n': *codepoint = '\n'; return true;
-  case 'f': *codepoint = '\f'; return true;
-  case 'v': *codepoint = '\v'; return true;
-  default: break;
+    case 't':
+      *codepoint = '\t';
+      return true;
+    case 'r':
+      *codepoint = '\r';
+      return true;
+    case 'n':
+      *codepoint = '\n';
+      return true;
+    case 'f':
+      *codepoint = '\f';
+      return true;
+    case 'v':
+      *codepoint = '\v';
+      return true;
+    default:
+      break;
   }
 
   bool letterOrDigit = ((letter | 0x20) >= 'a' && (letter | 0x20) <= 'z') ||
@@ -248,7 +258,8 @@ EmitClass(Parser *parser, RangeList *list, bool negated)
 
   for (u32 index = 0; index < list->count; index++) {
     RegexRange range = list->ranges[index];
-    RegexRange *last = regex->rangeCount > first ? &regex->ranges[regex->rangeCount - 1] : nullptr;
+    RegexRange *last = regex->rangeCount > first ? &regex->ranges[regex->rangeCount - 1]
+                                                 : nullptr;
 
     if (last && range.low <= last->high + 1) {
       if (range.high > last->high) last->high = range.high;
@@ -280,7 +291,8 @@ static u32
 ReadCodepoint(Parser *parser)
 {
   u32 codepoint;
-  parser->at += Utf8Decode(parser->source + parser->at, parser->length - parser->at, &codepoint);
+  parser->at +=
+    Utf8Decode(parser->source + parser->at, parser->length - parser->at, &codepoint);
   return codepoint;
 }
 
@@ -385,11 +397,25 @@ static bool
 ReadRepeat(Parser *parser, u32 *minimum, u32 *maximum)
 {
   switch (Peek(parser)) {
-  case '*': *minimum = 0; *maximum = unbounded; parser->at++; return true;
-  case '+': *minimum = 1; *maximum = unbounded; parser->at++; return true;
-  case '?': *minimum = 0; *maximum = 1; parser->at++; return true;
-  case '{': break;
-  default: return false;
+    case '*':
+      *minimum = 0;
+      *maximum = unbounded;
+      parser->at++;
+      return true;
+    case '+':
+      *minimum = 1;
+      *maximum = unbounded;
+      parser->at++;
+      return true;
+    case '?':
+      *minimum = 0;
+      *maximum = 1;
+      parser->at++;
+      return true;
+    case '{':
+      break;
+    default:
+      return false;
   }
 
   u64 start = parser->at++;
@@ -488,7 +514,8 @@ Repeat(Parser *parser, u32 start, u32 minimum, u32 maximum, bool lazy)
   }
 }
 
-static void ParseAlternation(Parser *parser);
+static void
+ParseAlternation(Parser *parser);
 
 // parses an escape outside brackets, returning false for an anchor, which cannot be
 // repeated.
@@ -554,38 +581,38 @@ static bool
 ParseAtom(Parser *parser)
 {
   switch (Peek(parser)) {
-  case '(':
-    ParseGroup(parser);
-    return true;
-  case '[':
-    ParseClass(parser);
-    return true;
-  case '.':
-    parser->at++;
-    Emit(parser, (RegexInstruction){.op = RegexOpAny});
-    return true;
-  case '^':
-  case '$': {
-    u32 kind = Peek(parser) == '^' ? RegexAssertLineStart : RegexAssertLineEnd;
-    parser->at++;
-    Emit(parser, (RegexInstruction){.op = RegexOpAssert, .value = kind});
-    return false;
-  }
-  case '\\':
-    return ParseEscape(parser);
-  case '*':
-  case '+':
-  case '?':
-    Fail(parser, "nothing to repeat");
-    return true;
-  case '{':
-    if (RepeatAhead(parser)) {
+    case '(':
+      ParseGroup(parser);
+      return true;
+    case '[':
+      ParseClass(parser);
+      return true;
+    case '.':
+      parser->at++;
+      Emit(parser, (RegexInstruction){.op = RegexOpAny});
+      return true;
+    case '^':
+    case '$': {
+      u32 kind = Peek(parser) == '^' ? RegexAssertLineStart : RegexAssertLineEnd;
+      parser->at++;
+      Emit(parser, (RegexInstruction){.op = RegexOpAssert, .value = kind});
+      return false;
+    }
+    case '\\':
+      return ParseEscape(parser);
+    case '*':
+    case '+':
+    case '?':
       Fail(parser, "nothing to repeat");
       return true;
-    }
-    break;
-  default:
-    break;
+    case '{':
+      if (RepeatAhead(parser)) {
+        Fail(parser, "nothing to repeat");
+        return true;
+      }
+      break;
+    default:
+      break;
   }
 
   EmitChar(parser, ReadCodepoint(parser));
@@ -779,10 +806,14 @@ static bool
 Holds(u32 kind, const Place *place, u64 length)
 {
   switch (kind) {
-  case RegexAssertLineStart: return place->at == 0;
-  case RegexAssertLineEnd: return place->at == length;
-  case RegexAssertWordBoundary: return place->wordBefore != place->wordAfter;
-  default: return place->wordBefore == place->wordAfter;
+    case RegexAssertLineStart:
+      return place->at == 0;
+    case RegexAssertLineEnd:
+      return place->at == length;
+    case RegexAssertWordBoundary:
+      return place->wordBefore != place->wordAfter;
+    default:
+      return place->wordBefore == place->wordAfter;
   }
 }
 
@@ -796,7 +827,8 @@ AddThread(
   const Place *place,
   u64 length,
   u32 slotCount
-) {
+)
+{
   Pending *stack = scratch.stack;
   u64 *work = scratch.work;
   u32 top = 0;
@@ -872,10 +904,14 @@ static bool
 Consumes(const Regex *regex, const RegexInstruction *instruction, u32 codepoint, u32 folded)
 {
   switch (instruction->op) {
-  case RegexOpChar: return instruction->value == (regex->ignoreCase ? folded : codepoint);
-  case RegexOpAny: return true;
-  case RegexOpClass: return InClass(regex, instruction->value, codepoint);
-  default: return false;
+    case RegexOpChar:
+      return instruction->value == (regex->ignoreCase ? folded : codepoint);
+    case RegexOpAny:
+      return true;
+    case RegexOpClass:
+      return InClass(regex, instruction->value, codepoint);
+    default:
+      return false;
   }
 }
 
@@ -927,7 +963,8 @@ RegexFind(
   bool anchored,
   RegexSpan *spans,
   u32 spanCount
-) {
+)
+{
   if (!regex->count || from >= length) return false;
   if (regex->lineStart && from > 0) return false;
 

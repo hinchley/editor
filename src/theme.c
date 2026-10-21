@@ -30,7 +30,8 @@ static const ThemeEntry themeEntries[ThemeGroupCount] = {
   [ThemeNamespace] = {"namespace", {180, colorDefault, 0, colorDefault}},
   [ThemeTitle] = {"title", {75, colorDefault, StyleAttributeBold, colorDefault}},
   [ThemeLiteral] = {"literal", {114, colorDefault, 0, colorDefault}},
-  [ThemeEmphasis] = {"emphasis", {colorDefault, colorDefault, StyleAttributeItalic, colorDefault}},
+  [ThemeEmphasis] =
+    {"emphasis", {colorDefault, colorDefault, StyleAttributeItalic, colorDefault}},
   [ThemeStrong] = {"strong", {colorDefault, colorDefault, StyleAttributeBold, colorDefault}},
   [ThemeUri] = {"uri", {75, colorDefault, StyleAttributeUnderline, colorDefault}},
   [ThemeReference] = {"reference", {180, colorDefault, 0, colorDefault}},
@@ -43,7 +44,8 @@ static const ThemeEntry themeEntries[ThemeGroupCount] = {
   [ThemeWhitespace] = {"whitespace", {238, colorDefault, 0, colorDefault}},
   [ThemeControl] = {"control", {204, colorDefault, 0, colorDefault}},
   [ThemeRuler] = {"ruler", {238, colorDefault, 0, colorDefault}},
-  [ThemeStatus] = {"status", {colorDefault, colorDefault, StyleAttributeReverse, colorDefault}},
+  [ThemeStatus] =
+    {"status", {colorDefault, colorDefault, StyleAttributeReverse, colorDefault}},
   [ThemeStatusDim] = {"statusdim", {245, 236, 0, colorDefault}},
   [ThemeMessage] = {"message", {colorDefault, colorDefault, 0, colorDefault}},
 
@@ -112,7 +114,7 @@ ThemeOfCapture(const char *name, enum ThemeGroup *group)
     }
   }
 
-  for (u32 index = 0; index < sizeof captureAliases / sizeof captureAliases[0]; index++) {
+  for (u32 index = 0; index < sizeof(captureAliases) / sizeof(captureAliases[0]); index++) {
     const char *alias = captureAliases[index].name;
 
     if (strlen(alias) == length && strncmp(alias, name, length) == 0) {

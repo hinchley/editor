@@ -14,7 +14,6 @@ static constexpr char tabSymbol[] = "\u2192";
 static constexpr char rulerSymbol[] = "\u2502";
 static constexpr char invalidSymbol[] = "\uFFFD";
 
-
 // a hint is only drawn with at least this many columns free after its line.
 static constexpr i64 minHintWidth = 10;
 
@@ -215,9 +214,13 @@ FindDiagnostics(Canvas *canvas, u64 line, u64 length)
     enum ThemeGroup group = DiagnosticSeverityGroup(diagnostic->severity);
 
     // groups are in order of severity, worst first.
-    if (stop > start) AddCurl(canvas, start, stop, group);
-    else if (start < length) AddCurl(canvas, start, start + 1, group);
-    else if (canvas->curlAtEnd == ThemeNone || group < canvas->curlAtEnd) canvas->curlAtEnd = group;
+    if (stop > start) {
+      AddCurl(canvas, start, stop, group);
+    } else if (start < length) {
+      AddCurl(canvas, start, start + 1, group);
+    } else if (canvas->curlAtEnd == ThemeNone || group < canvas->curlAtEnd) {
+      canvas->curlAtEnd = group;
+    }
   }
 
   if (DiagnosticsOnLine(diagnostics, line, &canvas->lineWorst, &canvas->lineCount)) {
@@ -294,7 +297,8 @@ DrawBlank(
   i64 x,
   enum ThemeGroup mark,
   enum ThemeGroup curl
-) {
+)
+{
   // blank cells are already empty, so plain blanks only need their symbol.
   bool plain = mark == ThemeNone && curl == ThemeNone;
   if (!plain) FillCells(canvas, row, x, cluster->width, Curled(ThemeStyle(mark), curl));
@@ -344,18 +348,18 @@ DrawCluster(Canvas *canvas, i32 row, const LayoutCluster *cluster, i64 x)
   Style control = Curled(Overlay(ThemeStyle(ThemeControl), mark), curl);
 
   switch (cluster->kind) {
-  case LayoutKindText:
-    ScreenPutCluster(row, column, bytes, size, cluster->width, text);
-    break;
-  case LayoutKindControl:
-    DrawControl(canvas, row, column, cluster->start, control);
-    break;
-  case LayoutKindInvalid:
-    PutSymbol(row, column, invalidSymbol, control);
-    break;
-  case LayoutKindSpace:
-  case LayoutKindTab:
-    break;
+    case LayoutKindText:
+      ScreenPutCluster(row, column, bytes, size, cluster->width, text);
+      break;
+    case LayoutKindControl:
+      DrawControl(canvas, row, column, cluster->start, control);
+      break;
+    case LayoutKindInvalid:
+      PutSymbol(row, column, invalidSymbol, control);
+      break;
+    case LayoutKindSpace:
+    case LayoutKindTab:
+      break;
   }
 }
 
@@ -369,21 +373,21 @@ DrawChange(const Canvas *canvas, i32 row, bool first)
   enum ThemeGroup group = ThemeChangeModified;
 
   switch (canvas->change) {
-  case ChangeMarkNone:
-    return;
-  case ChangeMarkAdded:
-    group = ThemeChangeAdded;
-    break;
-  case ChangeMarkModified:
-    break;
-  case ChangeMarkRemovedAbove:
-  case ChangeMarkRemovedBelow:
-    if (!first) return;
+    case ChangeMarkNone:
+      return;
+    case ChangeMarkAdded:
+      group = ThemeChangeAdded;
+      break;
+    case ChangeMarkModified:
+      break;
+    case ChangeMarkRemovedAbove:
+    case ChangeMarkRemovedBelow:
+      if (!first) return;
 
-    bool above = canvas->change == ChangeMarkRemovedAbove;
-    symbol = above ? removedAboveSymbol : removedBelowSymbol;
-    group = ThemeChangeRemoved;
-    break;
+      bool above = canvas->change == ChangeMarkRemovedAbove;
+      symbol = above ? removedAboveSymbol : removedBelowSymbol;
+      group = ThemeChangeRemoved;
+      break;
   }
 
   PutSymbol(row, canvas->view->column, symbol, ThemeStyle(group));

@@ -180,16 +180,35 @@ Edit(Key key)
   if (key.modifiers & ~(KeyModifierControl | KeyModifierShift)) return;
 
   switch (key.code) {
-  case KeyEnter: Finish(text.data ? text.data : "", text.length); break;
-  case KeyEscape: Finish(nullptr, 0); break;
-  case KeyLeft: cursor = previous; break;
-  case KeyRight: cursor = next; break;
-  case KeyHome: cursor = 0; break;
-  case KeyEnd: cursor = text.length; break;
-  case KeyBackspace: DeleteTo(control ? WordStart(cursor) : previous); break;
-  case KeyDelete: DeleteNext(next); break;
-  case KeyTab: Complete(); break;
-  default: break;
+    case KeyEnter:
+      Finish(text.data ? text.data : "", text.length);
+      break;
+    case KeyEscape:
+      Finish(nullptr, 0);
+      break;
+    case KeyLeft:
+      cursor = previous;
+      break;
+    case KeyRight:
+      cursor = next;
+      break;
+    case KeyHome:
+      cursor = 0;
+      break;
+    case KeyEnd:
+      cursor = text.length;
+      break;
+    case KeyBackspace:
+      DeleteTo(control ? WordStart(cursor) : previous);
+      break;
+    case KeyDelete:
+      DeleteNext(next);
+      break;
+    case KeyTab:
+      Complete();
+      break;
+    default:
+      break;
   }
 }
 

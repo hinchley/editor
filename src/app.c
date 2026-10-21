@@ -121,8 +121,12 @@ ToggleServers(void)
     RefreshServers();
   }
 
-  StrBufAppendString(&message, restart ? "language servers restarted"
-    : on ? "language servers on" : "language servers off");
+  StrBufAppendString(
+    &message,
+    restart ? "language servers restarted"
+      : on  ? "language servers on"
+            : "language servers off"
+  );
 }
 
 static void
@@ -147,11 +151,8 @@ Reload(void)
 }
 
 static void
-ReloadAnswered(
-  [[maybe_unused]] void *context,
-  const char *answer,
-  [[maybe_unused]] u64 length
-) {
+ReloadAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]] u64 length)
+{
   if (answer && *answer == 'y') Reload();
 }
 
@@ -414,8 +415,14 @@ TableWidthAnswered([[maybe_unused]] void *context, const char *answer, u64 lengt
 
   const char *columns = result.columns == 1 ? "" : "s";
   const char *lines = result.lines == 1 ? "" : "s";
-  StrBufAppendFormat(&message, "aligned %u column%s over %lu line%s", result.columns, columns,
-    result.lines, lines);
+  StrBufAppendFormat(
+    &message,
+    "aligned %u column%s over %lu line%s",
+    result.columns,
+    columns,
+    result.lines,
+    lines
+  );
 }
 
 static void
@@ -428,8 +435,12 @@ AskTableWidth(void)
 
   StrBuf label = {};
   StrBuf current = {};
-  StrBufAppendFormat(&label, "table column width (%lu-%lu): ", tableColumnWidthMinimum,
-    tableColumnWidthMaximum);
+  StrBufAppendFormat(
+    &label,
+    "table column width (%lu-%lu): ",
+    tableColumnWidthMinimum,
+    tableColumnWidthMaximum
+  );
   StrBufAppendFormat(&current, "%lu", tableColumnWidth);
   PromptAsk(label.data, current.data, TableWidthAnswered, nullptr);
   StrBufFree(&current);
@@ -653,31 +664,80 @@ EditCommand(enum Command command)
   EditContext edit = Editing();
 
   switch (command) {
-  case CommandNewline: EditNewline(&edit); break;
-  case CommandIndent: EditIndent(&edit); break;
-  case CommandDedent: EditDedent(&edit); break;
-  case CommandDeleteBackward: EditDeleteBackward(&edit); break;
-  case CommandDeleteForward: EditDeleteForward(&edit); break;
-  case CommandDeleteWordBackward: EditDeleteWordBackward(&edit); break;
-  case CommandUndo: Report(EditUndo(&edit), "nothing to undo"); break;
-  case CommandRedo: Report(EditRedo(&edit), "nothing to redo"); break;
-  case CommandCopy: Copy(false); break;
-  case CommandCut: Copy(true); break;
-  case CommandPaste: Paste(); break;
-  case CommandMoveLinesUp: EditMoveLines(&edit, true); break;
-  case CommandMoveLinesDown: EditMoveLines(&edit, false); break;
-  case CommandDuplicateLine: EditDuplicateLines(&edit); break;
-  case CommandDeleteLine: EditDeleteLines(&edit); break;
-  case CommandToggleComment: ToggleComment(); break;
-  case CommandSortLines: AskSortOrder(); break;
-  case CommandJoinLines: Report(EditJoinLines(&edit), "no line below to join"); break;
-  case CommandTrimLines: TrimWhitespace(false); break;
-  case CommandTrimWhitespace: TrimWhitespace(true); break;
-  case CommandUpperCase: ChangeCase(true); break;
-  case CommandLowerCase: ChangeCase(false); break;
-  case CommandAlignTable: AskTableWidth(); break;
-  case CommandAlignCursors: AlignCursors(); break;
-  default: return false;
+    case CommandNewline:
+      EditNewline(&edit);
+      break;
+    case CommandIndent:
+      EditIndent(&edit);
+      break;
+    case CommandDedent:
+      EditDedent(&edit);
+      break;
+    case CommandDeleteBackward:
+      EditDeleteBackward(&edit);
+      break;
+    case CommandDeleteForward:
+      EditDeleteForward(&edit);
+      break;
+    case CommandDeleteWordBackward:
+      EditDeleteWordBackward(&edit);
+      break;
+    case CommandUndo:
+      Report(EditUndo(&edit), "nothing to undo");
+      break;
+    case CommandRedo:
+      Report(EditRedo(&edit), "nothing to redo");
+      break;
+    case CommandCopy:
+      Copy(false);
+      break;
+    case CommandCut:
+      Copy(true);
+      break;
+    case CommandPaste:
+      Paste();
+      break;
+    case CommandMoveLinesUp:
+      EditMoveLines(&edit, true);
+      break;
+    case CommandMoveLinesDown:
+      EditMoveLines(&edit, false);
+      break;
+    case CommandDuplicateLine:
+      EditDuplicateLines(&edit);
+      break;
+    case CommandDeleteLine:
+      EditDeleteLines(&edit);
+      break;
+    case CommandToggleComment:
+      ToggleComment();
+      break;
+    case CommandSortLines:
+      AskSortOrder();
+      break;
+    case CommandJoinLines:
+      Report(EditJoinLines(&edit), "no line below to join");
+      break;
+    case CommandTrimLines:
+      TrimWhitespace(false);
+      break;
+    case CommandTrimWhitespace:
+      TrimWhitespace(true);
+      break;
+    case CommandUpperCase:
+      ChangeCase(true);
+      break;
+    case CommandLowerCase:
+      ChangeCase(false);
+      break;
+    case CommandAlignTable:
+      AskTableWidth();
+      break;
+    case CommandAlignCursors:
+      AlignCursors();
+      break;
+    default:
+      return false;
   }
 
   return true;
@@ -712,52 +772,102 @@ static bool
 NavigationCommand(enum Command command)
 {
   switch (command) {
-  case CommandExpandSelection: ExpandSelection(); break;
-  case CommandShrinkSelection:
-    Report(MoveShrinkSelection(CurrentView()), "no expanded selection to shrink");
-    break;
-  case CommandSelectionTopUp:
-    Report(MoveSelectionEdge(CurrentView(), MoveEdgeTop, true), "no line above");
-    break;
-  case CommandSelectionBottomDown:
-    Report(MoveSelectionEdge(CurrentView(), MoveEdgeBottom, false), "no line below");
-    break;
-  case CommandSelectionTopDown:
-    Report(MoveSelectionEdge(CurrentView(), MoveEdgeTop, false), "no line to drop");
-    break;
-  case CommandSelectionBottomUp:
-    Report(MoveSelectionEdge(CurrentView(), MoveEdgeBottom, true), "no line to drop");
-    break;
-  case CommandJumpBack: JumpBack(); break;
-  case CommandJumpForward: JumpForward(); break;
-  case CommandFileSymbols: SymbolsPickFile(); break;
-  case CommandNextSymbol: SymbolsStep(false); break;
-  case CommandPreviousSymbol: SymbolsStep(true); break;
-  case CommandGoToDefinition: LookupDefinition(); break;
-  case CommandShowSignature: LookupSignature(windowSize.width); break;
-  case CommandFindReferences: LookupReferences(); break;
-  case CommandOtherFile: LookupOtherFile(); break;
-  case CommandRename: RefactorRename(); break;
-  case CommandFix: RefactorFix(); break;
-  case CommandFormat: RefactorFormat(expandTab); break;
-  case CommandProjectSymbols: SymbolsPickProject(); break;
-  case CommandNextChange: ReviewStep(false); break;
-  case CommandPreviousChange: ReviewStep(true); break;
-  case CommandChangePanel: TogglePanel(true); break;
-  case CommandRevertChange: ReviewRevert(); break;
-  case CommandReviewMultifile: MultifileReview(); break;
-  case CommandPickChanged: ReviewPickChanged(); break;
-  case CommandNextDiagnostic: IssuesStep(false); break;
-  case CommandPreviousDiagnostic: IssuesStep(true); break;
-  case CommandDiagnosticPanel: TogglePanel(false); break;
-  case CommandPickDiagnostic: IssuesPick(); break;
-  default: return false;
+    case CommandExpandSelection:
+      ExpandSelection();
+      break;
+    case CommandShrinkSelection:
+      Report(MoveShrinkSelection(CurrentView()), "no expanded selection to shrink");
+      break;
+    case CommandSelectionTopUp:
+      Report(MoveSelectionEdge(CurrentView(), MoveEdgeTop, true), "no line above");
+      break;
+    case CommandSelectionBottomDown:
+      Report(MoveSelectionEdge(CurrentView(), MoveEdgeBottom, false), "no line below");
+      break;
+    case CommandSelectionTopDown:
+      Report(MoveSelectionEdge(CurrentView(), MoveEdgeTop, false), "no line to drop");
+      break;
+    case CommandSelectionBottomUp:
+      Report(MoveSelectionEdge(CurrentView(), MoveEdgeBottom, true), "no line to drop");
+      break;
+    case CommandJumpBack:
+      JumpBack();
+      break;
+    case CommandJumpForward:
+      JumpForward();
+      break;
+    case CommandFileSymbols:
+      SymbolsPickFile();
+      break;
+    case CommandNextSymbol:
+      SymbolsStep(false);
+      break;
+    case CommandPreviousSymbol:
+      SymbolsStep(true);
+      break;
+    case CommandGoToDefinition:
+      LookupDefinition();
+      break;
+    case CommandShowSignature:
+      LookupSignature(windowSize.width);
+      break;
+    case CommandFindReferences:
+      LookupReferences();
+      break;
+    case CommandOtherFile:
+      LookupOtherFile();
+      break;
+    case CommandRename:
+      RefactorRename();
+      break;
+    case CommandFix:
+      RefactorFix();
+      break;
+    case CommandFormat:
+      RefactorFormat(expandTab);
+      break;
+    case CommandProjectSymbols:
+      SymbolsPickProject();
+      break;
+    case CommandNextChange:
+      ReviewStep(false);
+      break;
+    case CommandPreviousChange:
+      ReviewStep(true);
+      break;
+    case CommandChangePanel:
+      TogglePanel(true);
+      break;
+    case CommandRevertChange:
+      ReviewRevert();
+      break;
+    case CommandReviewMultifile:
+      MultifileReview();
+      break;
+    case CommandPickChanged:
+      ReviewPickChanged();
+      break;
+    case CommandNextDiagnostic:
+      IssuesStep(false);
+      break;
+    case CommandPreviousDiagnostic:
+      IssuesStep(true);
+      break;
+    case CommandDiagnosticPanel:
+      TogglePanel(false);
+      break;
+    case CommandPickDiagnostic:
+      IssuesPick();
+      break;
+    default:
+      return false;
   }
 
   return true;
 }
 
-static void RunCommand(const Binding *binding);
+static void
+RunCommand(const Binding *binding);
 
 static void
 HelpPicked([[maybe_unused]] void *context, bool picked, u64 id)
@@ -809,25 +919,62 @@ static bool
 BufferCommand(enum Command command)
 {
   switch (command) {
-  case CommandNewBuffer: SessionNew(); break;
-  case CommandOpen: SessionOpen(); break;
-  case CommandLoadNewFiles: SessionLoadNew(); break;
-  case CommandNextBuffer: SessionCycle(1); break;
-  case CommandPreviousBuffer: SessionCycle(-1); break;
-  case CommandLastBuffer: SessionLastUsed(); break;
-  case CommandPickBuffer: SessionPick(false); break;
-  case CommandPickUnsaved: SessionPick(true); break;
-  case CommandCloseBuffer: SessionClose(); break;
-  case CommandFileMenu: SaveFileMenu(&workspace, &message); break;
-  case CommandSave: SaveCurrent(&workspace, &message, nullptr); break;
-  case CommandSaveAll: SaveAll(&workspace, &message, nullptr); break;
-  case CommandQuit: SessionQuit(Quit); break;
-  case CommandSplitSame: SessionSplit(false, windowSize.width); break;
-  case CommandSplitNew: SessionSplit(true, windowSize.width); break;
-  case CommandFocusOtherView: SessionFocusOther(); break;
-  case CommandSwapViews: SessionSwapViews(); break;
-  case CommandCloseView: SessionCloseView(); break;
-  default: return false;
+    case CommandNewBuffer:
+      SessionNew();
+      break;
+    case CommandOpen:
+      SessionOpen();
+      break;
+    case CommandLoadNewFiles:
+      SessionLoadNew();
+      break;
+    case CommandNextBuffer:
+      SessionCycle(1);
+      break;
+    case CommandPreviousBuffer:
+      SessionCycle(-1);
+      break;
+    case CommandLastBuffer:
+      SessionLastUsed();
+      break;
+    case CommandPickBuffer:
+      SessionPick(false);
+      break;
+    case CommandPickUnsaved:
+      SessionPick(true);
+      break;
+    case CommandCloseBuffer:
+      SessionClose();
+      break;
+    case CommandFileMenu:
+      SaveFileMenu(&workspace, &message);
+      break;
+    case CommandSave:
+      SaveCurrent(&workspace, &message, nullptr);
+      break;
+    case CommandSaveAll:
+      SaveAll(&workspace, &message, nullptr);
+      break;
+    case CommandQuit:
+      SessionQuit(Quit);
+      break;
+    case CommandSplitSame:
+      SessionSplit(false, windowSize.width);
+      break;
+    case CommandSplitNew:
+      SessionSplit(true, windowSize.width);
+      break;
+    case CommandFocusOtherView:
+      SessionFocusOther();
+      break;
+    case CommandSwapViews:
+      SessionSwapViews();
+      break;
+    case CommandCloseView:
+      SessionCloseView();
+      break;
+    default:
+      return false;
   }
 
   return true;
@@ -837,16 +984,35 @@ static bool
 SearchCommand(enum Command command)
 {
   switch (command) {
-  case CommandFind: SearchFind(); break;
-  case CommandFindNext: SearchStep(false); break;
-  case CommandFindPrevious: SearchStep(true); break;
-  case CommandJumpWord: SearchWord(); break;
-  case CommandReplace: SearchReplace(); break;
-  case CommandSpellCheck: SearchSpell(); break;
-  case CommandSpellWord: SearchSpellWord(); break;
-  case CommandProjectSearch: SearchProject(ProjectAsk); break;
-  case CommandProjectResults: ProjectShow(); break;
-  default: return false;
+    case CommandFind:
+      SearchFind();
+      break;
+    case CommandFindNext:
+      SearchStep(false);
+      break;
+    case CommandFindPrevious:
+      SearchStep(true);
+      break;
+    case CommandJumpWord:
+      SearchWord();
+      break;
+    case CommandReplace:
+      SearchReplace();
+      break;
+    case CommandSpellCheck:
+      SearchSpell();
+      break;
+    case CommandSpellWord:
+      SearchSpellWord();
+      break;
+    case CommandProjectSearch:
+      SearchProject(ProjectAsk);
+      break;
+    case CommandProjectResults:
+      ProjectShow();
+      break;
+    default:
+      return false;
   }
 
   return true;
@@ -866,34 +1032,85 @@ RunCommand(const Binding *binding)
   if (SearchCommand(command) || NavigationCommand(command)) return;
 
   switch (command) {
-  case CommandScrollUp: Scroll(-1); break;
-  case CommandScrollDown: Scroll(1); break;
-  case CommandSelectAll: MoveSelectAll(view); break;
-  case CommandSelectBrackets: Report(MoveSelectBrackets(view), "no brackets around"); break;
-  case CommandJumpBracket: Report(MoveToMatchingBracket(view), "no matching bracket"); break;
-  case CommandCancel: Cancel(); break;
-  case CommandAddCursorWord: MultiCursorAddNext(view, SearchMarks(Current()), &message); break;
-  case CommandSkipCursorWord: MultiCursorSkip(view, SearchMarks(Current()), &message); break;
-  case CommandAddCursorAll: MultiCursorAddAll(view, SearchMarks(Current()), &message); break;
-  case CommandAddCursorAbove: Report(MultiCursorAddRow(view, true), "no line above"); break;
-  case CommandAddCursorBelow: Report(MultiCursorAddRow(view, false), "no line below"); break;
-  case CommandReload: AskToReload(); break;
-  case CommandToggleLineEndings: ToggleLineEndings(); break;
-  case CommandCopyPath: CopyPath(); break;
-  case CommandStatistics: ShowStatistics(); break;
-  case CommandGoToLine: PromptAsk("go to line: ", "", GoToAnswered, nullptr); break;
-  case CommandToggleExpandTab: Toggle(&expandTab, "expand tab"); break;
-  case CommandToggleSoftWrap: Toggle(&displayOptions.softWrap, "soft wrap"); break;
-  case CommandToggleLineNumbers: Toggle(&displayOptions.lineNumbers, "line numbers"); break;
-  case CommandToggleWhitespace: Toggle(&displayOptions.showWhitespace, "whitespace"); break;
-  case CommandToggleRuler: Toggle(&displayOptions.ruler, "ruler"); break;
-  case CommandToggleServers: ToggleServers(); break;
-  case CommandSetRulerColumn: AskRulerColumn(); break;
-  case CommandHelp: ShowHelp(); break;
-  case CommandLearn: LearnStart(); break;
+    case CommandScrollUp:
+      Scroll(-1);
+      break;
+    case CommandScrollDown:
+      Scroll(1);
+      break;
+    case CommandSelectAll:
+      MoveSelectAll(view);
+      break;
+    case CommandSelectBrackets:
+      Report(MoveSelectBrackets(view), "no brackets around");
+      break;
+    case CommandJumpBracket:
+      Report(MoveToMatchingBracket(view), "no matching bracket");
+      break;
+    case CommandCancel:
+      Cancel();
+      break;
+    case CommandAddCursorWord:
+      MultiCursorAddNext(view, SearchMarks(Current()), &message);
+      break;
+    case CommandSkipCursorWord:
+      MultiCursorSkip(view, SearchMarks(Current()), &message);
+      break;
+    case CommandAddCursorAll:
+      MultiCursorAddAll(view, SearchMarks(Current()), &message);
+      break;
+    case CommandAddCursorAbove:
+      Report(MultiCursorAddRow(view, true), "no line above");
+      break;
+    case CommandAddCursorBelow:
+      Report(MultiCursorAddRow(view, false), "no line below");
+      break;
+    case CommandReload:
+      AskToReload();
+      break;
+    case CommandToggleLineEndings:
+      ToggleLineEndings();
+      break;
+    case CommandCopyPath:
+      CopyPath();
+      break;
+    case CommandStatistics:
+      ShowStatistics();
+      break;
+    case CommandGoToLine:
+      PromptAsk("go to line: ", "", GoToAnswered, nullptr);
+      break;
+    case CommandToggleExpandTab:
+      Toggle(&expandTab, "expand tab");
+      break;
+    case CommandToggleSoftWrap:
+      Toggle(&displayOptions.softWrap, "soft wrap");
+      break;
+    case CommandToggleLineNumbers:
+      Toggle(&displayOptions.lineNumbers, "line numbers");
+      break;
+    case CommandToggleWhitespace:
+      Toggle(&displayOptions.showWhitespace, "whitespace");
+      break;
+    case CommandToggleRuler:
+      Toggle(&displayOptions.ruler, "ruler");
+      break;
+    case CommandToggleServers:
+      ToggleServers();
+      break;
+    case CommandSetRulerColumn:
+      AskRulerColumn();
+      break;
+    case CommandHelp:
+      ShowHelp();
+      break;
+    case CommandLearn:
+      LearnStart();
+      break;
 
-  // the rest were run above.
-  default: break;
+    // the rest were run above.
+    default:
+      break;
   }
 }
 
@@ -998,17 +1215,17 @@ WaitForInput(void)
   u32 serverCount = LspPollFds(servers);
 
   switch (TermWait(timeout, servers, serverCount)) {
-  case TermWaitInput:
-    TermReadInput();
-    break;
-  case TermWaitResize:
-    Resize();
-    break;
-  case TermWaitTimeout:
-    if (pending) InputExpire();
-    break;
-  case TermWaitOther:
-    break;
+    case TermWaitInput:
+      TermReadInput();
+      break;
+    case TermWaitResize:
+      Resize();
+      break;
+    case TermWaitTimeout:
+      if (pending) InputExpire();
+      break;
+    case TermWaitOther:
+      break;
   }
 }
 
@@ -1043,7 +1260,8 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
 
   // the errors and warnings the language server reports, when there are any.
   const Diagnostics *diagnostics = LspDiagnostics(document->lsp);
-  DiagnosticCounts problems = diagnostics ? DiagnosticsCount(diagnostics) : (DiagnosticCounts){};
+  DiagnosticCounts problems = diagnostics ? DiagnosticsCount(diagnostics)
+                                          : (DiagnosticCounts){};
   if (problems.errors) StrBufAppendFormat(&pane->diagnostics, "E%u", problems.errors);
   if (problems.errors && problems.warnings) StrBufAppendByte(&pane->diagnostics, ' ');
   if (problems.warnings) StrBufAppendFormat(&pane->diagnostics, "W%u", problems.warnings);

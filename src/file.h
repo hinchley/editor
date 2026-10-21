@@ -62,7 +62,8 @@ enum FileStatus {
 // reads the whole file at path into text, as it is on disk, reusing text's memory, and
 // gives the stamp of the version read.
 // refuses what FileLoad refuses: anything that is not a regular file, a file larger than
-// maxFileSize and a binary file. a missing file gives FileStatusNew.
+// maxFileSize and a binary file.
+// a missing file gives FileStatusNew.
 // problems are appended to message, unless it is nullptr.
 // text and stamp are only meaningful when the status is FileStatusOk.
 enum FileStatus

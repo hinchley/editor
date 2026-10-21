@@ -33,8 +33,14 @@ PlacesBegin(void)
 }
 
 void
-PlacesAdd(u64 serial, Range range, const char *text, u64 length, const char *note,
-  const char *mark)
+PlacesAdd(
+  u64 serial,
+  Range range,
+  const char *text,
+  u64 length,
+  const char *note,
+  const char *mark
+)
 {
   if (placeCount == placeCapacity) {
     placeCapacity = placeCapacity ? placeCapacity * 2 : 64;
@@ -51,8 +57,16 @@ DrawPlace([[maybe_unused]] void *context, u64 id, i32 column, i32 width, i32 hei
 {
   Range range = places[id].range;
   u64 end = range.end.line == range.start.line ? range.end.byte : UINT64_MAX;
-  PreviewDraw(places[id].serial, range.start.line, range.start.byte, end, nullptr, column, width,
-    height);
+  PreviewDraw(
+    places[id].serial,
+    range.start.line,
+    range.start.byte,
+    end,
+    nullptr,
+    column,
+    width,
+    height
+  );
 }
 
 void

@@ -93,8 +93,12 @@ AppendPlace(StrBuf *text, u64 serial, Position position)
 }
 
 static void
-DefinitionDone([[maybe_unused]] void *context, const LspLocation *locations, u32 count,
-  bool answered)
+DefinitionDone(
+  [[maybe_unused]] void *context,
+  const LspLocation *locations,
+  u32 count,
+  bool answered
+)
 {
   if (!Answered()) return;
 
@@ -276,8 +280,12 @@ AppendLine(StrBuf *note, const Reference *reference, StrBuf *read, u64 *readSeri
 }
 
 static void
-ReferencesDone([[maybe_unused]] void *context, const LspLocation *locations, u32 count,
-  bool answered)
+ReferencesDone(
+  [[maybe_unused]] void *context,
+  const LspLocation *locations,
+  u32 count,
+  bool answered
+)
 {
   if (!Answered() || !answered) return;
 
@@ -361,8 +369,12 @@ LookupReferences(void)
 }
 
 static void
-OtherFileDone([[maybe_unused]] void *context, const LspLocation *locations, u32 count,
-  bool answered)
+OtherFileDone(
+  [[maybe_unused]] void *context,
+  const LspLocation *locations,
+  u32 count,
+  bool answered
+)
 {
   if (!Answered() || !answered) return;
 
@@ -385,5 +397,7 @@ LookupOtherFile(void)
 {
   LspRequest request = LspOtherFile(Current()->lsp, OtherFileDone, nullptr);
   Asking(request);
-  if (!request) StrBufAppendString(message, "switching between header and source needs clangd");
+  if (!request) {
+    StrBufAppendString(message, "switching between header and source needs clangd");
+  }
 }

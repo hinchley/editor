@@ -7,9 +7,9 @@
 // alt+shift+s picker.
 // each records a jump, so alt+[ comes back.
 // the commands across files use an index of the symbols of every loaded file, built by a
-// scan (see scan.h) the first time one is used. open documents are indexed again from
-// their buffer whenever they changed, and a name that is not found first indexes again
-// the files that changed on disk.
+// scan (see scan.h) the first time one is used.
+// open documents are indexed again from their buffer whenever they changed, and a name
+// that is not found first indexes again the files that changed on disk.
 #include "strbuf.h"
 #include "workspace.h"
 

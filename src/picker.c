@@ -118,13 +118,8 @@ PickerAdd(const char *text, u64 length, const char *note, u64 id)
   }
 
   Item *item = &items[itemCount++];
-  *item = (Item){
-    .text = texts.length,
-    .length = length,
-    .note = noNote,
-    .id = id,
-    .mark = noMark
-  };
+  *item =
+    (Item){.text = texts.length, .length = length, .note = noNote, .id = id, .mark = noMark};
   StrBufAppend(&texts, text, length);
 
   item->folded = foldedTexts.length;
@@ -325,16 +320,32 @@ PickerKey(Key key)
   }
 
   switch (key.code) {
-  case KeyUp: Select(-1); break;
-  case KeyDown: Select(1); break;
-  case KeyPageUp: Select(-page); break;
-  case KeyPageDown: Select(page); break;
-  case KeyHome: Select(-all); break;
-  case KeyEnd: Select(all); break;
+    case KeyUp:
+      Select(-1);
+      break;
+    case KeyDown:
+      Select(1);
+      break;
+    case KeyPageUp:
+      Select(-page);
+      break;
+    case KeyPageDown:
+      Select(page);
+      break;
+    case KeyHome:
+      Select(-all);
+      break;
+    case KeyEnd:
+      Select(all);
+      break;
 
-  // enter with nothing listed has nothing to pick, so the picker stays open.
-  case KeyEnter: if (matchCount) PromptKey(key); break;
-  default: PromptKey(key); break;
+    // enter with nothing listed has nothing to pick, so the picker stays open.
+    case KeyEnter:
+      if (matchCount) PromptKey(key);
+      break;
+    default:
+      PromptKey(key);
+      break;
   }
 }
 

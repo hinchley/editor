@@ -216,7 +216,8 @@ Relabel(
   [[maybe_unused]] void *context,
   [[maybe_unused]] const char *text,
   [[maybe_unused]] u64 length
-) {
+)
+{
   Label();
 }
 
@@ -381,7 +382,11 @@ SearchSpell(void)
 }
 
 static void
-SpellWordAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]] u64 length)
+SpellWordAnswered(
+  [[maybe_unused]] void *context,
+  const char *answer,
+  [[maybe_unused]] u64 length
+)
 {
   if (!answer || *answer != 'y') return;
   if (!SpellChange(spellWord.data, spellWord.length, spellAdd, message)) return;
@@ -409,7 +414,11 @@ SearchSpellWord(void)
 
   spellAdd = !SpellEntry(line->data, start, end, &spellWord);
   StrBuf question = {};
-  StrBufAppendFormat(&question, spellAdd ? "add \"%s\" to" : "remove \"%s\" from", spellWord.data);
+  StrBufAppendFormat(
+    &question,
+    spellAdd ? "add \"%s\" to" : "remove \"%s\" from",
+    spellWord.data
+  );
   StrBufAppendString(&question, " the word list? (y/n)");
   PromptChoose(question.data, "yn", SpellWordAnswered, nullptr);
   StrBufFree(&question);
@@ -507,7 +516,8 @@ FinishReplace(void)
   StrBufAppendFormat(message, "replaced %lu of %lu match%s", replaced, count, plural);
 }
 
-static void Ask(void);
+static void
+Ask(void);
 
 static void
 Chosen([[maybe_unused]] void *context, const char *answer, [[maybe_unused]] u64 length)
@@ -516,28 +526,28 @@ Chosen([[maybe_unused]] void *context, const char *answer, [[maybe_unused]] u64 
   Range match = replacing.match;
 
   switch (choice) {
-  case 'y': {
-    const StrBuf *line = BufferLine(&Current()->buffer, match.start.line);
-    PatternMatch hit = {match.start.byte, match.end.byte};
-    StrBuf with = {};
-    PatternExpand(&last, TextOf(line), line->length, hit, &replacing.text, &with);
-    Apply(match, TextOf(&with), with.length);
-    StrBufFree(&with);
-    replacing.replaced++;
-    replacing.decided++;
-    break;
-  }
-  case 'n':
-    replacing.next = match.end;
-    replacing.decided++;
-    break;
-  case 'a':
-    ReplaceRest(match);
-    FinishReplace();
-    return;
-  default:
-    FinishReplace();
-    return;
+    case 'y': {
+      const StrBuf *line = BufferLine(&Current()->buffer, match.start.line);
+      PatternMatch hit = {match.start.byte, match.end.byte};
+      StrBuf with = {};
+      PatternExpand(&last, TextOf(line), line->length, hit, &replacing.text, &with);
+      Apply(match, TextOf(&with), with.length);
+      StrBufFree(&with);
+      replacing.replaced++;
+      replacing.decided++;
+      break;
+    }
+    case 'n':
+      replacing.next = match.end;
+      replacing.decided++;
+      break;
+    case 'a':
+      ReplaceRest(match);
+      FinishReplace();
+      return;
+    default:
+      FinishReplace();
+      return;
   }
 
   Ask();
@@ -688,7 +698,8 @@ Recall(void)
 {
   const StrBuf *text = &last.source;
   if (prompt == SearchPromptFind) text = &saved.source;
-  bool replacement = prompt == SearchPromptReplacement || prompt == SearchPromptProjectReplacement;
+  bool replacement = prompt == SearchPromptReplacement ||
+    prompt == SearchPromptProjectReplacement;
   if (replacement) text = &lastReplacement;
   if (text->length) PromptSetText(text->data, text->length);
 }
@@ -727,7 +738,8 @@ SearchKey(Key key)
     return;
   }
 
-  bool replacement = prompt == SearchPromptReplacement || prompt == SearchPromptProjectReplacement;
+  bool replacement = prompt == SearchPromptReplacement ||
+    prompt == SearchPromptProjectReplacement;
 
   if (control && key.code == 't' && !replacement) {
     Toggle(&caseSensitive);

@@ -56,7 +56,8 @@ IdEqual(FileId a, FileId b)
   return a.device == b.device && a.inode == b.inode;
 }
 
-static bool IdSetAdd(IdSet *set, FileId id);
+static bool
+IdSetAdd(IdSet *set, FileId id);
 
 static void
 IdSetGrow(IdSet *set)
@@ -154,11 +155,8 @@ ListingAdd(Listing *listing, const struct dirent *entry)
     listing->entries = MemoryResize(listing->entries, listing->capacity, sizeof(Entry));
   }
 
-  listing->entries[listing->count++] = (Entry){
-    .name = listing->names.length,
-    .type = entry->d_type,
-    .inode = entry->d_ino
-  };
+  listing->entries[listing->count++] =
+    (Entry){.name = listing->names.length, .type = entry->d_type, .inode = entry->d_ino};
 
   // names are kept nul separated so each one can be used as a string.
   StrBufAppend(&listing->names, entry->d_name, strlen(entry->d_name) + 1);
@@ -233,7 +231,8 @@ typedef struct Folder {
   u64 base;
 } Folder;
 
-static void Walk(Walker *walker, i32 directory, StrBuf *path, const Filter *filter, u64 base);
+static void
+Walk(Walker *walker, i32 directory, StrBuf *path, const Filter *filter, u64 base);
 
 // handles one entry, whose display path is in path.
 static void
@@ -243,7 +242,8 @@ WalkEntry(
   const char *name,
   const Entry *entry,
   StrBuf *path
-) {
+)
+{
   FileId id = {folder->device, entry->inode};
   enum Kind kind = Classify(folder->directory, name, entry->type, &id);
   if (kind == KindSkip || (kind == KindFolder && strcmp(name, ".git") == 0)) return;

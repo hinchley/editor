@@ -227,8 +227,14 @@ DrawWrapped(const char *text, i32 row, i32 bottom, i32 column, i32 width, Style 
 // draws one diagnostic from row: a heading with its severity, code and source, then its
 // message and notes; returns the row after it.
 static i32
-DrawDiagnostic(const Diagnostics *diagnostics, const Diagnostic *diagnostic, i32 row,
-  i32 bottom, i32 column, i32 width)
+DrawDiagnostic(
+  const Diagnostics *diagnostics,
+  const Diagnostic *diagnostic,
+  i32 row,
+  i32 bottom,
+  i32 column,
+  i32 width
+)
 {
   Style group = ThemeStyle(DiagnosticSeverityGroup(diagnostic->severity));
   Style faint = ThemeStyle(ThemeGutter);
@@ -236,8 +242,12 @@ DrawDiagnostic(const Diagnostics *diagnostics, const Diagnostic *diagnostic, i32
   const char *source = DiagnosticsText(diagnostics, diagnostic->source);
 
   StrBuf heading = {};
-  StrBufAppendFormat(&heading, "%s %s", DiagnosticSeveritySymbol(diagnostic->severity),
-    DiagnosticSeverityName(diagnostic->severity));
+  StrBufAppendFormat(
+    &heading,
+    "%s %s",
+    DiagnosticSeveritySymbol(diagnostic->severity),
+    DiagnosticSeverityName(diagnostic->severity)
+  );
   if (*code) StrBufAppendFormat(&heading, " [%s]", code);
   if (*source) StrBufAppendFormat(&heading, " %s", source);
   StrBufAppendFormat(&heading, "  line %lu", diagnostic->range.start.line + 1);
@@ -247,8 +257,14 @@ DrawDiagnostic(const Diagnostics *diagnostics, const Diagnostic *diagnostic, i32
   StrBufFree(&shown);
   StrBufFree(&heading);
 
-  row = DrawWrapped(DiagnosticsText(diagnostics, diagnostic->message), row, bottom, column,
-    width, styleDefault);
+  row = DrawWrapped(
+    DiagnosticsText(diagnostics, diagnostic->message),
+    row,
+    bottom,
+    column,
+    width,
+    styleDefault
+  );
   const char *notes = DiagnosticsText(diagnostics, diagnostic->notes);
   if (*notes) row = DrawWrapped(notes, row, bottom, column, width, faint);
   return row;
@@ -333,7 +349,7 @@ IssuesPick(void)
   for (u64 index = 0; index < workspace->count; index++) {
     const WorkspaceEntry *entry = &workspace->entries[index];
     const Diagnostics *diagnostics = entry->document ? LspDiagnostics(entry->document->lsp)
-      : nullptr;
+                                                     : nullptr;
     if (!diagnostics || !diagnostics->count) continue;
 
     files++;
@@ -363,8 +379,15 @@ IssuesPick(void)
 
   StrBuf title = {};
   const char *plural = files == 1 ? "" : "s";
-  StrBufAppendFormat(&title, "%lu diagnostics in %lu open buffer%s: E%u W%u", count, files,
-    plural, total.errors, total.warnings);
+  StrBufAppendFormat(
+    &title,
+    "%lu diagnostics in %lu open buffer%s: E%u W%u",
+    count,
+    files,
+    plural,
+    total.errors,
+    total.warnings
+  );
   PlacesOpen(title.data, 0);
   StrBufFree(&title);
 }

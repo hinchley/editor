@@ -67,15 +67,18 @@ ForgetNewName(void)
   namedForSave = false;
 }
 
-static void Next(void);
-static void Write(bool overwriteChanged);
+static void
+Next(void);
+static void
+Write(bool overwriteChanged);
 
 static void
 OverwriteAnswered(
   [[maybe_unused]] void *context,
   const char *answer,
   [[maybe_unused]] u64 length
-) {
+)
+{
   if (answer && *answer == 'y') {
     Write(true);
     return;
@@ -283,7 +286,8 @@ ConfirmAnswered(
   [[maybe_unused]] void *context,
   const char *answer,
   [[maybe_unused]] u64 length
-) {
+)
+{
   if (answer && *answer == 'y') RunMenuChoice();
   else StrBufAppendString(message, menuChoice == 'd' ? "not deleted" : "nothing written");
 }

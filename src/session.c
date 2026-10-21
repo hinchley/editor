@@ -207,7 +207,8 @@ UnsavedAnswered(
   [[maybe_unused]] void *context,
   const char *answer,
   [[maybe_unused]] u64 length
-) {
+)
+{
   if (answer && *answer == 's') SaveAll(workspace, message, afterUnsaved);
   else if (answer && *answer == 'd') Discarded();
 }
@@ -502,11 +503,8 @@ Close(void)
 }
 
 static void
-CloseAnswered(
-  [[maybe_unused]] void *context,
-  const char *answer,
-  [[maybe_unused]] u64 length
-) {
+CloseAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]] u64 length)
+{
   if (!answer || *answer == 'c') return;
 
   if (*answer == 'y') SaveCurrent(workspace, message, Close);

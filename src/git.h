@@ -3,7 +3,8 @@
 // git: reads what a file looked like in the last commit of the git repository holding it.
 // this is a reader for typical repositories only: a work tree with a .git folder, loose
 // objects and packs (index version 2), loose and packed refs, and sha-1 or sha-256 object
-// names. anything else (a .git file as in worktrees and submodules, reftable refs, bare
+// names.
+// anything else (a .git file as in worktrees and submodules, reftable refs, bare
 // repositories) is not a repository as far as the editor is concerned.
 // objects are found by the names refs, commits and trees give, so nothing is ever hashed.
 #include "strbuf.h"

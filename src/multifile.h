@@ -20,7 +20,8 @@ void
 MultifileBegin(const char *what);
 
 // opens the entry at index for its part of the change, and starts one undo step for it;
-// nullptr when it cannot be opened. MultifileEditEnd ends the step.
+// nullptr when it cannot be opened.
+// MultifileEditEnd ends the step.
 Document *
 MultifileEditBegin(u64 index);
 

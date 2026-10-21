@@ -163,8 +163,14 @@ Renamed([[maybe_unused]] void *context, const LspEdit *edits, u32 count, bool an
 
   u64 failed;
   u64 files = Apply("rename", edits, count, &failed);
-  StrBufAppendFormat(message, "renamed %u place%s in %lu file%s", count, Plural(count), files,
-    Plural(files));
+  StrBufAppendFormat(
+    message,
+    "renamed %u place%s in %lu file%s",
+    count,
+    Plural(count),
+    files,
+    Plural(files)
+  );
   StrBufAppendString(message, " (alt+shift+z reviews or undoes, ctrl+shift+s saves)");
   ReportFailed(failed);
 }
@@ -216,8 +222,12 @@ WordAtCursor(void)
 }
 
 static void
-Prepared([[maybe_unused]] void *context, const LspLocation *locations, u32 count,
-  bool answered)
+Prepared(
+  [[maybe_unused]] void *context,
+  const LspLocation *locations,
+  u32 count,
+  bool answered
+)
 {
   if (!Answered(true) || !answered) return;
 

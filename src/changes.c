@@ -90,7 +90,8 @@ ReadBase(Changes *changes)
 
   if (changes->headValid) {
     const char *relative = changes->relative.data;
-    enum GitFile status = GitReadFile(changes->repo, &changes->commit, relative, &changes->base);
+    enum GitFile status =
+      GitReadFile(changes->repo, &changes->commit, relative, &changes->base);
     changes->tracked = status == GitFileOk;
   }
 
@@ -157,7 +158,8 @@ ChangesRefresh(Changes *changes)
 
   GitHash commit;
   bool valid = GitHead(changes->repo, &commit);
-  bool same = valid == changes->headValid && (!valid || GitHashEqual(&commit, &changes->commit));
+  bool same = valid == changes->headValid &&
+    (!valid || GitHashEqual(&commit, &changes->commit));
   if (!same) ReadBase(changes);
 }
 

@@ -22,8 +22,8 @@ MarkdownInTable(Document *document);
 // as wide as its widest cell, up to maxWidth columns, with the text left aligned and
 // padded with spaces, and the delimiter row keeps its alignment colons.
 // a body cell wider than maxWidth wraps at blanks (or, for a longer word, between
-// characters) onto rows added below, whose other cells are empty. header cells never
-// wrap, as a row added after the header would end the table's head.
+// characters) onto rows added below, whose other cells are empty.
+// header cells never wrap, as a row added after the header would end the table's head.
 // rows with fewer cells than the widest row get empty ones, every row takes the
 // indentation (and any quote markers) of the header, and the cursor ends up at the start
 // of the cell it was in.

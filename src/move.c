@@ -169,18 +169,30 @@ MovePosition(View *view, const Cursor *cursor, enum Move move)
   Position head = cursor->head;
 
   switch (move) {
-  case MoveUp: return Vertical(view, cursor, -1);
-  case MoveDown: return Vertical(view, cursor, 1);
-  case MoveLeft: return Left(view, head);
-  case MoveRight: return Right(view, head);
-  case MoveLineStart: return LineStart(view, head);
-  case MoveLineEnd: return (Position){head.line, LineOf(view, head.line)->length};
-  case MovePageUp: return Vertical(view, cursor, -PageRows(view));
-  case MovePageDown: return Vertical(view, cursor, PageRows(view));
-  case MoveWordLeft: return WordLeft(view, head);
-  case MoveWordRight: return WordRight(view, head);
-  case MoveFileStart: return (Position){0, 0};
-  case MoveFileEnd: return BufferEnd(view->buffer);
+    case MoveUp:
+      return Vertical(view, cursor, -1);
+    case MoveDown:
+      return Vertical(view, cursor, 1);
+    case MoveLeft:
+      return Left(view, head);
+    case MoveRight:
+      return Right(view, head);
+    case MoveLineStart:
+      return LineStart(view, head);
+    case MoveLineEnd:
+      return (Position){head.line, LineOf(view, head.line)->length};
+    case MovePageUp:
+      return Vertical(view, cursor, -PageRows(view));
+    case MovePageDown:
+      return Vertical(view, cursor, PageRows(view));
+    case MoveWordLeft:
+      return WordLeft(view, head);
+    case MoveWordRight:
+      return WordRight(view, head);
+    case MoveFileStart:
+      return (Position){0, 0};
+    case MoveFileEnd:
+      return BufferEnd(view->buffer);
   }
 
   return head;
@@ -278,7 +290,8 @@ EdgeTarget(
   enum MoveEdge edge,
   bool up,
   Position *to
-) {
+)
+{
   if (edge == MoveEdgeTop && up) {
     if (top.byte == 0 && top.line == 0) return false;
     *to = (Position){top.byte ? top.line : top.line - 1, 0};

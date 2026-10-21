@@ -181,19 +181,19 @@ DrawLine(const PreviewRow *place, const char *text, u64 length, const LayoutRows
     char symbol[2] = {'^', (char)(text[cluster.start] ^ 0x40)};
 
     switch (cluster.kind) {
-    case LayoutKindText:
-      ScreenPutCluster(row, column, bytes, size, cluster.width, style);
-      break;
-    case LayoutKindSpace:
-    case LayoutKindTab:
-      ScreenFill(row, column, (i32)cluster.width, style);
-      break;
-    case LayoutKindControl:
-      ScreenPutText(row, column, symbol, 2, control);
-      break;
-    case LayoutKindInvalid:
-      ScreenPutCluster(row, column, invalidSymbol, strlen(invalidSymbol), 1, control);
-      break;
+      case LayoutKindText:
+        ScreenPutCluster(row, column, bytes, size, cluster.width, style);
+        break;
+      case LayoutKindSpace:
+      case LayoutKindTab:
+        ScreenFill(row, column, (i32)cluster.width, style);
+        break;
+      case LayoutKindControl:
+        ScreenPutText(row, column, symbol, 2, control);
+        break;
+      case LayoutKindInvalid:
+        ScreenPutCluster(row, column, invalidSymbol, strlen(invalidSymbol), 1, control);
+        break;
     }
   }
 
@@ -228,7 +228,8 @@ PreviewDraw(
   i32 column,
   i32 width,
   i32 height
-) {
+)
+{
   // the header takes the first row, and the lines the rows below it.
   DrawHeader(serial, line, column, width);
   if (height < 2) return;

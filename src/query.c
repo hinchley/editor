@@ -95,16 +95,26 @@ static const char *
 LuaClass(char letter)
 {
   switch (letter | 0x20) {
-  case 'a': return "[:alpha:]";
-  case 'c': return "[:cntrl:]";
-  case 'd': return "[:digit:]";
-  case 'l': return "[:lower:]";
-  case 'p': return "[:punct:]";
-  case 's': return "[:space:]";
-  case 'u': return "[:upper:]";
-  case 'w': return "[:alnum:]";
-  case 'x': return "[:xdigit:]";
-  default: return nullptr;
+    case 'a':
+      return "[:alpha:]";
+    case 'c':
+      return "[:cntrl:]";
+    case 'd':
+      return "[:digit:]";
+    case 'l':
+      return "[:lower:]";
+    case 'p':
+      return "[:punct:]";
+    case 's':
+      return "[:space:]";
+    case 'u':
+      return "[:upper:]";
+    case 'w':
+      return "[:alnum:]";
+    case 'x':
+      return "[:xdigit:]";
+    default:
+      return nullptr;
   }
 }
 
@@ -270,13 +280,20 @@ static const char *
 ErrorName(TSQueryError error)
 {
   switch (error) {
-  case TSQueryErrorSyntax: return "syntax error";
-  case TSQueryErrorNodeType: return "unknown node type";
-  case TSQueryErrorField: return "unknown field";
-  case TSQueryErrorCapture: return "unknown capture";
-  case TSQueryErrorStructure: return "impossible pattern";
-  case TSQueryErrorLanguage: return "incompatible language";
-  case TSQueryErrorNone: break;
+    case TSQueryErrorSyntax:
+      return "syntax error";
+    case TSQueryErrorNodeType:
+      return "unknown node type";
+    case TSQueryErrorField:
+      return "unknown field";
+    case TSQueryErrorCapture:
+      return "unknown capture";
+    case TSQueryErrorStructure:
+      return "impossible pattern";
+    case TSQueryErrorLanguage:
+      return "incompatible language";
+    case TSQueryErrorNone:
+      break;
   }
 
   return "error";
@@ -289,7 +306,8 @@ QueryInit(
   const u8 *source,
   u64 length,
   StrBuf *error
-) {
+)
+{
   *query = (Query){};
   u32 offset;
   TSQueryError status;
@@ -341,7 +359,8 @@ CaptureText(
   QueryNodeText text,
   void *context,
   StrBuf *output
-) {
+)
+{
   for (u32 index = 0; index < match->capture_count; index++) {
     if (match->captures[index].index != capture) continue;
 
@@ -365,7 +384,8 @@ Passes(
   const TSQueryMatch *match,
   QueryNodeText text,
   void *context
-) {
+)
+{
   StrBuf value = {};
   StrBuf other = {};
   bool result = true;
@@ -374,26 +394,26 @@ Passes(
   if (!CaptureText(match, predicate->capture, text, context, &value)) return true;
 
   switch (predicate->test) {
-  case QueryTestEq:
-    if (predicate->withCapture) {
-      CaptureText(match, predicate->otherCapture, text, context, &other);
-      result = strcmp(TextOf(&value), TextOf(&other)) == 0;
-    } else {
-      result = strcmp(TextOf(&value), predicate->strings[0]) == 0;
-    }
+    case QueryTestEq:
+      if (predicate->withCapture) {
+        CaptureText(match, predicate->otherCapture, text, context, &other);
+        result = strcmp(TextOf(&value), TextOf(&other)) == 0;
+      } else {
+        result = strcmp(TextOf(&value), predicate->strings[0]) == 0;
+      }
 
-    break;
-  case QueryTestMatch:
-    result = regexec(&predicate->regex, TextOf(&value), 0, nullptr, 0) == 0;
-    break;
-  case QueryTestAnyOf:
-    result = false;
+      break;
+    case QueryTestMatch:
+      result = regexec(&predicate->regex, TextOf(&value), 0, nullptr, 0) == 0;
+      break;
+    case QueryTestAnyOf:
+      result = false;
 
-    for (u32 index = 0; index < predicate->stringCount && !result; index++) {
-      result = strcmp(TextOf(&value), predicate->strings[index]) == 0;
-    }
+      for (u32 index = 0; index < predicate->stringCount && !result; index++) {
+        result = strcmp(TextOf(&value), predicate->strings[index]) == 0;
+      }
 
-    break;
+      break;
   }
 
   StrBufFree(&value);

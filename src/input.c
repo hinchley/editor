@@ -35,16 +35,38 @@ typedef struct KeypadKey {
 } KeypadKey;
 
 static const KeypadKey keypadKeys[] = {
-  {57399, '0'}, {57400, '1'}, {57401, '2'}, {57402, '3'}, {57403, '4'}, {57404, '5'},
-  {57405, '6'}, {57406, '7'}, {57407, '8'}, {57408, '9'}, {57409, '.'}, {57410, '/'},
-  {57411, '*'}, {57412, '-'}, {57413, '+'}, {57414, KeyEnter}, {57415, '='}, {57416, ','},
-  {57417, KeyLeft}, {57418, KeyRight}, {57419, KeyUp}, {57420, KeyDown},
-  {57421, KeyPageUp}, {57422, KeyPageDown}, {57423, KeyHome}, {57424, KeyEnd},
-  {57425, KeyInsert}, {57426, KeyDelete}
+  {57399, '0'},
+  {57400, '1'},
+  {57401, '2'},
+  {57402, '3'},
+  {57403, '4'},
+  {57404, '5'},
+  {57405, '6'},
+  {57406, '7'},
+  {57407, '8'},
+  {57408, '9'},
+  {57409, '.'},
+  {57410, '/'},
+  {57411, '*'},
+  {57412, '-'},
+  {57413, '+'},
+  {57414, KeyEnter},
+  {57415, '='},
+  {57416, ','},
+  {57417, KeyLeft},
+  {57418, KeyRight},
+  {57419, KeyUp},
+  {57420, KeyDown},
+  {57421, KeyPageUp},
+  {57422, KeyPageDown},
+  {57423, KeyHome},
+  {57424, KeyEnd},
+  {57425, KeyInsert},
+  {57426, KeyDelete}
 };
 
 static constexpr char pasteEnd[] = "\x1b[201~";
-static constexpr u64 pasteEndLength = sizeof pasteEnd - 1;
+static constexpr u64 pasteEndLength = sizeof(pasteEnd) - 1;
 
 // a sequence longer than this without a final byte is garbage.
 static constexpr u64 maxSequenceLength = 256;
@@ -66,8 +88,8 @@ DecodeModifiers(u32 value)
   // the protocol sends one plus a bit set, and 0 when the parameter is absent.
   // lock keys and the rarely used hyper and meta bits are dropped.
   if (value <= 1) return 0;
-  return (u8)((value - 1) & (KeyModifierShift | KeyModifierAlt | KeyModifierControl |
-    KeyModifierSuper));
+  return (u8)((value - 1) &
+    (KeyModifierShift | KeyModifierAlt | KeyModifierControl | KeyModifierSuper));
 }
 
 static enum ParseResult
@@ -83,7 +105,7 @@ KeyEvent(Parse *parse, u32 code, u8 modifiers)
 static enum ParseResult
 KittyKey(Parse *parse, u32 code, u8 modifiers)
 {
-  for (u32 index = 0; index < sizeof keypadKeys / sizeof keypadKeys[0]; index++) {
+  for (u32 index = 0; index < sizeof(keypadKeys) / sizeof(keypadKeys[0]); index++) {
     const KeypadKey *keypad = &keypadKeys[index];
     if (keypad->code == code) return KeyEvent(parse, keypad->key, modifiers);
   }
@@ -110,22 +132,22 @@ static u32
 TildeKey(u32 number)
 {
   switch (number) {
-  case 1:
-  case 7:
-    return KeyHome;
-  case 2:
-    return KeyInsert;
-  case 3:
-    return KeyDelete;
-  case 4:
-  case 8:
-    return KeyEnd;
-  case 5:
-    return KeyPageUp;
-  case 6:
-    return KeyPageDown;
-  default:
-    return 0;
+    case 1:
+    case 7:
+      return KeyHome;
+    case 2:
+      return KeyInsert;
+    case 3:
+      return KeyDelete;
+    case 4:
+    case 8:
+      return KeyEnd;
+    case 5:
+      return KeyPageUp;
+    case 6:
+      return KeyPageDown;
+    default:
+      return 0;
   }
 }
 
@@ -133,20 +155,20 @@ static u32
 LetterKey(u8 final)
 {
   switch (final) {
-  case 'A':
-    return KeyUp;
-  case 'B':
-    return KeyDown;
-  case 'C':
-    return KeyRight;
-  case 'D':
-    return KeyLeft;
-  case 'H':
-    return KeyHome;
-  case 'F':
-    return KeyEnd;
-  default:
-    return 0;
+    case 'A':
+      return KeyUp;
+    case 'B':
+      return KeyDown;
+    case 'C':
+      return KeyRight;
+    case 'D':
+      return KeyLeft;
+    case 'H':
+      return KeyHome;
+    case 'F':
+      return KeyEnd;
+    default:
+      return 0;
   }
 }
 
@@ -203,17 +225,17 @@ InterpretCsi(Parse *parse, const Csi *csi)
   if (csi->marker) return ParseSkip;
 
   switch (csi->final) {
-  case 'u':
-    return KittyKey(parse, first, modifiers);
-  case '~':
-    if (first == 200) return Paste(parse);
-    return KeyEvent(parse, TildeKey(first), modifiers);
-  case 'Z':
-    return KeyEvent(parse, KeyTab, KeyModifierShift);
-  case 'R':
-    return CursorReport(parse, csi);
-  default:
-    return KeyEvent(parse, LetterKey(csi->final), modifiers);
+    case 'u':
+      return KittyKey(parse, first, modifiers);
+    case '~':
+      if (first == 200) return Paste(parse);
+      return KeyEvent(parse, TildeKey(first), modifiers);
+    case 'Z':
+      return KeyEvent(parse, KeyTab, KeyModifierShift);
+    case 'R':
+      return CursorReport(parse, csi);
+    default:
+      return KeyEvent(parse, LetterKey(csi->final), modifiers);
   }
 }
 
@@ -266,18 +288,18 @@ ParseControl(Parse *parse, u8 byte, u8 modifiers)
 {
   // legacy control bytes, still sent for unmodified enter, tab and backspace.
   switch (byte) {
-  case '\r':
-    return KeyEvent(parse, KeyEnter, modifiers);
-  case '\t':
-    return KeyEvent(parse, KeyTab, modifiers);
-  case 0x08:
-  case 0x7F:
-    return KeyEvent(parse, KeyBackspace, modifiers);
-  case 0x00:
-    return KeyEvent(parse, KeySpace, modifiers | KeyModifierControl);
-  default:
-    if (byte > 0x1A) return ParseSkip;
-    return KeyEvent(parse, (u32)('a' + byte - 1), modifiers | KeyModifierControl);
+    case '\r':
+      return KeyEvent(parse, KeyEnter, modifiers);
+    case '\t':
+      return KeyEvent(parse, KeyTab, modifiers);
+    case 0x08:
+    case 0x7F:
+      return KeyEvent(parse, KeyBackspace, modifiers);
+    case 0x00:
+      return KeyEvent(parse, KeySpace, modifiers | KeyModifierControl);
+    default:
+      if (byte > 0x1A) return ParseSkip;
+      return KeyEvent(parse, (u32)('a' + byte - 1), modifiers | KeyModifierControl);
   }
 }
 
@@ -352,11 +374,8 @@ InputNext(InputEvent *event)
   inputExpired = false;
 
   while (inputStart < input.length) {
-    Parse parse = {
-      .text = input.data + inputStart,
-      .length = input.length - inputStart,
-      .event = event
-    };
+    Parse parse =
+      {.text = input.data + inputStart, .length = input.length - inputStart, .event = event};
     *event = (InputEvent){};
     enum ParseResult result = ParseAny(&parse);
 

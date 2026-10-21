@@ -104,7 +104,8 @@ AddHunk(DiffHunks *out, u64 oldStart, u64 oldCount, u64 newStart, u64 newCount)
   out->hunks[out->count++] = (DiffHunk){oldStart, oldCount, newStart, newCount};
 }
 
-static void Compare(Sides *sides, u64 aLow, u64 aHigh, u64 bLow, u64 bHigh);
+static void
+Compare(Sides *sides, u64 aLow, u64 aHigh, u64 bLow, u64 bHigh);
 
 // finds where an optimal path through a[aLow, aHigh) and b[bLow, bHigh) crosses its middle
 // diagonal, searching from both ends at once, and divides there.
@@ -153,7 +154,8 @@ Bisect(Sides *sides, u64 aLow, u64 aHigh, u64 bLow, u64 bHigh)
       } else if (odd) {
         i64 other = offset + delta - k;
 
-        if (other >= 0 && other < length && backward[other] != -1 && x >= n - backward[other]) {
+        if (other >= 0 && other < length && backward[other] != -1 &&
+          x >= n - backward[other]) {
           Compare(sides, aLow, aLow + (u64)x, bLow, bLow + (u64)y);
           Compare(sides, aLow + (u64)x, aHigh, bLow + (u64)y, bHigh);
           return true;

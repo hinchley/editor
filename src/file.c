@@ -177,7 +177,9 @@ ReadOpened(const char *path, i32 descriptor, StrBuf *text, FileStamp *stamp, Str
 
   if (size > maxFileSize) {
     u64 megabytes = maxFileSize / (1024 * 1024);
-    if (message) StrBufAppendFormat(message, "%s: larger than %lu MB, not opened", path, megabytes);
+    if (message) {
+      StrBufAppendFormat(message, "%s: larger than %lu MB, not opened", path, megabytes);
+    }
     return FileStatusTooLarge;
   }
 
@@ -463,12 +465,8 @@ FileSave(File *file, const Buffer *buffer, bool overwriteChanged, StrBuf *messag
     return FileStatusError;
   }
 
-  Save save = {
-    .file = file,
-    .buffer = buffer,
-    .message = message,
-    .overwriteChanged = overwriteChanged
-  };
+  Save save =
+    {.file = file, .buffer = buffer, .message = message, .overwriteChanged = overwriteChanged};
   enum FileStatus result = FileStatusError;
 
   if (ResolveTarget(&save)) result = CheckTarget(&save);
@@ -510,7 +508,7 @@ CopyFile(const char *from, const char *to, const char **step)
 
   while (!error) {
     *step = "cannot read";
-    i64 count = read(source, chunk, sizeof chunk);
+    i64 count = read(source, chunk, sizeof(chunk));
     if (count < 0 && errno == EINTR) continue;
     if (count < 0) error = errno;
     if (count <= 0) break;

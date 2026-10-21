@@ -3,11 +3,13 @@
 // lsp: the language server client.
 // a language whose package names a server gets one process for each root folder, started
 // when the first file of the language under that root opens (see ARCHITECTURE.md,
-// "Language servers"). each open document of the language has an LspDocument, which
-// tells the server about the document and follows its buffer's changes.
+// "Language servers").
+// each open document of the language has an LspDocument, which tells the server about the
+// document and follows its buffer's changes.
 // changes are collected as they happen and sent once per pass of the main loop, so a
-// burst of edits costs one message. nothing waits for a server: its output wakes the
-// main loop's poll, and LspPump handles it.
+// burst of edits costs one message.
+// nothing waits for a server: its output wakes the main loop's poll, and LspPump handles
+// it.
 #include <poll.h>
 
 #include "buffer.h"
@@ -30,15 +32,20 @@ typedef struct LspLocation {
 
 // a server's answer of places, valid while the callback runs; answered is false when there
 // is no answer (the server failed, did not answer in time or stopped, which was reported).
-typedef void (*LspLocationsDone)(void *context, const LspLocation *locations, u32 count,
-  bool answered);
+typedef void (*LspLocationsDone)(
+  void *context,
+  const LspLocation *locations,
+  u32 count,
+  bool answered
+);
 
 // a server's answer of text, as for LspLocationsDone.
 typedef void (*LspTextDone)(void *context, const char *text, u64 length, bool answered);
 
 // a change a server wants made: range in the file at path (as for LspLocation) replaced
-// with text. a file's changes never overlap, and each range is in the text as it was
-// before any of them.
+// with text.
+// a file's changes never overlap, and each range is in the text as it was before any of
+// them.
 typedef struct LspEdit {
   const char *path;
   Range range;
@@ -59,8 +66,12 @@ typedef struct LspAction {
 } LspAction;
 
 // a server's answer of fixes, as for LspLocationsDone.
-typedef void (*LspActionsDone)(void *context, const LspAction *actions, u32 count,
-  bool answered);
+typedef void (*LspActionsDone)(
+  void *context,
+  const LspAction *actions,
+  u32 count,
+  bool answered
+);
 
 // the most descriptors LspPollFds fills.
 static constexpr u32 lspMaxPollFds = 16;
@@ -73,8 +84,9 @@ LspInit(StrBuf *message);
 bool
 LspEnabled(void);
 
-// turns servers on or off. turning them off stops every server, after which each
-// document should be closed (and opened again once they are on).
+// turns servers on or off.
+// turning them off stops every server, after which each document should be closed (and
+// opened again once they are on).
 void
 LspSetEnabled(bool enabled);
 
@@ -133,14 +145,24 @@ LspOtherFile(LspDocument *document, LspLocationsDone done, void *context);
 // the name to the editor, or no location when it cannot be renamed.
 // returns 0, asking nothing, when the server does not check names before renaming.
 LspRequest
-LspPrepareRename(LspDocument *document, Position position, LspLocationsDone done,
-  void *context);
+LspPrepareRename(
+  LspDocument *document,
+  Position position,
+  LspLocationsDone done,
+  void *context
+);
 
 // asks the document's server for the changes that rename the symbol at position to name,
 // across the files it knows.
 LspRequest
-LspRename(LspDocument *document, Position position, const char *name, u64 length,
-  LspEditsDone done, void *context);
+LspRename(
+  LspDocument *document,
+  Position position,
+  const char *name,
+  u64 length,
+  LspEditsDone done,
+  void *context
+);
 
 // asks the document's server for the fixes of the diagnostics reaching line.
 LspRequest

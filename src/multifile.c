@@ -201,8 +201,14 @@ ComparePlaces(const void *first, const void *second)
 
 // appends the places of a part's group, as its buffer has them now, in order.
 static void
-AddPlaces(const Part *part, const Document *document, u64 index, Place **places, u64 *count,
-  u64 *capacity)
+AddPlaces(
+  const Part *part,
+  const Document *document,
+  u64 index,
+  Place **places,
+  u64 *count,
+  u64 *capacity
+)
 {
   const Undo *undo = &document->undo;
   u64 records = undo->groups[index].count;
@@ -262,8 +268,14 @@ Step(bool redo)
   }
 
   if (stepped) {
-    StrBufAppendFormat(message, "%s the %s in %lu file%s (alt+shift+z lists it)",
-      redo ? "redid" : "undid", what.data, stepped, Plural(stepped));
+    StrBufAppendFormat(
+      message,
+      "%s the %s in %lu file%s (alt+shift+z lists it)",
+      redo ? "redid" : "undid",
+      what.data,
+      stepped,
+      Plural(stepped)
+    );
   } else if (!left) {
     StrBufAppendFormat(message, "the %s is already %s", what.data, redo ? "done" : "undone");
   }
@@ -271,8 +283,13 @@ Step(bool redo)
   if (!left) return;
 
   if (stepped) StrBufAppendString(message, "; ");
-  StrBufAppendFormat(message, "%lu file%s changed or closed since, left as %s: ", left,
-    left == 1 ? " was" : "s were", left == 1 ? "it is" : "they are");
+  StrBufAppendFormat(
+    message,
+    "%lu file%s changed or closed since, left as %s: ",
+    left,
+    left == 1 ? " was" : "s were",
+    left == 1 ? "it is" : "they are"
+  );
 
   if (leftIndex == workspaceNone) StrBufAppendString(message, "closed");
   else WorkspaceName(workspace, leftIndex, message);
@@ -334,8 +351,11 @@ MultifileReview(void)
   }
 
   if (!files) {
-    StrBufAppendFormat(message, "the files of the last %s have been closed or reloaded since",
-      what.data);
+    StrBufAppendFormat(
+      message,
+      "the files of the last %s have been closed or reloaded since",
+      what.data
+    );
     return;
   }
 
@@ -360,8 +380,14 @@ MultifileReview(void)
   StrBufAppendFormat(&title, "the %s", what.data);
   if (undone == files) StrBufAppendString(&title, ", undone");
   else if (undone) StrBufAppendFormat(&title, ", undone in %lu of %lu files", undone, files);
-  StrBufAppendFormat(&title, ": %lu place%s in %lu file%s", count, Plural(count), files,
-    Plural(files));
+  StrBufAppendFormat(
+    &title,
+    ": %lu place%s in %lu file%s",
+    count,
+    Plural(count),
+    files,
+    Plural(files)
+  );
   if (canUndo) StrBufAppendString(&title, " (ctrl+z undoes it in every file)");
   else if (canRedo) StrBufAppendString(&title, " (ctrl+y redoes it in every file)");
 

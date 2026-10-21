@@ -166,7 +166,7 @@ ScreenPutText(i32 row, i32 column, const char *text, u64 length, Style style)
     if (control || codepoint == utf8Replacement) {
       codepoint = utf8Replacement;
       bytes = replacementText;
-      size = sizeof replacementText - 1;
+      size = sizeof(replacementText) - 1;
     }
 
     u32 width = Utf8Width(codepoint);

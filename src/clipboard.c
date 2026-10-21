@@ -94,14 +94,8 @@ Spawn(Command *command, char *arguments[])
   posix_spawnattr_setsigdefault(&attributes, &defaults);
   posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSIGDEF);
 
-  bool started = piped && posix_spawnp(
-    &command->pid,
-    arguments[0],
-    &actions,
-    &attributes,
-    arguments,
-    environ
-  ) == 0;
+  bool started = piped &&
+    posix_spawnp(&command->pid, arguments[0], &actions, &attributes, arguments, environ) == 0;
 
   posix_spawn_file_actions_destroy(&actions);
   posix_spawnattr_destroy(&attributes);
@@ -145,7 +139,7 @@ static bool
 ReadSome(Command *command)
 {
   char chunk[65536];
-  i64 count = read(command->output, chunk, sizeof chunk);
+  i64 count = read(command->output, chunk, sizeof(chunk));
   if (count < 0) return errno == EAGAIN || errno == EINTR;
 
   if (count == 0) {

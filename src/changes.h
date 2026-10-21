@@ -3,8 +3,9 @@
 // changes: how a buffer differs from its file in the last commit of the git repository
 // holding it.
 // the committed text (the base) is read once, and again only when HEAD names another
-// commit. the hunks are worked out again whenever they are asked for after the buffer
-// changed, as the frame does, rather than by following each edit.
+// commit.
+// the hunks are worked out again whenever they are asked for after the buffer changed, as
+// the frame does, rather than by following each edit.
 #include "buffer.h"
 #include "diff.h"
 #include "git.h"
