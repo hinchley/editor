@@ -45,7 +45,23 @@ typedef struct WorkspaceEntry {
 
   // unique for the whole session, and increasing along the list.
   u64 serial;
+
+  // the name shown for the entry and its path with its folder resolved (empty when that
+  // does not resolve), worked out for the path in namedPath when the open folders were
+  // those of generation, and again once either changes (a rename or save as).
+  StrBuf name;
+  StrBuf real;
+  StrBuf namedPath;
+  u64 generation;
 } WorkspaceEntry;
+
+// an open folder, resolved and without a trailing slash (empty for "/"), and the name its
+// files are shown under: its last component, or as many as tell it from the other open
+// folders.
+typedef struct WorkspaceFolder {
+  StrBuf real;
+  StrBuf name;
+} WorkspaceFolder;
 
 typedef struct Workspace {
   WorkspaceEntry *entries;
@@ -70,6 +86,12 @@ typedef struct Workspace {
 
   // the last serial given out, kept when every entry is freed.
   u64 serials;
+
+  // the open folders, which entry names are worked out from, and how many times they
+  // were set.
+  WorkspaceFolder *folders;
+  u64 folderCount;
+  u64 generation;
 } Workspace;
 
 static constexpr u64 workspaceNone = UINT64_MAX;
@@ -115,10 +137,9 @@ u64
 WorkspaceEntryOf(const Workspace *workspace, u64 serial);
 
 // removes an entry, freeing its document.
-// when the current entry is removed, the most recently used one (or else the first one
-// that opens) becomes current; when the other side of a split showed it, that side shows
-// its most recently used entry instead.
-// removing the last entry leaves a new unnamed buffer.
+// when the current entry is removed, the most recently used one becomes current, or else
+// a new unnamed buffer, so an entry never read is not opened; when the other side of a
+// split showed it, that side shows its most recently used entry instead.
 // problems opening the replacement are appended to message.
 void
 WorkspaceRemove(Workspace *workspace, u64 index, StrBuf *message);
@@ -169,9 +190,26 @@ WorkspaceDocument(const Workspace *workspace);
 const StrBuf *
 WorkspacePath(const Workspace *workspace, u64 index);
 
-// appends an entry's display name: its path, or "[unnamed N]".
+// sets the open folders (paths as given), so a file inside one is named by the folder's
+// name and its path inside it; a folder that does not resolve is left out.
+void
+WorkspaceSetFolders(Workspace *workspace, char *const *paths, u64 count);
+
+// appends an entry's display name: for a file inside an open folder, the folder's name
+// and the path inside it (the deepest folder when they nest), and for any other file its
+// path resolved, with "~" for the home folder; "[unnamed N]" for an unnamed buffer.
+// a file whose folder does not resolve is shown by its path.
 void
 WorkspaceName(const Workspace *workspace, u64 index, StrBuf *name);
+
+// the display name WorkspaceName appends, valid until the entry or the open folders change.
+const StrBuf *
+WorkspaceShownName(const Workspace *workspace, u64 index);
+
+// an entry's path with its folder resolved (the file itself is not, so a link inside a
+// folder stays there), or empty when that does not resolve or it has no path.
+const StrBuf *
+WorkspaceRealPath(const Workspace *workspace, u64 index);
 
 // true when an entry is open and its text differs from its file.
 bool

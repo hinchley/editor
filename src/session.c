@@ -44,9 +44,15 @@ static SaveFinished afterUnsaved;
 // the buffer being closed, waiting for the answer about its unsaved changes.
 static u64 closing;
 
-// the folder being closed, as given, and the serials of the entries inside it in list
-// order, waiting for the answer about their unsaved changes.
+// the serial of the new unnamed buffer standing behind the buffer picker, which stays
+// when the picker is cancelled and goes once another buffer is picked, or 0.
+static u64 placeholder;
+
+// the folder being closed, as given and by the name its files are shown under, and the
+// serials of the entries inside it in list order, waiting for the answer about their
+// unsaved changes.
 static StrBuf closingFolder;
+static StrBuf closingName;
 static u64 *closingSerials;
 static u64 closingCount;
 
@@ -91,6 +97,13 @@ PathsHas(const Paths *paths, const char *path)
   return bsearch(&path, paths->paths, paths->count, sizeof(char *), ComparePaths);
 }
 
+// tells the workspace which folders are open, since they name the files inside them.
+static void
+ShareFolders(void)
+{
+  WorkspaceSetFolders(workspace, folders.paths, folders.count);
+}
+
 // remembers which of paths are folders, and every file of list when there are any.
 static void
 RememberFolders(char *const *paths, u64 pathCount, const LoaderList *list)
@@ -118,6 +131,151 @@ static void
 Switch(u64 index)
 {
   WorkspaceSwitch(workspace, index, message);
+}
+
+// most recently used first, then named buffers by name, then unnamed ones in order.
+static i32
+CompareEntries(const void *a, const void *b)
+{
+  const WorkspaceEntry *first = &workspace->entries[*(const u64 *)a];
+  const WorkspaceEntry *second = &workspace->entries[*(const u64 *)b];
+
+  if (first->used != second->used) return first->used > second->used ? -1 : 1;
+  if (!first->unnamed != !second->unnamed) return first->unnamed ? 1 : -1;
+  if (first->unnamed) return first->unnamed < second->unnamed ? -1 : 1;
+
+  // by the names shown, so the files of each folder come together.
+  const StrBuf *firstName = WorkspaceShownName(workspace, *(const u64 *)a);
+  const StrBuf *secondName = WorkspaceShownName(workspace, *(const u64 *)b);
+  return strcmp(firstName->data, secondName->data);
+}
+
+static const char *
+EntryNote(u64 index)
+{
+  const WorkspaceEntry *entry = &workspace->entries[index];
+  if (entry->refusal == WorkspaceRefusalBinary) return "(binary)";
+  if (entry->refusal == WorkspaceRefusalTooLarge) return "(too large)";
+  return nullptr;
+}
+
+// "+" for an entry with unsaved changes (which is always open), "·" for any other open one,
+// or nullptr.
+static const char *
+EntryMark(u64 index)
+{
+  if (WorkspaceModified(workspace, index)) return "+";
+  return workspace->entries[index].document ? "\u00B7" : nullptr;
+}
+
+static void
+Picked([[maybe_unused]] void *context, bool picked, u64 id)
+{
+  u64 standing = placeholder;
+  placeholder = 0;
+  if (!picked) return;
+
+  Switch(id);
+  if (!standing) return;
+
+  // the empty buffer behind the picker goes, unless it is still shown or was edited.
+  u64 index = WorkspaceEntryOf(workspace, standing);
+  if (index == workspaceNone || index == workspace->current) return;
+  if (workspace->split && index == workspace->other) return;
+  if (!WorkspaceModified(workspace, index)) WorkspaceRemove(workspace, index, message);
+}
+
+// opens the buffer picker over every buffer, or only those with unsaved changes, with the
+// entry at selected (or else the first) selected.
+static void
+Pick(bool unsavedOnly, u64 selected)
+{
+  u64 *order = MemoryAllocate((workspace->count + 1) * sizeof(u64));
+  u64 count = 0;
+
+  // the empty buffer standing behind the picker is what cancelling it leaves, so it is
+  // not one of the choices.
+  for (u64 index = 0; index < workspace->count; index++) {
+    if (workspace->entries[index].serial == placeholder) continue;
+    if (!unsavedOnly || WorkspaceModified(workspace, index)) order[count++] = index;
+  }
+
+  if (!count) {
+    if (unsavedOnly) StrBufAppendString(message, "no buffers with unsaved changes");
+    placeholder = 0;
+    free(order);
+    return;
+  }
+
+  qsort(order, count, sizeof(u64), CompareEntries);
+  PickerBegin();
+  StrBuf name = {};
+
+  for (u64 index = 0; index < count; index++) {
+    StrBufClear(&name);
+    WorkspaceName(workspace, order[index], &name);
+    PickerAdd(name.data, name.length, EntryNote(order[index]), order[index]);
+    const char *mark = EntryMark(order[index]);
+    if (mark) PickerMark(mark);
+  }
+
+  StrBufFree(&name);
+  PickerOpen(unsavedOnly ? "unsaved buffers" : "buffers", "buffer: ", Picked, nullptr);
+
+  for (u64 position = 0; position < count; position++) {
+    if (order[position] == selected) PickerSelect(position);
+  }
+
+  free(order);
+}
+
+void
+SessionPick(bool unsavedOnly)
+{
+  Pick(unsavedOnly, workspaceNone);
+}
+
+// after entries were removed: when the current one went, opens the buffer picker over
+// the buffer that replaced it, which stays when the picker is cancelled (a new unnamed one
+// made for it goes once another is picked).
+// with nothing else to pick, the replacement is simply shown.
+static void
+PickAfterRemoving(u64 current, u64 serials)
+{
+  u64 replacement = workspace->entries[workspace->current].serial;
+  if (replacement == current || workspace->count < 2) return;
+
+  placeholder = replacement > serials ? replacement : 0;
+  Pick(false, workspaceNone);
+}
+
+// makes a new unnamed buffer current and opens the buffer picker over it, so cancelling
+// the picker leaves an empty buffer rather than a file nobody asked for.
+static void
+PickOverPlaceholder(void)
+{
+  u64 index = WorkspaceAddUnnamed(workspace);
+  Switch(index);
+  placeholder = workspace->entries[index].serial;
+  Pick(false, workspaceNone);
+}
+
+// makes the first file named among paths current, as given on the command line, and
+// returns true; false when every path is a folder or no named file opens.
+static bool
+SwitchToNamed(char *const *paths, u64 pathCount)
+{
+  for (u64 path = 0; path < pathCount; path++) {
+    struct stat status;
+    if (stat(paths[path], &status) == 0 && S_ISDIR(status.st_mode)) continue;
+
+    for (u64 index = 0; index < workspace->count; index++) {
+      if (strcmp(WorkspacePath(workspace, index)->data, paths[path]) != 0) continue;
+      if (WorkspaceSwitch(workspace, index, message)) return true;
+    }
+  }
+
+  return false;
 }
 
 static void
@@ -177,13 +335,25 @@ SessionStart(Workspace *newWorkspace, StrBuf *newMessage, char *const *paths, u6
   StrBufFree(&error);
 
   bool pick = pathCount > 1 || list.folders;
+  bool folder = list.folders;
   bool empty = !list.count;
   u64 unreadable = list.unreadable;
   RememberFolders(paths, pathCount, &list);
+  ShareFolders();
   WorkspaceAddList(workspace, &list);
-  SwitchToFirst(!pick);
-  if (empty) StrBufAppendString(message, "no files to load");
   ReportUnreadable(unreadable);
+
+  // with a folder, the picker stands over a file named with it, or else an empty buffer.
+  if (folder && !empty) {
+    if (!SwitchToNamed(paths, pathCount)) {
+      PickOverPlaceholder();
+      return;
+    }
+  } else {
+    SwitchToFirst(!pick);
+  }
+
+  if (empty) StrBufAppendString(message, "no files to load");
   if (pick && !empty) SessionPick(false);
 }
 
@@ -247,13 +417,13 @@ ReplaceAll(void)
   SymbolsClear();
   RememberFolders(&pendingFolder.data, 1, &pending);
   WorkspaceFree(workspace);
+  ShareFolders();
 
   // the folder may have other roots, so servers start again as its files open.
   LspStopAll();
   WorkspaceAddList(workspace, &pending);
-  SwitchToFirst(false);
   ReportUnreadable(unreadable);
-  SessionPick(false);
+  PickOverPlaceholder();
 }
 
 static void
@@ -290,7 +460,8 @@ FolderOpen(const char *path)
 }
 
 // adds the files of the pending folder that are not loaded yet, remembers the folder and
-// makes the first file added current.
+// opens the buffer picker with the first file added selected, leaving the current buffer
+// as it is when the picker is cancelled.
 // files there is no room for are left out of the known list, so Alt-Shift-R offers them
 // again.
 static void
@@ -318,7 +489,7 @@ AddPending(void)
   PathsSort(&known);
   const char *folder = pendingFolder.data;
   if (!FolderOpen(folder)) PathsAdd(&folders, folder, pendingFolder.length);
-  if (first != workspaceNone) Switch(first);
+  ShareFolders();
   if (message->length) StrBufAppendString(message, "; ");
 
   if (!added && !left) {
@@ -327,7 +498,7 @@ AddPending(void)
     const StrBuf *path = WorkspacePath(workspace, first);
     StrBufAppendFormat(message, "added %.*s", (i32)path->length, path->data);
   } else if (added) {
-    StrBufAppendFormat(message, "added %lu files from %s (ctrl+p lists them)", added, folder);
+    StrBufAppendFormat(message, "added %lu files from %s", added, folder);
   }
 
   if (left) {
@@ -338,6 +509,7 @@ AddPending(void)
 
   ReportUnreadable(pending.unreadable);
   LoaderFree(&pending);
+  if (first != workspaceNone) Pick(false, first);
 }
 
 static void
@@ -372,7 +544,7 @@ AskAboutFolder(void)
   }
 
   StrBuf question = {};
-  const char *text = "%s: (a)dd to the buffers, (r)eplace every buffer, (c)ancel";
+  const char *text = "%s: (a)dd, (r)eplace, (c)ancel";
   StrBufAppendFormat(&question, text, pendingFolder.data);
   PromptChoose(question.data, "arc", FolderAnswered, nullptr);
   StrBufFree(&question);
@@ -533,79 +705,6 @@ SessionLastUsed(void)
   else Switch(index);
 }
 
-// most recently used first, then named buffers by path, then unnamed ones in order.
-static i32
-CompareEntries(const void *a, const void *b)
-{
-  const WorkspaceEntry *first = &workspace->entries[*(const u64 *)a];
-  const WorkspaceEntry *second = &workspace->entries[*(const u64 *)b];
-
-  if (first->used != second->used) return first->used > second->used ? -1 : 1;
-  if (!first->unnamed != !second->unnamed) return first->unnamed ? 1 : -1;
-  if (first->unnamed) return first->unnamed < second->unnamed ? -1 : 1;
-
-  const StrBuf *firstPath = WorkspacePath(workspace, *(const u64 *)a);
-  const StrBuf *secondPath = WorkspacePath(workspace, *(const u64 *)b);
-  return strcmp(firstPath->data, secondPath->data);
-}
-
-static const char *
-EntryNote(u64 index)
-{
-  const WorkspaceEntry *entry = &workspace->entries[index];
-  if (entry->refusal == WorkspaceRefusalBinary) return "(binary)";
-  if (entry->refusal == WorkspaceRefusalTooLarge) return "(too large)";
-  return nullptr;
-}
-
-// "+" for an entry with unsaved changes (which is always open), "·" for any other open one,
-// or nullptr.
-static const char *
-EntryMark(u64 index)
-{
-  if (WorkspaceModified(workspace, index)) return "+";
-  return workspace->entries[index].document ? "\u00B7" : nullptr;
-}
-
-static void
-Picked([[maybe_unused]] void *context, bool picked, u64 id)
-{
-  if (picked) Switch(id);
-}
-
-void
-SessionPick(bool unsavedOnly)
-{
-  u64 *order = MemoryAllocate((workspace->count + 1) * sizeof(u64));
-  u64 count = 0;
-
-  for (u64 index = 0; index < workspace->count; index++) {
-    if (!unsavedOnly || WorkspaceModified(workspace, index)) order[count++] = index;
-  }
-
-  if (!count) {
-    StrBufAppendString(message, "no buffers with unsaved changes");
-    free(order);
-    return;
-  }
-
-  qsort(order, count, sizeof(u64), CompareEntries);
-  PickerBegin();
-  StrBuf name = {};
-
-  for (u64 index = 0; index < count; index++) {
-    StrBufClear(&name);
-    WorkspaceName(workspace, order[index], &name);
-    PickerAdd(name.data, name.length, EntryNote(order[index]), order[index]);
-    const char *mark = EntryMark(order[index]);
-    if (mark) PickerMark(mark);
-  }
-
-  StrBufFree(&name);
-  free(order);
-  PickerOpen(unsavedOnly ? "unsaved buffers" : "buffers", "buffer: ", Picked, nullptr);
-}
-
 static void
 Close(void)
 {
@@ -614,10 +713,12 @@ Close(void)
 
   StrBuf name = {};
   WorkspaceName(workspace, index, &name);
+  u64 serials = workspace->serials;
   WorkspaceRemove(workspace, index, message);
   if (message->length) StrBufAppendString(message, "; ");
   StrBufAppendFormat(message, "closed %s", name.data);
   StrBufFree(&name);
+  PickAfterRemoving(closing, serials);
 }
 
 static void
@@ -664,53 +765,6 @@ Below(const char *path, const char *folder, u64 length)
   return strncmp(path, folder, length) == 0 && path[length] == '/';
 }
 
-// where a folder's files are, once links and "." and ".." are resolved.
-// the files themselves are not resolved, since a link inside a folder belongs to it
-// wherever it leads.
-typedef struct Resolver {
-  // the folder of the last path resolved, as written and resolved, or an empty real
-  // when it did not resolve.
-  StrBuf parent;
-  StrBuf real;
-} Resolver;
-
-// the path with its folder resolved, or nullptr when the folder does not resolve.
-// the result is only valid until the next call.
-static const char *
-Resolve(Resolver *resolver, const char *path, StrBuf *resolved)
-{
-  const char *slash = strrchr(path, '/');
-  const char *parent = slash ? path : ".";
-  u64 parentLength = !slash ? 1 : slash == path ? 1 : (u64)(slash - path);
-
-  // the files of one folder are listed together, so most paths share the last folder.
-  bool same = resolver->parent.length == parentLength &&
-    memcmp(resolver->parent.data, parent, parentLength) == 0;
-
-  if (!same) {
-    StrBufClear(&resolver->parent);
-    StrBufAppend(&resolver->parent, parent, parentLength);
-    StrBufClear(&resolver->real);
-    char real[PATH_MAX];
-    if (realpath(resolver->parent.data, real)) StrBufAppendString(&resolver->real, real);
-  }
-
-  if (!resolver->real.length) return nullptr;
-
-  StrBufClear(resolved);
-  u64 realLength = FolderLength(resolver->real.data);
-  StrBufAppend(resolved, resolver->real.data, realLength);
-  StrBufAppendFormat(resolved, "/%s", slash ? slash + 1 : path);
-  return resolved->data;
-}
-
-static void
-ResolverFree(Resolver *resolver)
-{
-  StrBufFree(&resolver->parent);
-  StrBufFree(&resolver->real);
-}
-
 // a folder to find the entries inside: as given, and resolved when it resolves, both
 // without trailing slashes.
 typedef struct Folder {
@@ -730,19 +784,42 @@ FolderOf(const char *path)
   return folder;
 }
 
-// true when the entry at index is a file inside the folder: by its path as shown, which
+// appends the name the files of the folder at path are shown under, or the path itself
+// when the folder does not resolve.
+static void
+FolderName(const char *path, StrBuf *name)
+{
+  Folder folder = FolderOf(path);
+
+  for (u64 index = 0; folder.resolved && index < workspace->folderCount; index++) {
+    const WorkspaceFolder *open = &workspace->folders[index];
+    if (open->real.length != folder.real.length) continue;
+    if (memcmp(open->real.data, folder.real.data, folder.real.length) != 0) continue;
+
+    // the root has no name, since its files are shown by their whole paths.
+    if (open->name.length) StrBufAppend(name, open->name.data, open->name.length);
+    else StrBufAppendString(name, "/");
+    StrBufFree(&folder.real);
+    return;
+  }
+
+  StrBufAppendString(name, path);
+  StrBufFree(&folder.real);
+}
+
+// true when the entry at index is a file inside the folder: by its path as loaded, which
 // is how the folder's walk names its files, or else by where its folder resolves to, for
 // a file opened by another path.
 static bool
-Inside(const Folder *folder, Resolver *resolver, StrBuf *resolved, u64 index)
+Inside(const Folder *folder, u64 index)
 {
   const StrBuf *path = WorkspacePath(workspace, index);
   if (!path->length) return false;
   if (Below(path->data, folder->given, folder->givenLength)) return true;
   if (!folder->resolved) return false;
 
-  const char *real = Resolve(resolver, path->data, resolved);
-  return real && Below(real, folder->real.data, folder->real.length);
+  const StrBuf *real = WorkspaceRealPath(workspace, index);
+  return real->length && Below(real->data, folder->real.data, folder->real.length);
 }
 
 // closes the folder being closed: removes its entries and forgets it.
@@ -753,19 +830,22 @@ CloseFolderNow(void)
   while (index < folders.count && strcmp(folders.paths[index], closingFolder.data)) index++;
   if (index == folders.count) return;
 
-  // removing the last entries leaves a new unnamed buffer.
+  u64 current = workspace->entries[workspace->current].serial;
+  u64 serials = workspace->serials;
   WorkspaceRemoveSome(workspace, closingSerials, closingCount, message);
   free(folders.paths[index]);
   u64 after = folders.count - index - 1;
   memmove(&folders.paths[index], &folders.paths[index + 1], after * sizeof(char *));
   folders.count--;
   if (!folders.count) PathsFree(&known);
+  ShareFolders();
 
   // the servers of the folder's files have nothing left to do.
   LspStopIdle();
 
   if (message->length) StrBufAppendString(message, "; ");
-  StrBufAppendFormat(message, "closed %s", closingFolder.data);
+  StrBufAppendFormat(message, "closed %s", closingName.data);
+  PickAfterRemoving(current, serials);
 }
 
 // the entries of the folder being closed, by index, in list order, returning how many.
@@ -808,23 +888,21 @@ CloseFolder(u64 index)
 {
   StrBufClear(&closingFolder);
   StrBufAppendString(&closingFolder, folders.paths[index]);
+  StrBufClear(&closingName);
+  FolderName(folders.paths[index], &closingName);
   closingSerials = MemoryResize(closingSerials, workspace->count + 1, sizeof(u64));
   closingCount = 0;
 
   Folder folder = FolderOf(folders.paths[index]);
-  Resolver resolver = {};
-  StrBuf resolved = {};
   u64 unsaved = 0;
 
   for (u64 entry = 0; entry < workspace->count; entry++) {
-    if (!Inside(&folder, &resolver, &resolved, entry)) continue;
+    if (!Inside(&folder, entry)) continue;
 
     closingSerials[closingCount++] = workspace->entries[entry].serial;
     unsaved += WorkspaceModified(workspace, entry);
   }
 
-  StrBufFree(&resolved);
-  ResolverFree(&resolver);
   StrBufFree(&folder.real);
 
   if (!unsaved) {
@@ -834,7 +912,7 @@ CloseFolder(u64 index)
 
   StrBuf question = {};
   const char *text = "%lu unsaved in %s: (s)ave all, (d)iscard, (c)ancel";
-  StrBufAppendFormat(&question, text, unsaved, closingFolder.data);
+  StrBufAppendFormat(&question, text, unsaved, closingName.data);
   PromptChoose(question.data, "sdc", FolderUnsavedAnswered, nullptr);
   StrBufFree(&question);
 }
@@ -861,21 +939,21 @@ SessionCloseFolder(void)
   // the folder holding the current buffer is selected, so enter closes it.
   PickerBegin();
   u64 selected = workspaceNone;
-  Resolver resolver = {};
-  StrBuf resolved = {};
+  StrBuf name = {};
 
   for (u64 index = 0; index < folders.count; index++) {
     const char *path = folders.paths[index];
-    PickerAdd(path, strlen(path), nullptr, index);
+    StrBufClear(&name);
+    FolderName(path, &name);
+    PickerAdd(name.data, name.length, nullptr, index);
     if (selected != workspaceNone) continue;
 
     Folder folder = FolderOf(path);
-    if (Inside(&folder, &resolver, &resolved, workspace->current)) selected = index;
+    if (Inside(&folder, workspace->current)) selected = index;
     StrBufFree(&folder.real);
   }
 
-  StrBufFree(&resolved);
-  ResolverFree(&resolver);
+  StrBufFree(&name);
   PickerOpen("folders", "close folder: ", FolderPicked, nullptr);
   if (selected != workspaceNone) PickerSelect(selected);
 }

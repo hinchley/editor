@@ -15,8 +15,10 @@ typedef void (*SessionQuitter)(void);
 // this happens before the terminal changes, so a path that cannot be used, or more than
 // maxFileCount files, ends the program with a message and the terminal untouched.
 // with no paths there is one unnamed buffer.
-// several paths, or any folder, open the buffer picker with the first file that could be
-// opened behind it.
+// several paths, or any folder, open the buffer picker.
+// with a folder, the first file named with it stands behind the picker, or else a new
+// unnamed buffer, which cancelling the picker leaves and picking a buffer removes; with
+// only files, the first that could be opened does.
 void
 SessionStart(Workspace *workspace, StrBuf *message, char *const *paths, u64 pathCount);
 
@@ -29,6 +31,8 @@ SessionNew(void);
 // for a folder it asks whether to add its files to the buffers (those not loaded already)
 // or replace every buffer with them, after offering to save unsaved changes; with only
 // unnamed buffers without changes it replaces them without asking.
+// either way the buffer picker opens: after adding, over the current buffer with the
+// first file added selected, and after replacing, over a new unnamed buffer as at startup.
 void
 SessionOpen(void);
 
@@ -49,7 +53,7 @@ SessionLoadNew(void);
 // selected).
 // every buffer of a file inside it is closed, after offering to save their unsaved
 // changes, and Alt-Shift-R no longer walks it.
-// closing every buffer leaves a new unnamed one.
+// when the current buffer was one of them, the buffer picker opens as after SessionClose.
 void
 SessionCloseFolder(void);
 
@@ -62,13 +66,15 @@ void
 SessionLastUsed(void);
 
 // opens the buffer picker over every buffer, or only those with unsaved changes.
-// buffers are listed most recently used first, then by path.
+// buffers are listed most recently used first, then by the names shown (see
+// WorkspaceName), so each folder's files come together.
 void
 SessionPick(bool unsavedOnly);
 
 // closes the current buffer, removing it from the list, after offering to save unsaved
-// changes, and switches to the buffer used before it.
-// closing the last buffer leaves a new unnamed one.
+// changes, then opens the buffer picker over the most recently used open buffer, or a new
+// unnamed one when none is open, which cancelling the picker leaves.
+// with nothing else to pick, the replacement is simply shown.
 void
 SessionClose(void);
 

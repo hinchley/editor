@@ -1,5 +1,6 @@
 #include "workspace.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -9,22 +10,43 @@
 void
 WorkspaceInit(Workspace *workspace, const DisplayOptions *options)
 {
-  *workspace = (Workspace){.options = options};
+  *workspace = (Workspace){.options = options, .generation = 1};
+}
+
+// frees what an entry owns, returning true when it was open.
+static bool
+FreeEntry(WorkspaceEntry *entry)
+{
+  StrBufFree(&entry->path);
+  StrBufFree(&entry->name);
+  StrBufFree(&entry->real);
+  StrBufFree(&entry->namedPath);
+  if (!entry->document) return false;
+
+  DocumentFree(entry->document);
+  free(entry->document);
+  return true;
+}
+
+static void
+FreeFolders(Workspace *workspace)
+{
+  for (u64 index = 0; index < workspace->folderCount; index++) {
+    StrBufFree(&workspace->folders[index].real);
+    StrBufFree(&workspace->folders[index].name);
+  }
+
+  free(workspace->folders);
+  workspace->folders = nullptr;
+  workspace->folderCount = 0;
 }
 
 void
 WorkspaceFree(Workspace *workspace)
 {
-  for (u64 index = 0; index < workspace->count; index++) {
-    WorkspaceEntry *entry = &workspace->entries[index];
-    StrBufFree(&entry->path);
-    if (!entry->document) continue;
-
-    DocumentFree(entry->document);
-    free(entry->document);
-  }
-
+  for (u64 index = 0; index < workspace->count; index++) FreeEntry(&workspace->entries[index]);
   free(workspace->entries);
+  FreeFolders(workspace);
   u64 serials = workspace->serials;
   WorkspaceInit(workspace, workspace->options);
   workspace->serials = serials;
@@ -287,14 +309,215 @@ WorkspacePath(const Workspace *workspace, u64 index)
   return EntryPath(&workspace->entries[index]);
 }
 
+// the length of a path without its trailing slashes, so "/" is empty.
+static u64
+TrimmedLength(const char *path)
+{
+  u64 length = strlen(path);
+  while (length && path[length - 1] == '/') length--;
+  return length;
+}
+
+// true when path is below the folder of length bytes (without its trailing slash).
+static bool
+Below(const char *path, const char *folder, u64 length)
+{
+  return strncmp(path, folder, length) == 0 && path[length] == '/';
+}
+
+// the folder of the last path resolved, as written and resolved (empty when it did not
+// resolve), since the files of one folder are usually named one after another.
+static StrBuf lastParent;
+static StrBuf lastReal;
+static bool lastResolved;
+
+// sets real to path with its folder resolved, or empties it when that does not resolve.
+static void
+Resolve(const char *path, StrBuf *real)
+{
+  const char *slash = strrchr(path, '/');
+  const char *parent = slash ? path : ".";
+  u64 parentLength = !slash ? 1 : slash == path ? 1 : (u64)(slash - path);
+  StrBufClear(real);
+
+  bool same = lastParent.length == parentLength &&
+    memcmp(lastParent.data, parent, parentLength) == 0;
+
+  if (!same) {
+    StrBufClear(&lastParent);
+    StrBufAppend(&lastParent, parent, parentLength);
+    StrBufClear(&lastReal);
+    char resolved[PATH_MAX];
+    lastResolved = realpath(lastParent.data, resolved) != nullptr;
+    if (lastResolved) StrBufAppend(&lastReal, resolved, TrimmedLength(resolved));
+  }
+
+  if (!lastResolved) return;
+
+  StrBufAppend(real, lastReal.data, lastReal.length);
+  StrBufAppendFormat(real, "/%s", slash ? slash + 1 : path);
+}
+
+// the start of the last count components of a folder's resolved path.
+static u64
+Components(const StrBuf *real, u32 count)
+{
+  u64 start = real->length;
+
+  while (start && count) {
+    start--;
+    if (real->data[start] == '/') count--;
+  }
+
+  return count ? 0 : start + 1;
+}
+
+// names each folder by its last component, adding more to those whose names are still
+// the same as another's until they differ or run out.
+static void
+NameFolders(Workspace *workspace)
+{
+  u64 count = workspace->folderCount;
+  u32 *depths = MemoryAllocate((count + 1) * sizeof(u32));
+  for (u64 index = 0; index < count; index++) depths[index] = 1;
+
+  for (bool clashed = true; clashed;) {
+    clashed = false;
+
+    for (u64 index = 0; index < count; index++) {
+      WorkspaceFolder *folder = &workspace->folders[index];
+      u64 start = Components(&folder->real, depths[index]);
+      StrBufClear(&folder->name);
+      if (start < folder->real.length) {
+        StrBufAppend(&folder->name, folder->real.data + start, folder->real.length - start);
+      }
+    }
+
+    for (u64 index = 0; index < count; index++) {
+      const WorkspaceFolder *folder = &workspace->folders[index];
+      if (!Components(&folder->real, depths[index])) continue;
+
+      for (u64 other = 0; other < count; other++) {
+        const StrBuf *name = &workspace->folders[other].name;
+        if (other == index || name->length != folder->name.length) continue;
+        if (memcmp(name->data, folder->name.data, name->length) != 0) continue;
+
+        depths[index]++;
+        clashed = true;
+        break;
+      }
+    }
+  }
+
+  free(depths);
+}
+
+void
+WorkspaceSetFolders(Workspace *workspace, char *const *paths, u64 count)
+{
+  FreeFolders(workspace);
+  workspace->folders = MemoryAllocate((count + 1) * sizeof(WorkspaceFolder));
+  workspace->generation++;
+
+  // a folder may have changed on disk since the last one was resolved.
+  StrBufClear(&lastParent);
+
+  for (u64 index = 0; index < count; index++) {
+    char real[PATH_MAX];
+    if (!realpath(paths[index], real)) continue;
+
+    WorkspaceFolder *folder = &workspace->folders[workspace->folderCount++];
+    *folder = (WorkspaceFolder){};
+    StrBufAppend(&folder->real, real, TrimmedLength(real));
+  }
+
+  NameFolders(workspace);
+}
+
+// works out an entry's name and resolved path for its path and the open folders.
+static void
+NameEntry(const Workspace *workspace, WorkspaceEntry *entry)
+{
+  const StrBuf *path = EntryPath(entry);
+  StrBufClear(&entry->name);
+  StrBufClear(&entry->namedPath);
+  StrBufAppend(&entry->namedPath, path->data, path->length);
+  entry->generation = workspace->generation;
+
+  if (!path->length) {
+    StrBufClear(&entry->real);
+    StrBufAppendFormat(&entry->name, "[unnamed %u]", entry->unnamed);
+    return;
+  }
+
+  Resolve(path->data, &entry->real);
+  const StrBuf *real = &entry->real;
+
+  if (!real->length) {
+    StrBufAppend(&entry->name, path->data, path->length);
+    return;
+  }
+
+  // the deepest folder holding the file names it, when folders nest.
+  const WorkspaceFolder *holder = nullptr;
+
+  for (u64 index = 0; index < workspace->folderCount; index++) {
+    const WorkspaceFolder *folder = &workspace->folders[index];
+    if (!Below(real->data, folder->real.data, folder->real.length)) continue;
+    if (!holder || folder->real.length > holder->real.length) holder = folder;
+  }
+
+  if (holder) {
+    StrBufAppend(&entry->name, holder->name.data, holder->name.length);
+    u64 inside = holder->real.length;
+    StrBufAppend(&entry->name, real->data + inside, real->length - inside);
+    return;
+  }
+
+  const char *home = getenv("HOME");
+  u64 homeLength = home ? TrimmedLength(home) : 0;
+
+  if (homeLength && Below(real->data, home, homeLength)) {
+    StrBufAppendFormat(&entry->name, "~%s", real->data + homeLength);
+    return;
+  }
+
+  StrBufAppend(&entry->name, real->data, real->length);
+}
+
+// the entry at index with its name up to date.
+// the name is a cache, so it is worked out again even through a const workspace.
+static const WorkspaceEntry *
+Named(const Workspace *workspace, u64 index)
+{
+  WorkspaceEntry *entry = &workspace->entries[index];
+  const StrBuf *path = EntryPath(entry);
+
+  bool stale = entry->generation != workspace->generation ||
+    entry->namedPath.length != path->length ||
+    (path->length && memcmp(entry->namedPath.data, path->data, path->length) != 0);
+
+  if (stale) NameEntry(workspace, entry);
+  return entry;
+}
+
 void
 WorkspaceName(const Workspace *workspace, u64 index, StrBuf *name)
 {
-  const WorkspaceEntry *entry = &workspace->entries[index];
-  const StrBuf *path = EntryPath(entry);
+  const StrBuf *shown = WorkspaceShownName(workspace, index);
+  StrBufAppend(name, shown->data, shown->length);
+}
 
-  if (path->length) StrBufAppend(name, path->data, path->length);
-  else StrBufAppendFormat(name, "[unnamed %u]", entry->unnamed);
+const StrBuf *
+WorkspaceShownName(const Workspace *workspace, u64 index)
+{
+  return &Named(workspace, index)->name;
+}
+
+const StrBuf *
+WorkspaceRealPath(const Workspace *workspace, u64 index)
+{
+  return &Named(workspace, index)->real;
 }
 
 bool
@@ -354,20 +577,14 @@ WorkspacePreviousUsed(const Workspace *workspace)
   return MostRecent(workspace, workspace->current);
 }
 
-// makes another entry current in place of a removed one: the most recently used, or else
-// the first that opens, or else a new unnamed buffer.
+// makes another entry current in place of a removed one: the most recently used (which
+// is open, since only an open entry is ever used), or else a new unnamed buffer, so no
+// file is read that the user did not ask for.
 static void
 ReplaceCurrent(Workspace *workspace, StrBuf *message)
 {
   u64 index = MostRecent(workspace, workspaceNone);
   if (index != workspaceNone && WorkspaceSwitch(workspace, index, message)) return;
-
-  for (index = 0; index < workspace->count; index++) {
-    StrBuf reason = {};
-    bool opened = WorkspaceSwitch(workspace, index, &reason);
-    StrBufFree(&reason);
-    if (opened) return;
-  }
 
   WorkspaceSwitch(workspace, WorkspaceAddUnnamed(workspace), message);
 }
@@ -409,12 +626,7 @@ WorkspaceRemoveSome(Workspace *workspace, const u64 *serials, u64 count, StrBuf 
     next++;
     if (index == workspace->current) wasCurrent = true;
     if (workspace->split && index == workspace->other) wasOther = true;
-    StrBufFree(&entry->path);
-    if (!entry->document) continue;
-
-    DocumentFree(entry->document);
-    free(entry->document);
-    workspace->openCount--;
+    if (FreeEntry(entry)) workspace->openCount--;
   }
 
   workspace->count = kept;
