@@ -202,3 +202,8 @@ LspPump(void);
 // before ending them.
 void
 LspStopAll(void);
+
+// stops the servers no document shows any more, as LspStopAll does, so a server whose
+// files were all closed does not stay running for the next one.
+void
+LspStopIdle(void);

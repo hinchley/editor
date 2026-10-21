@@ -123,6 +123,11 @@ WorkspaceEntryOf(const Workspace *workspace, u64 serial);
 void
 WorkspaceRemove(Workspace *workspace, u64 index, StrBuf *message);
 
+// removes the entries with serials, given in list order, as WorkspaceRemove does but in
+// one pass; serials that match no entry are skipped.
+void
+WorkspaceRemoveSome(Workspace *workspace, const u64 *serials, u64 count, StrBuf *message);
+
 // records that an open entry's document now names another file, as after a rename.
 void
 WorkspaceRenamed(Workspace *workspace, u64 index);

@@ -59,8 +59,10 @@ typedef struct Server {
   bool formats;
   bool clangd;
 
-  // the documents attached to it, and whether it answered shutdown.
+  // the documents attached to it, whether it is being stopped, and whether it answered
+  // shutdown.
   u32 documentCount;
+  bool stopping;
   bool shutDown;
 } Server;
 
@@ -1068,15 +1070,19 @@ ShutDown(
   server->shutDown = true;
 }
 
-void
-LspStopAll(void)
+// asks the servers to shut down, every one or (idleOnly) those no document shows, and
+// waits at most serverShutdownTime for them to exit before ending them.
+static void
+Stop(bool idleOnly)
 {
   i64 deadline = RpcNow() + serverShutdownTime;
 
   // shutdown is a request, so its reply says the server is ready to exit.
+  // a server left running counts as shut down, so nothing waits for it.
   for (u32 index = 0; index < serverCount; index++) {
     Server *server = servers[index];
-    server->shutDown = server->state != ServerReady;
+    server->stopping = !idleOnly || server->documentCount == 0;
+    server->shutDown = !server->stopping || server->state != ServerReady;
     if (!server->shutDown) RpcRequest(server->rpc, "shutdown", nullptr, ShutDown, server);
   }
 
@@ -1103,7 +1109,7 @@ LspStopAll(void)
 
   for (u32 index = 0; index < serverCount; index++) {
     Server *server = servers[index];
-    if (!server->rpc) continue;
+    if (!server->stopping || !server->rpc) continue;
 
     if (server->state == ServerReady) {
       RpcNotify(server->rpc, "exit", nullptr);
@@ -1116,12 +1122,28 @@ LspStopAll(void)
     FailPendings(server);
   }
 
-  for (u32 index = 0; index < documentCount; index++) Forget(documents[index]);
+  for (u32 index = 0; index < documentCount; index++) {
+    if (documents[index]->server->stopping) Forget(documents[index]);
+  }
 
   // servers no document shows are gone; the others go with their last document.
   for (u32 index = serverCount; index-- > 0;) {
-    if (servers[index]->documentCount == 0) FreeServer(servers[index]);
+    if (servers[index]->stopping && servers[index]->documentCount == 0) {
+      FreeServer(servers[index]);
+    }
   }
+}
+
+void
+LspStopAll(void)
+{
+  Stop(false);
+}
+
+void
+LspStopIdle(void)
+{
+  Stop(true);
 }
 
 void

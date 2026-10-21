@@ -215,6 +215,24 @@ SaveAll(Workspace *newWorkspace, StrBuf *newMessage, SaveFinished finished)
   Next();
 }
 
+void
+SaveSome(
+  Workspace *newWorkspace,
+  StrBuf *newMessage,
+  const u64 *entries,
+  u64 count,
+  SaveFinished finished
+)
+{
+  Begin(newWorkspace, newMessage, finished, true);
+
+  for (u64 index = 0; index < count; index++) {
+    if (WorkspaceModified(newWorkspace, entries[index])) Queue(entries[index]);
+  }
+
+  Next();
+}
+
 // the document the file menu acts on, or nullptr once its entry is gone.
 static Document *
 MenuDocument(void)

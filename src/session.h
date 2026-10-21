@@ -42,6 +42,15 @@ SessionFolder(void);
 void
 SessionLoadNew(void);
 
+// closes a folder the buffers were loaded from (at startup or by Ctrl-O): with one, that
+// one, and with several, the one picked from a list (the folder of the current buffer
+// selected).
+// every buffer of a file inside it is closed, after offering to save their unsaved
+// changes, and Alt-Shift-R no longer walks it.
+// closing every buffer leaves a new unnamed one.
+void
+SessionCloseFolder(void);
+
 // switches to the next (step 1) or previous (step -1) open buffer in load order.
 void
 SessionCycle(i32 step);

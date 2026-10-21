@@ -387,26 +387,44 @@ ReplaceOther(Workspace *workspace)
 }
 
 void
-WorkspaceRemove(Workspace *workspace, u64 index, StrBuf *message)
+WorkspaceRemoveSome(Workspace *workspace, const u64 *serials, u64 count, StrBuf *message)
 {
-  WorkspaceEntry *entry = &workspace->entries[index];
-  bool wasCurrent = index == workspace->current;
-  bool wasOther = workspace->split && index == workspace->other;
+  bool wasCurrent = false;
+  bool wasOther = false;
+  u64 kept = 0;
+  u64 next = 0;
 
-  StrBufFree(&entry->path);
+  // one pass keeps the rest in order, however many go.
+  for (u64 index = 0; index < workspace->count; index++) {
+    WorkspaceEntry *entry = &workspace->entries[index];
+    while (next < count && serials[next] < entry->serial) next++;
 
-  if (entry->document) {
+    if (next == count || entry->serial != serials[next]) {
+      if (index == workspace->current) workspace->current = kept;
+      if (index == workspace->other) workspace->other = kept;
+      workspace->entries[kept++] = *entry;
+      continue;
+    }
+
+    next++;
+    if (index == workspace->current) wasCurrent = true;
+    if (workspace->split && index == workspace->other) wasOther = true;
+    StrBufFree(&entry->path);
+    if (!entry->document) continue;
+
     DocumentFree(entry->document);
     free(entry->document);
     workspace->openCount--;
   }
 
-  u64 after = workspace->count - index - 1;
-  memmove(entry, entry + 1, after * sizeof(WorkspaceEntry));
-  workspace->count--;
-  if (workspace->current > index) workspace->current--;
-  if (workspace->other > index) workspace->other--;
-
+  workspace->count = kept;
   if (wasCurrent) ReplaceCurrent(workspace, message);
   if (wasOther) ReplaceOther(workspace);
+}
+
+void
+WorkspaceRemove(Workspace *workspace, u64 index, StrBuf *message)
+{
+  u64 serial = workspace->entries[index].serial;
+  WorkspaceRemoveSome(workspace, &serial, 1, message);
 }

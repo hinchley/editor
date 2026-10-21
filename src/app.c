@@ -978,6 +978,9 @@ BufferCommand(enum Command command)
     case CommandCloseBuffer:
       SessionClose();
       break;
+    case CommandCloseFolder:
+      SessionCloseFolder();
+      break;
     case CommandFileMenu:
       SaveFileMenu(&workspace, &message);
       break;

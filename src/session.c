@@ -1,5 +1,6 @@
 #include "session.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -42,6 +43,12 @@ static SaveFinished afterUnsaved;
 
 // the buffer being closed, waiting for the answer about its unsaved changes.
 static u64 closing;
+
+// the folder being closed, as given, and the serials of the entries inside it in list
+// order, waiting for the answer about their unsaved changes.
+static StrBuf closingFolder;
+static u64 *closingSerials;
+static u64 closingCount;
 
 static void
 PathsFree(Paths *paths)
@@ -533,6 +540,239 @@ SessionClose(void)
   StrBufAppendString(&question, "? (y/n/c)");
   PromptChoose(question.data, "ync", CloseAnswered, nullptr);
   StrBufFree(&question);
+}
+
+// the length of a path without its trailing slashes, so "src/" and "src" name the same
+// folder and "/" is empty.
+static u64
+FolderLength(const char *path)
+{
+  u64 length = strlen(path);
+  while (length && path[length - 1] == '/') length--;
+  return length;
+}
+
+// true when path is below the folder of length bytes (from FolderLength).
+static bool
+Below(const char *path, const char *folder, u64 length)
+{
+  return strncmp(path, folder, length) == 0 && path[length] == '/';
+}
+
+// where a folder's files are, once links and "." and ".." are resolved.
+// the files themselves are not resolved, since a link inside a folder belongs to it
+// wherever it leads.
+typedef struct Resolver {
+  // the folder of the last path resolved, as written and resolved, or an empty real
+  // when it did not resolve.
+  StrBuf parent;
+  StrBuf real;
+} Resolver;
+
+// the path with its folder resolved, or nullptr when the folder does not resolve.
+// the result is only valid until the next call.
+static const char *
+Resolve(Resolver *resolver, const char *path, StrBuf *resolved)
+{
+  const char *slash = strrchr(path, '/');
+  const char *parent = slash ? path : ".";
+  u64 parentLength = !slash ? 1 : slash == path ? 1 : (u64)(slash - path);
+
+  // the files of one folder are listed together, so most paths share the last folder.
+  bool same = resolver->parent.length == parentLength &&
+    memcmp(resolver->parent.data, parent, parentLength) == 0;
+
+  if (!same) {
+    StrBufClear(&resolver->parent);
+    StrBufAppend(&resolver->parent, parent, parentLength);
+    StrBufClear(&resolver->real);
+    char real[PATH_MAX];
+    if (realpath(resolver->parent.data, real)) StrBufAppendString(&resolver->real, real);
+  }
+
+  if (!resolver->real.length) return nullptr;
+
+  StrBufClear(resolved);
+  u64 realLength = FolderLength(resolver->real.data);
+  StrBufAppend(resolved, resolver->real.data, realLength);
+  StrBufAppendFormat(resolved, "/%s", slash ? slash + 1 : path);
+  return resolved->data;
+}
+
+static void
+ResolverFree(Resolver *resolver)
+{
+  StrBufFree(&resolver->parent);
+  StrBufFree(&resolver->real);
+}
+
+// a folder to find the entries inside: as given, and resolved when it resolves, both
+// without trailing slashes.
+typedef struct Folder {
+  const char *given;
+  u64 givenLength;
+  bool resolved;
+  StrBuf real;
+} Folder;
+
+static Folder
+FolderOf(const char *path)
+{
+  Folder folder = {.given = path, .givenLength = FolderLength(path)};
+  char real[PATH_MAX];
+  folder.resolved = realpath(path, real) != nullptr;
+  if (folder.resolved) StrBufAppend(&folder.real, real, FolderLength(real));
+  return folder;
+}
+
+// true when the entry at index is a file inside the folder: by its path as shown, which
+// is how the folder's walk names its files, or else by where its folder resolves to, for
+// a file opened by another path.
+static bool
+Inside(const Folder *folder, Resolver *resolver, StrBuf *resolved, u64 index)
+{
+  const StrBuf *path = WorkspacePath(workspace, index);
+  if (!path->length) return false;
+  if (Below(path->data, folder->given, folder->givenLength)) return true;
+  if (!folder->resolved) return false;
+
+  const char *real = Resolve(resolver, path->data, resolved);
+  return real && Below(real, folder->real.data, folder->real.length);
+}
+
+// closes the folder being closed: removes its entries and forgets it.
+static void
+CloseFolderNow(void)
+{
+  u64 index = 0;
+  while (index < folders.count && strcmp(folders.paths[index], closingFolder.data)) index++;
+  if (index == folders.count) return;
+
+  // removing the last entries leaves a new unnamed buffer.
+  WorkspaceRemoveSome(workspace, closingSerials, closingCount, message);
+  free(folders.paths[index]);
+  u64 after = folders.count - index - 1;
+  memmove(&folders.paths[index], &folders.paths[index + 1], after * sizeof(char *));
+  folders.count--;
+  if (!folders.count) PathsFree(&known);
+
+  // the servers of the folder's files have nothing left to do.
+  LspStopIdle();
+
+  if (message->length) StrBufAppendString(message, "; ");
+  StrBufAppendFormat(message, "closed %s", closingFolder.data);
+}
+
+// the entries of the folder being closed, by index, in list order, returning how many.
+static u64
+ClosingEntries(u64 *entries)
+{
+  u64 count = 0;
+
+  for (u64 index = 0; index < closingCount; index++) {
+    u64 entry = WorkspaceEntryOf(workspace, closingSerials[index]);
+    if (entry != workspaceNone) entries[count++] = entry;
+  }
+
+  return count;
+}
+
+static void
+FolderUnsavedAnswered(
+  [[maybe_unused]] void *context,
+  const char *answer,
+  [[maybe_unused]] u64 length
+)
+{
+  if (!answer || *answer == 'c') return;
+
+  if (*answer == 'd') {
+    CloseFolderNow();
+    return;
+  }
+
+  u64 *entries = MemoryAllocate((closingCount + 1) * sizeof(u64));
+  u64 count = ClosingEntries(entries);
+  SaveSome(workspace, message, entries, count, CloseFolderNow);
+  free(entries);
+}
+
+// closes the folder at index of folders, after offering to save the unsaved changes in it.
+static void
+CloseFolder(u64 index)
+{
+  StrBufClear(&closingFolder);
+  StrBufAppendString(&closingFolder, folders.paths[index]);
+  closingSerials = MemoryResize(closingSerials, workspace->count + 1, sizeof(u64));
+  closingCount = 0;
+
+  Folder folder = FolderOf(folders.paths[index]);
+  Resolver resolver = {};
+  StrBuf resolved = {};
+  u64 unsaved = 0;
+
+  for (u64 entry = 0; entry < workspace->count; entry++) {
+    if (!Inside(&folder, &resolver, &resolved, entry)) continue;
+
+    closingSerials[closingCount++] = workspace->entries[entry].serial;
+    unsaved += WorkspaceModified(workspace, entry);
+  }
+
+  StrBufFree(&resolved);
+  ResolverFree(&resolver);
+  StrBufFree(&folder.real);
+
+  if (!unsaved) {
+    CloseFolderNow();
+    return;
+  }
+
+  StrBuf question = {};
+  const char *text = "%lu unsaved in %s: (s)ave all, (d)iscard, (c)ancel";
+  StrBufAppendFormat(&question, text, unsaved, closingFolder.data);
+  PromptChoose(question.data, "sdc", FolderUnsavedAnswered, nullptr);
+  StrBufFree(&question);
+}
+
+static void
+FolderPicked([[maybe_unused]] void *context, bool picked, u64 id)
+{
+  if (picked) CloseFolder(id);
+}
+
+void
+SessionCloseFolder(void)
+{
+  if (!folders.count) {
+    StrBufAppendString(message, "no folder is open");
+    return;
+  }
+
+  if (folders.count == 1) {
+    CloseFolder(0);
+    return;
+  }
+
+  // the folder holding the current buffer is selected, so enter closes it.
+  PickerBegin();
+  u64 selected = workspaceNone;
+  Resolver resolver = {};
+  StrBuf resolved = {};
+
+  for (u64 index = 0; index < folders.count; index++) {
+    const char *path = folders.paths[index];
+    PickerAdd(path, strlen(path), nullptr, index);
+    if (selected != workspaceNone) continue;
+
+    Folder folder = FolderOf(path);
+    if (Inside(&folder, &resolver, &resolved, workspace->current)) selected = index;
+    StrBufFree(&folder.real);
+  }
+
+  StrBufFree(&resolved);
+  ResolverFree(&resolver);
+  PickerOpen("folders", "close folder: ", FolderPicked, nullptr);
+  if (selected != workspaceNone) PickerSelect(selected);
 }
 
 void

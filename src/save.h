@@ -20,6 +20,17 @@ SaveCurrent(Workspace *workspace, StrBuf *message, SaveFinished finished);
 void
 SaveAll(Workspace *workspace, StrBuf *message, SaveFinished finished);
 
+// saves the modified documents among count entries, by index in list order, as SaveAll
+// does, then runs finished.
+void
+SaveSome(
+  Workspace *workspace,
+  StrBuf *message,
+  const u64 *entries,
+  u64 count,
+  SaveFinished finished
+);
+
 // asks whether to rename the current document's file, save a copy of it or delete it,
 // then asks for the new path (with tab completion) or for confirmation.
 // rename moves the file on disk and keeps any unsaved changes unsaved; a copy is written

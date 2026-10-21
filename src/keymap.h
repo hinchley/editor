@@ -89,6 +89,7 @@ enum Command {
   CommandPickBuffer,
   CommandPickUnsaved,
   CommandCloseBuffer,
+  CommandCloseFolder,
   CommandFileMenu,
   CommandSplitSame,
   CommandSplitNew,
