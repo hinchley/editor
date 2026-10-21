@@ -81,12 +81,24 @@ def read_groups():
     return groups
 
 
+# the lines of a table whose first row is the header, each column padded to its widest
+# cell.
+def table(rows):
+    widths = [max(len(row[column]) for row in rows) for column in range(len(rows[0]))]
+
+    def line(cells):
+        return "| " + " | ".join(cell.ljust(width) for cell, width in zip(cells, widths)) + " |"
+
+    rule = line(["-" * width for width in widths])
+    return [line(rows[0]), rule] + [line(row) for row in rows[1:]]
+
+
 def tables(groups):
     lines = []
 
     for name, bindings in groups:
-        lines += ["", "**" + name[0].upper() + name[1:] + "**", "", "| Key | Action |", "|---|---|"]
-        lines += ["| " + key + " | " + text.replace("|", "\\|") + " |" for key, text in bindings]
+        rows = [("Key", "Action")] + [(key, text.replace("|", "\\|")) for key, text in bindings]
+        lines += ["", "**" + name[0].upper() + name[1:] + "**", ""] + table(rows)
 
     return "\n".join(lines) + "\n"
 
