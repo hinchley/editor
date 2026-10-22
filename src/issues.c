@@ -2,7 +2,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include "diagnostics.h"
 #include "jump.h"
@@ -12,6 +11,7 @@
 #include "places.h"
 #include "screen.h"
 #include "settings.h"
+#include "term.h"
 #include "theme.h"
 
 static Workspace *workspace;
@@ -92,14 +92,6 @@ IssuesPanelOpen(void)
   return panelOpen;
 }
 
-static i64
-NowMilliseconds(void)
-{
-  struct timespec now;
-  clock_gettime(CLOCK_MONOTONIC, &now);
-  return now.tv_sec * 1000 + now.tv_nsec / 1'000'000;
-}
-
 // forgets the hover, so it is asked for again once the cursor rests.
 static void
 ForgetHover(void)
@@ -107,7 +99,7 @@ ForgetHover(void)
   LspCancel(hover.request);
   hover.request = 0;
   hover.asked = false;
-  hover.since = NowMilliseconds();
+  hover.since = TermNow();
   StrBufClear(&hover.text);
 }
 
@@ -169,7 +161,7 @@ IssuesTick(void)
     ForgetHover();
   }
 
-  if (hover.asked || NowMilliseconds() - hover.since < hoverDelay) return;
+  if (hover.asked || TermNow() - hover.since < hoverDelay) return;
 
   hover.asked = true;
   hover.request = LspHover(document->lsp, head, HoverDone, nullptr);
@@ -180,7 +172,7 @@ IssuesTimeout(void)
 {
   if (!panelOpen || hover.asked) return -1;
 
-  i64 left = hover.since + hoverDelay - NowMilliseconds();
+  i64 left = hover.since + hoverDelay - TermNow();
   return left > 0 ? (i32)left : 0;
 }
 

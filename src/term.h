@@ -56,6 +56,10 @@ TermReadInput(void);
 void
 TermWrite(const char *data, u64 length);
 
+// milliseconds on a clock that only moves forward, for timeouts and delays.
+i64
+TermNow(void);
+
 // true once the terminal has gone (closed, or a hang up or termination signal), when
 // nothing more can be read or drawn.
 bool

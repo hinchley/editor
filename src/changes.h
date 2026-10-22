@@ -78,11 +78,18 @@ ChangesHunks(Changes *changes, u64 *count);
 u64
 ChangesHunkAt(Changes *changes, u64 line);
 
+// the mark and the counts drawn in a frame. while the buffer keeps changing they come
+// from the hunks of an earlier revision, worked out again once it has rested
+// changesDelay, so they can lag the text that long; commands use ChangesHunks.
 enum ChangeMark
 ChangesMarkOf(Changes *changes, u64 line);
 
 ChangeCounts
 ChangesCount(Changes *changes);
+
+// milliseconds until the marks are due to be worked out again, or -1 when none are.
+i32
+ChangesTimeout(void);
 
 // adds a hunk's counts to counts.
 void

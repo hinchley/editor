@@ -113,6 +113,10 @@ static constexpr i64 serverShutdownTime = 500;
 // server what the symbol under it is.
 static constexpr i64 hoverDelay = 150;
 
+// how many milliseconds the buffer rests before the change marks and counts drawn while
+// typing are worked out again.
+static constexpr i64 changesDelay = 150;
+
 // how many milliseconds a language server has to answer a command (go to definition,
 // references) before the command gives up on it.
 static constexpr i64 serverRequestTimeout = 5000;

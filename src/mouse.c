@@ -1,10 +1,9 @@
 #include "mouse.h"
 
-#include <time.h>
-
 #include "move.h"
 #include "multicursor.h"
 #include "settings.h"
+#include "term.h"
 
 // the drag going on: what its press does, how many presses made it (1 to 3), and the text
 // its press chose (the press position, or the word or line there), which the drag keeps
@@ -29,14 +28,6 @@ typedef struct Press {
 } Press;
 
 static Press lastPress;
-
-static i64
-NowMilliseconds(void)
-{
-  struct timespec now;
-  clock_gettime(CLOCK_MONOTONIC, &now);
-  return now.tv_sec * 1000 + now.tv_nsec / 1'000'000;
-}
 
 // the text a press chooses at position: the position itself after one press, the word
 // there (or else the position) after two, and the line with its line break after three.
@@ -93,7 +84,7 @@ MousePress(View *view, i32 row, i32 column, enum MouseMode newMode)
     return;
   }
 
-  i64 now = NowMilliseconds();
+  i64 now = TermNow();
   bool again = lastPress.placed && now - lastPress.time <= multiClickInterval &&
     row == lastPress.row && column == lastPress.column;
 

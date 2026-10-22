@@ -8,8 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
-#include <time.h>
 #include <unistd.h>
+
+#include "term.h"
 
 extern char **environ;
 
@@ -33,14 +34,6 @@ typedef struct Command {
   u64 written;
   StrBuf *result;
 } Command;
-
-static i64
-NowMilliseconds(void)
-{
-  struct timespec now;
-  clock_gettime(CLOCK_MONOTONIC, &now);
-  return now.tv_sec * 1000 + now.tv_nsec / 1'000'000;
-}
 
 static bool
 WaylandSession(void)
@@ -156,11 +149,11 @@ ReadSome(Command *command)
 static bool
 Exchange(Command *command)
 {
-  i64 deadline = NowMilliseconds() + commandTimeout;
+  i64 deadline = TermNow() + commandTimeout;
   if (command->length == 0) CloseInput(command);
 
   while (command->input >= 0 || command->output >= 0) {
-    i64 remaining = deadline - NowMilliseconds();
+    i64 remaining = deadline - TermNow();
     if (remaining <= 0) return false;
 
     struct pollfd descriptors[2] = {

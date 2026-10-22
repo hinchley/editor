@@ -10,8 +10,8 @@
 
 #include "document.h"
 #include "file.h"
-#include "rpc.h"
 #include "settings.h"
+#include "term.h"
 
 static i64 lastInput;
 
@@ -138,14 +138,14 @@ RecoverTimeout(const Workspace *workspace)
 
   if (!waiting) return -1;
 
-  i64 left = lastInput + recoverDelay - RpcNow();
+  i64 left = lastInput + recoverDelay - TermNow();
   return left < 0 ? 0 : (i32)left;
 }
 
 void
 RecoverInput(void)
 {
-  lastInput = RpcNow();
+  lastInput = TermNow();
 }
 
 // the number of copies left by processes no longer running; with forget, this process's

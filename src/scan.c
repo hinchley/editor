@@ -2,9 +2,9 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include "memory.h"
+#include "term.h"
 
 // how long a scan runs before the window is drawn again, in milliseconds.
 static constexpr i64 sliceTime = 20;
@@ -29,14 +29,6 @@ ScanInit(Workspace *newWorkspace, StrBuf *newMessage)
 {
   workspace = newWorkspace;
   message = newMessage;
-}
-
-static i64
-Milliseconds(void)
-{
-  struct timespec now;
-  clock_gettime(CLOCK_MONOTONIC, &now);
-  return now.tv_sec * 1000 + now.tv_nsec / 1'000'000;
 }
 
 void
@@ -96,12 +88,12 @@ ScanEntry(u64 index)
 void
 ScanContinue(void)
 {
-  i64 deadline = Milliseconds() + sliceTime;
+  i64 deadline = TermNow() + sliceTime;
   bool going = true;
 
   while (going && queueNext < queueCount) {
     going = ScanEntry(queue[queueNext++]);
-    if (Milliseconds() > deadline) break;
+    if (TermNow() > deadline) break;
   }
 
   if (!going || queueNext == queueCount) {

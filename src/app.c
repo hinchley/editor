@@ -1500,11 +1500,12 @@ WaitForInput(void)
   if (ScanBusy() && !pending) timeout = 0;
 
   // a request running out of time, the cursor resting long enough for the diagnostics
-  // panel to ask what is under it, or input resting long enough for recovery copies,
-  // wakes the loop too.
-  i32 waits[] = {LspTimeout(), IssuesTimeout(), RecoverTimeout(&workspace)};
+  // panel to ask what is under it, input resting long enough for recovery copies, or the
+  // buffer resting long enough for its change marks to be worked out again, wakes the loop
+  // too.
+  i32 waits[] = {LspTimeout(), IssuesTimeout(), RecoverTimeout(&workspace), ChangesTimeout()};
 
-  for (u32 index = 0; index < 3; index++) {
+  for (u32 index = 0; index < 4; index++) {
     if (waits[index] >= 0 && (timeout < 0 || waits[index] < timeout)) timeout = waits[index];
   }
 

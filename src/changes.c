@@ -5,6 +5,7 @@
 
 #include "memory.h"
 #include "settings.h"
+#include "term.h"
 
 // text in one piece split into lines at "\n", with a "\r" before it left out, as preview
 // and project search do, since a buffer holds its lines without either.
@@ -37,7 +38,14 @@ struct Changes {
   bool computed;
   u64 revision;
   DiffHunks hunks;
+
+  // the revision the buffer was last seen at, and when it was first seen at it.
+  u64 seenRevision;
+  i64 seenAt;
 };
+
+// when the marks drawn while typing are due to be worked out again, or 0.
+static i64 dueAt;
 
 static void
 SplitLines(Lines *lines, const char *text, u64 length)
@@ -204,16 +212,29 @@ FitsDiff(const Changes *changes)
   return true;
 }
 
-const DiffHunk *
-ChangesHunks(Changes *changes, u64 *count)
+// the hunks; with settled, those of an earlier revision are kept until the buffer has
+// rested changesDelay, so the frame drawn after each key does not diff the whole file.
+static const DiffHunk *
+Hunks(Changes *changes, u64 *count, bool settled)
 {
   *count = 0;
   if (!changes || !changes->tracked) return nullptr;
 
   const Buffer *buffer = changes->buffer;
   u64 revision = buffer ? buffer->revision : 0;
+  i64 now = TermNow();
 
-  if (!changes->computed || changes->revision != revision) {
+  if (changes->seenRevision != revision) {
+    changes->seenRevision = revision;
+    changes->seenAt = now;
+  }
+
+  i64 due = changes->seenAt + changesDelay;
+  bool stale = !changes->computed || changes->revision != revision;
+
+  if (stale && settled && changes->computed && now < due) {
+    if (!dueAt || due < dueAt) dueAt = due;
+  } else if (stale) {
     changes->computed = true;
     changes->revision = revision;
     changes->hunks.count = 0;
@@ -230,6 +251,24 @@ ChangesHunks(Changes *changes, u64 *count)
   return changes->hunks.hunks;
 }
 
+const DiffHunk *
+ChangesHunks(Changes *changes, u64 *count)
+{
+  return Hunks(changes, count, false);
+}
+
+i32
+ChangesTimeout(void)
+{
+  if (!dueAt) return -1;
+
+  i64 left = dueAt - TermNow();
+  if (left > 0) return (i32)left;
+
+  dueAt = 0;
+  return 0;
+}
+
 // the line of the buffer a hunk's mark is drawn on when it only removes lines.
 static u64
 RemovalLine(const Changes *changes, const DiffHunk *hunk)
@@ -238,11 +277,11 @@ RemovalLine(const Changes *changes, const DiffHunk *hunk)
   return hunk->newStart <= last ? hunk->newStart : last;
 }
 
-u64
-ChangesHunkAt(Changes *changes, u64 line)
+static u64
+HunkAt(Changes *changes, u64 line, bool settled)
 {
   u64 count;
-  const DiffHunk *hunks = ChangesHunks(changes, &count);
+  const DiffHunk *hunks = Hunks(changes, &count, settled);
 
   // the last hunk that starts at or before the line.
   u64 low = 0;
@@ -275,12 +314,18 @@ ChangesHunkAt(Changes *changes, u64 line)
   return UINT64_MAX;
 }
 
+u64
+ChangesHunkAt(Changes *changes, u64 line)
+{
+  return HunkAt(changes, line, false);
+}
+
 enum ChangeMark
 ChangesMarkOf(Changes *changes, u64 line)
 {
   if (!changes || !changes->tracked) return ChangeMarkNone;
 
-  u64 index = ChangesHunkAt(changes, line);
+  u64 index = HunkAt(changes, line, true);
   if (index == UINT64_MAX) return ChangeMarkNone;
 
   const DiffHunk *hunk = &changes->hunks.hunks[index];
@@ -307,7 +352,7 @@ ChangesCount(Changes *changes)
 {
   ChangeCounts counts = {};
   u64 count;
-  const DiffHunk *hunks = ChangesHunks(changes, &count);
+  const DiffHunk *hunks = Hunks(changes, &count, true);
   for (u64 index = 0; index < count; index++) ChangesCountHunk(&hunks[index], &counts);
   return counts;
 }

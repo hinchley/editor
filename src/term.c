@@ -142,8 +142,8 @@ InstallSignals(void)
   sigaction(SIGTERM, &action, nullptr);
 }
 
-static i64
-NowMilliseconds(void)
+i64
+TermNow(void)
 {
   struct timespec now;
   clock_gettime(CLOCK_MONOTONIC, &now);
@@ -160,7 +160,7 @@ Handshake(void)
   TermWrite(query, sizeof(query) - 1);
 
   bool keyboardProtocol = false;
-  i64 deadline = NowMilliseconds() + handshakeTimeout;
+  i64 deadline = TermNow() + handshakeTimeout;
 
   while (true) {
     InputEvent event;
@@ -174,7 +174,7 @@ Handshake(void)
     }
 
     if (hungUp) Fatal("the terminal was closed");
-    i64 remaining = deadline - NowMilliseconds();
+    i64 remaining = deadline - TermNow();
     if (remaining <= 0) Fatal("the terminal did not answer the cursor position request");
     if (TermWait((i32)remaining, nullptr, 0) == TermWaitInput) TermReadInput();
   }
