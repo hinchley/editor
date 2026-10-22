@@ -27,7 +27,7 @@ How code in `src/` is written. `.clang-format` handles layout: run `clang-format
   )
   {
   ```
-- **`// clang-format off` / `// clang-format on`** guards only two kinds of code: packed numeric tables (`inflate.c`), and string literals whose indentation shows structure (the JSON in `lsp.c`, the commented escape sequence in `term.c`). Code inside the guards still follows the rules here.
+- **`// clang-format off` / `// clang-format on`** guards only two kinds of code: packed numeric tables (`inflate.c`, `jpeg.c`), and string literals whose indentation shows structure (the JSON in `lsp.c`, the commented escape sequence in `term.c`). Code inside the guards still follows the rules here.
 - **Multi-line ternary chains** break before `?` and `:` and are aligned (clang-format does this).
 - **Braced initialisers** follow clang-format. One that fits goes on one line. One that fits on the next line breaks after the `=` and is indented two spaces. Otherwise it opens with `= {` and has one item per line:
   ```c

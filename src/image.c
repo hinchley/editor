@@ -4,6 +4,7 @@
 
 #include "bmp.h"
 #include "gif.h"
+#include "jpeg.h"
 #include "memory.h"
 #include "png.h"
 #include "sixel.h"
@@ -15,8 +16,12 @@ typedef struct Format {
   bool (*decode)(const u8 *data, u64 size, Bitmap *bitmap, StrBuf *details, StrBuf *message);
 } Format;
 
-static const Format formats[] =
-  {{"PNG", PngIs, PngDecode}, {"GIF", GifIs, GifDecode}, {"BMP", BmpIs, BmpDecode}};
+static const Format formats[] = {
+  {"PNG", PngIs, PngDecode},
+  {"GIF", GifIs, GifDecode},
+  {"BMP", BmpIs, BmpDecode},
+  {"JPEG", JpegIs, JpegDecode}
+};
 
 // sixel bands are six pixels tall and foot may round a picture's height up to a whole
 // band, so this many pixels of an area are kept spare below it.

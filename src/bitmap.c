@@ -1,6 +1,7 @@
 #include "bitmap.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "memory.h"
 
@@ -60,4 +61,61 @@ BitmapShrink(const Bitmap *source, u32 width, u32 height, Bitmap *scaled)
   }
 
   free(starts);
+}
+
+void
+BitmapOrient(Bitmap *bitmap, u32 orientation)
+{
+  if (orientation < 2 || orientation > 8) return;
+
+  // 5 to 8 swap the sides: the source's columns become rows.
+  bool turned = orientation >= 5;
+  u32 width = bitmap->width;
+  u32 height = bitmap->height;
+  Bitmap turnedBitmap;
+  BitmapInit(&turnedBitmap, turned ? height : width, turned ? width : height);
+  turnedBitmap.alpha = bitmap->alpha;
+
+  for (u32 y = 0; y < turnedBitmap.height; y++) {
+    for (u32 x = 0; x < turnedBitmap.width; x++) {
+      // the source pixel each target pixel comes from.
+      u32 column = x;
+      u32 row = y;
+
+      switch (orientation) {
+        case 2:
+          column = width - 1 - x;
+          break;
+        case 3:
+          column = width - 1 - x;
+          row = height - 1 - y;
+          break;
+        case 4:
+          row = height - 1 - y;
+          break;
+        case 5:
+          column = y;
+          row = x;
+          break;
+        case 6:
+          column = y;
+          row = height - 1 - x;
+          break;
+        case 7:
+          column = width - 1 - y;
+          row = height - 1 - x;
+          break;
+        case 8:
+          column = width - 1 - y;
+          row = x;
+          break;
+      }
+
+      const u8 *from = bitmap->pixels + ((u64)row * width + column) * 4;
+      memcpy(turnedBitmap.pixels + ((u64)y * turnedBitmap.width + x) * 4, from, 4);
+    }
+  }
+
+  BitmapFree(bitmap);
+  *bitmap = turnedBitmap;
 }
