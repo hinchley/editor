@@ -23,8 +23,8 @@ static constexpr u8 specialBit = 0x40;
 static constexpr u8 noGroup = 0xFF;
 
 // lines coloured at once around the line asked for.
-static constexpr u64 windowBefore = 64;
-static constexpr u64 windowAfter = 192;
+static constexpr u64 windowBefore = 16;
+static constexpr u64 windowAfter = 96;
 
 // a line longer than longLineSize is coloured only around the byte asked for, from a
 // quarter of longLineReach before it to longLineReach after it, so the cost of colouring
