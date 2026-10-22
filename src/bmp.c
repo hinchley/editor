@@ -212,7 +212,7 @@ DecodeRuns(const Bmp *bmp, const u8 *data, u64 size, Bitmap *bitmap)
   u64 x = 0;
   u64 row = 0;
 
-  while (size - at >= 2 && row < bmp->height) {
+  while (at + 2 <= size && row < bmp->height) {
     u8 count = data[at];
     u8 value = data[at + 1];
     at += 2;

@@ -15,6 +15,9 @@ static constexpr u32 maxRepeat = 1000;
 // a repetition with no upper bound.
 static constexpr u32 unbounded = UINT32_MAX;
 
+// the deepest groups may nest, since the parser recurses once per level.
+static constexpr u32 maxDepth = 1000;
+
 enum RegexOp : u8 {
   // consumes one code point: value (case folded when ignoring case), any, or one in the
   // class value indexes.
@@ -74,6 +77,7 @@ typedef struct Parser {
   u64 length;
   u64 at;
   u32 groups;
+  u32 depth;
   StrBuf *error;
   bool failed;
 } Parser;
@@ -562,9 +566,15 @@ ParseGroup(Parser *parser)
     parser->at += 2;
   }
 
+  if (++parser->depth > maxDepth) {
+    Fail(parser, "groups nested too deeply");
+    return;
+  }
+
   u32 group = capture ? ++parser->groups : 0;
   if (capture) Emit(parser, (RegexInstruction){.op = RegexOpSave, .value = 2 * group});
   ParseAlternation(parser);
+  parser->depth--;
   if (parser->failed) return;
 
   if (Peek(parser) != ')') {

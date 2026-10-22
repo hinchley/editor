@@ -244,6 +244,8 @@ static unsigned serialize(Scanner *s, char *buffer) {
     buffer[size++] = (char)s->column;
     buffer[size++] = (char)s->fenced_code_block_delimiter_length;
     size_t blocks_count = s->open_blocks.size;
+    size_t room = (TREE_SITTER_SERIALIZATION_BUFFER_SIZE - size) / sizeof(Block);
+    if (blocks_count > room) blocks_count = room;
     if (blocks_count > 0) {
         memcpy(&buffer[size], s->open_blocks.items,
                blocks_count * sizeof(Block));

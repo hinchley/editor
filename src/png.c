@@ -361,6 +361,7 @@ DecodePixels(const Png *png, Bitmap *bitmap, StrBuf *message)
   for (u32 index = 0; index < passCount; index++) expected += PassBytes(png, &passes[index]);
 
   StrBuf raw = {};
+  StrBufReserve(&raw, expected);
   const u8 *compressed = (const u8 *)png->data.data;
   bool inflated = InflateZlib(compressed, png->data.length, expected, &raw);
 

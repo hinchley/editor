@@ -14,12 +14,17 @@
 #include "file.h"
 #include "inflate.h"
 #include "memory.h"
+#include "settings.h"
 
 // how many symbolic refs HEAD may go through.
 static constexpr u32 maxRefDepth = 5;
 
 // the longest chain of deltas followed to rebuild one object.
 static constexpr u32 maxDeltaDepth = 10'000;
+
+// the largest object read, since a size in the repository may be corrupt or huge; a
+// longer text could not be compared with anyway.
+static constexpr u64 maxObjectSize = maxDiffSize;
 
 // packed objects kept once rebuilt, and the largest one kept.
 static constexpr u32 cacheSize = 32;
@@ -386,7 +391,7 @@ ApplyDelta(const StrBuf *base, const StrBuf *delta, StrBuf *out)
     }
   }
 
-  if (sizes[0] != base->length) return false;
+  if (sizes[0] != base->length || sizes[1] > maxObjectSize) return false;
 
   StrBufClear(out);
   StrBufReserve(out, sizes[1]);
@@ -412,9 +417,10 @@ ApplyDelta(const StrBuf *base, const StrBuf *delta, StrBuf *out)
 
       if (size == 0) size = 0x10000;
       if (offset > base->length || size > base->length - offset) return false;
+      if (size > sizes[1] - out->length) return false;
       StrBufAppend(out, base->data + offset, size);
     } else if (op) {
-      if ((u64)(end - at) < op) return false;
+      if ((u64)(end - at) < op || op > sizes[1] - out->length) return false;
       StrBufAppend(out, (const char *)at, op);
       at += op;
     } else {
@@ -491,6 +497,8 @@ ParseEntry(const GitRepo *repo, const Pack *pack, u64 offset, PackEntry *entry)
     entry->size |= (u64)(byte & 0x7F) << shift;
   }
 
+  if (entry->size > maxObjectSize) return false;
+
   if (entry->type == ObjectOffsetDelta) {
     // a big-endian number where each continuation adds one before shifting.
     if (at == end) return false;
@@ -528,7 +536,8 @@ InflateEntry(const PackEntry *entry, StrBuf *out)
   const u8 *start = pack->data + entry->dataStart;
   u64 available = pack->dataSize - entry->dataStart;
 
-  // an empty object still has a zlib stream, but the expected size of 0 means "unknown".
+  // an empty object still has a zlib stream, but a limit of 0 means none.
+  StrBufReserve(out, entry->size);
   if (!InflateZlib(start, available, entry->size, out)) return false;
   return out->length == entry->size;
 }
@@ -644,7 +653,8 @@ ReadLoose(GitRepo *repo, const GitHash *hash, enum ObjectType *type, StrBuf *out
   bool ok = ReadRaw(path.data, &raw);
   StrBufFree(&path);
   StrBufClear(out);
-  ok = ok && InflateZlib((const u8 *)TextOf(&raw), raw.length, 0, out);
+  // the limit leaves room for the "<type> <size>\0" header before the content.
+  ok = ok && InflateZlib((const u8 *)TextOf(&raw), raw.length, maxObjectSize + 64, out);
   StrBufFree(&raw);
   if (!ok) return false;
 

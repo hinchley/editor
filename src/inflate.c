@@ -309,7 +309,7 @@ Dynamic(Inflater *inflater)
 }
 
 bool
-InflateZlib(const u8 *data, u64 size, u64 expected, StrBuf *out)
+InflateZlib(const u8 *data, u64 size, u64 limit, StrBuf *out)
 {
   // the header: deflate with a window of at most 32 KB, no preset dictionary, and a check
   // that makes the two bytes a multiple of 31.
@@ -322,10 +322,9 @@ InflateZlib(const u8 *data, u64 size, u64 expected, StrBuf *out)
     .size = size,
     .at = 2,
     .out = out,
-    .limit = expected ? out->length + expected : 0
+    .limit = limit ? out->length + limit : 0
   };
 
-  if (expected) StrBufReserve(out, out->length + expected);
   bool last = false;
 
   while (!last && !inflater.failed) {
@@ -349,6 +348,5 @@ InflateZlib(const u8 *data, u64 size, u64 expected, StrBuf *out)
     }
   }
 
-  if (inflater.failed) return false;
-  return !inflater.limit || out->length == inflater.limit;
+  return !inflater.failed;
 }

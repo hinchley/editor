@@ -18,6 +18,9 @@ extern char **environ;
 // how much is read from the process at a time.
 static constexpr u64 readSize = 64 * 1024;
 
+// the largest message body accepted; a longer one is a protocol error.
+static constexpr u64 maxMessageSize = 256ull * 1024 * 1024;
+
 // how long a process has to exit after SIGTERM before it is killed.
 static constexpr i64 termGrace = 100;
 
@@ -317,6 +320,7 @@ Write(Rpc *rpc)
 
 // the length of the body after a complete header block at the start of text, and the
 // header's length; false while the header is incomplete.
+// the body's length is 0 when the header gives none, or one that is not a number.
 static bool
 ParseHeader(const char *text, u64 length, u64 *header, u64 *body)
 {
@@ -392,6 +396,12 @@ Read(Rpc *rpc)
     u64 body;
 
     while (ParseHeader(incoming->data + used, incoming->length - used, &header, &body)) {
+      // without a usable length the next message cannot be found, so the stream is lost.
+      if (body == 0 || body > maxMessageSize) {
+        Died(rpc);
+        return;
+      }
+
       if (incoming->length - used - header < body) break;
 
       Dispatch(rpc, incoming->data + used + header, body);
