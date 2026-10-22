@@ -21,7 +21,7 @@ RecoverWrite(Workspace *workspace);
 void
 RecoverHangUp(Workspace *workspace);
 
-// milliseconds until RecoverWrite is due, or -1 when nothing is waiting.
+// milliseconds until RecoverWrite may be due (0 when it is), or -1 when nothing is waiting.
 i32
 RecoverTimeout(const Workspace *workspace);
 

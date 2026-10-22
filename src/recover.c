@@ -130,16 +130,20 @@ RecoverHangUp(Workspace *workspace)
 i32
 RecoverTimeout(const Workspace *workspace)
 {
+  // nothing can be due before input has rested, so the entries are only looked through
+  // then: this is asked on every pass of the main loop, and going through every entry of
+  // a large folder would cost each key about a millisecond. the price is one pass of the
+  // loop recoverDelay after the last input, with nothing to copy.
+  i64 left = lastInput + recoverDelay - TermNow();
+  if (left > 0) return (i32)left;
+
   bool waiting = false;
 
   for (u64 index = 0; index < workspace->count && !waiting; index++) {
     waiting = Waiting(workspace->entries[index].document);
   }
 
-  if (!waiting) return -1;
-
-  i64 left = lastInput + recoverDelay - TermNow();
-  return left < 0 ? 0 : (i32)left;
+  return waiting ? 0 : -1;
 }
 
 void
