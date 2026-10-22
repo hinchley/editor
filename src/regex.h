@@ -49,6 +49,10 @@ typedef struct Regex {
   // every match starts with this ascii byte (and its other case when ignoring case),
   // or 0.
   u8 firstByte;
+
+  // otherwise, when every match starts with a code point one instruction consumes (a
+  // class, say), that instruction's index plus one, or 0.
+  u32 firstStep;
 } Regex;
 
 // compiles source into regex, replacing what it held.

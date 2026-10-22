@@ -703,6 +703,8 @@ Analyse(Regex *regex)
   const RegexInstruction *first = &regex->program[pc];
   regex->lineStart = first->op == RegexOpAssert && first->value == RegexAssertLineStart;
   regex->firstByte = 0;
+  bool consumes = first->op == RegexOpChar || first->op == RegexOpClass;
+  regex->firstStep = consumes ? pc + 1 : 0;
   if (first->op != RegexOpChar || first->value >= 0x80) return;
 
   // the kelvin sign and the long s fold to k and s, so a skip to the ascii letters would
@@ -905,7 +907,12 @@ InClass(const Regex *regex, u32 index, u32 codepoint)
   const RegexClass *class = &regex->classes[index];
   bool found = InRanges(regex, class, codepoint);
 
-  if (!found && regex->ignoreCase) {
+  // the other case of an ascii letter is the only code point it lowers, raises or folds
+  // to, and the tables need not be searched for it.
+  if (!found && regex->ignoreCase && codepoint < 0x80) {
+    bool letter = (codepoint | 0x20) >= 'a' && (codepoint | 0x20) <= 'z';
+    found = letter && InRanges(regex, class, codepoint ^ 0x20);
+  } else if (!found && regex->ignoreCase) {
     found = InRanges(regex, class, Utf8Lower(codepoint)) ||
       InRanges(regex, class, Utf8Upper(codepoint)) ||
       InRanges(regex, class, Utf8Fold(codepoint));
@@ -1002,6 +1009,21 @@ RegexFind(
       if (!current->count && !anchored && regex->firstByte) {
         u64 found = NextFirst(regex, text, length, at);
         if (found == length || found >= limit) break;
+        if (found != at) place = PlaceAt(text, length, found, &codepoint, &size);
+        at = found;
+      } else if (!current->count && !anchored && regex->firstStep) {
+        // a thread is only started where the first instruction takes the code point.
+        const RegexInstruction *first = &regex->program[regex->firstStep - 1];
+        bool fold = regex->ignoreCase && first->op == RegexOpChar;
+        u64 found = at;
+
+        while (size && found < limit) {
+          if (Consumes(regex, first, codepoint, fold ? Utf8Fold(codepoint) : codepoint)) break;
+          found += size;
+          size = found < length ? Utf8Decode(text + found, length - found, &codepoint) : 0;
+        }
+
+        if (!size || found >= limit) break;
         if (found != at) place = PlaceAt(text, length, found, &codepoint, &size);
         at = found;
       }
