@@ -598,13 +598,13 @@ AppendField(StrBuf *status, const char *field)
 }
 
 // the fields of an image's status: its format and size, and the share of its size it is
-// shown at when that is less than all of it.
+// shown at, unless it is whole at its own size.
 static void
 DescribeImage(const StatusInfo *info, u32 scale, bool full, StrBuf *right)
 {
   if (full) StrBufAppendString(right, info->image);
 
-  if (scale && scale < 100) {
+  if (scale) {
     if (right->length) StrBufAppendString(right, "  ");
     StrBufAppendFormat(right, "%u%%", scale);
   }
@@ -640,7 +640,7 @@ DescribePosition(View *view, const StatusInfo *info, bool full, StrBuf *right)
 }
 
 // the unfocused view of a split shows only its name and flags, dimmed.
-// scale is the share of an image's size it is shown at, as a percentage.
+// scale is the share of an image's size it is shown at, as a percentage to show, or 0.
 static void
 DrawStatus(View *view, const StatusInfo *info, u32 scale, bool focused, i32 row)
 {
@@ -682,7 +682,7 @@ DrawStatus(View *view, const StatusInfo *info, u32 scale, bool focused, i32 row)
 }
 
 // draws a pane's image in the middle of its area, and returns the share of the image's
-// size it is shown at, as a percentage.
+// size it is shown at, as a percentage to show, or 0.
 static u32
 DrawImage(const Frame *frame, Image *image, i32 column, i32 width, i32 height)
 {
@@ -700,9 +700,7 @@ DrawImage(const Frame *frame, Image *image, i32 column, i32 width, i32 height)
   i32 left = column + (width - rendering->columns) / 2;
   const StrBuf *sixel = &rendering->sixel;
   ScreenPutImage(row, left, rendering->columns, rendering->rows, sixel, rendering->key);
-
-  u64 scale = (u64)rendering->width * 100 / image->bitmap.width;
-  return scale ? (u32)scale : 1;
+  return rendering->scale;
 }
 
 static void

@@ -95,6 +95,14 @@ Editing(void)
   };
 }
 
+// the size of a cell in pixels, or 0 when the terminal does not say.
+static void
+CellSize(i32 *width, i32 *height)
+{
+  *width = windowSize.width ? windowSize.pixelWidth / windowSize.width : 0;
+  *height = windowSize.height ? windowSize.pixelHeight / windowSize.height : 0;
+}
+
 static void
 Toggle(bool *setting, const char *name)
 {
@@ -614,6 +622,12 @@ ShowStatistics(void)
 {
   Document *document = Current();
   const Buffer *buffer = &document->buffer;
+
+  if (document->image) {
+    ImageStatistics(document->image, &message);
+    return;
+  }
+
   u64 lineBreak = document->file.lineEnding == LineEndingCrlf ? 2 : 1;
 
   Counts whole = {.lines = BufferLineCount(buffer)};
@@ -1054,6 +1068,72 @@ SearchCommand(enum Command command)
   return true;
 }
 
+static void
+ToggleImageSize(void)
+{
+  Image *image = Current()->image;
+
+  if (!image) {
+    StrBufAppendString(&message, "the buffer is not an image");
+    return;
+  }
+
+  bool actual = ImageToggleSize(image);
+  StrBufAppendString(
+    &message,
+    actual ? "actual size (the arrows move)" : "fitted to the window"
+  );
+}
+
+// moves the part of an image shown at its actual size, for the movement keys: by a cell,
+// a page, or to an edge or corner; false for any other command.
+static bool
+PanImage(Image *image, enum Command command)
+{
+  i32 cellWidth;
+  i32 cellHeight;
+  CellSize(&cellWidth, &cellHeight);
+  i64 page = (i64)(windowSize.height - 3) * cellHeight;
+  i64 far = INT32_MAX;
+
+  switch (command) {
+    case CommandMoveUp:
+      ImagePan(image, 0, -cellHeight);
+      break;
+    case CommandMoveDown:
+      ImagePan(image, 0, cellHeight);
+      break;
+    case CommandMoveLeft:
+      ImagePan(image, -cellWidth, 0);
+      break;
+    case CommandMoveRight:
+      ImagePan(image, cellWidth, 0);
+      break;
+    case CommandMovePageUp:
+      ImagePan(image, 0, -page);
+      break;
+    case CommandMovePageDown:
+      ImagePan(image, 0, page);
+      break;
+    case CommandMoveLineStart:
+      ImagePan(image, -far, 0);
+      break;
+    case CommandMoveLineEnd:
+      ImagePan(image, far, 0);
+      break;
+    case CommandMoveFileStart:
+      ImagePan(image, -far, -far);
+      break;
+    case CommandMoveFileEnd:
+      ImagePan(image, far, far);
+      break;
+    default:
+      return false;
+  }
+
+  return true;
+}
+
 // true when a command can run while the current buffer is an image, which is only looked
 // at: it leaves the buffer's text, cursors and file alone, or works on other buffers.
 static bool
@@ -1067,6 +1147,8 @@ ViewOnly(enum Command command)
     case CommandLoadNewFiles:
     case CommandCopyPath:
     case CommandOpenTerminal:
+    case CommandStatistics:
+    case CommandImageSize:
     case CommandNextBuffer:
     case CommandPreviousBuffer:
     case CommandLastBuffer:
@@ -1119,6 +1201,8 @@ static void
 RunCommand(const Binding *binding)
 {
   enum Command command = binding->command;
+  Image *image = Current()->image;
+  if (image && PanImage(image, command)) return;
   if (!ViewOnly(command) && RefuseImage()) return;
 
   View *view = CurrentView();
@@ -1196,6 +1280,9 @@ RunCommand(const Binding *binding)
       break;
     case CommandToggleRuler:
       Toggle(&displayOptions.ruler, "ruler");
+      break;
+    case CommandImageSize:
+      ToggleImageSize();
       break;
     case CommandToggleServers:
       ToggleServers();
@@ -1351,9 +1438,16 @@ HandleMouse(const MouseEvent *mouse)
   View *view = ViewAt(row, column, &document);
   if (!view) return;
 
-  // an image has no text to place a cursor in or scroll, but a press still moves the focus.
+  // an image has no text to place a cursor in, but a press still moves the focus, and the
+  // wheel moves the part shown at its actual size.
   if (document->image) {
     if (press && view != CurrentView()) SessionFocusOther();
+    if (!wheel) return;
+
+    i32 cellWidth;
+    i32 cellHeight;
+    CellSize(&cellWidth, &cellHeight);
+    ImagePan(document->image, 0, rows * cellHeight);
     return;
   }
 
@@ -1524,10 +1618,7 @@ Draw(void)
     .message = &message
   };
 
-  if (windowSize.width && windowSize.height) {
-    frame.cellWidth = windowSize.pixelWidth / windowSize.width;
-    frame.cellHeight = windowSize.pixelHeight / windowSize.height;
-  }
+  CellSize(&frame.cellWidth, &frame.cellHeight);
 
   Pane panes[2] = {};
   DescribePane(&panes[0], workspace.current, CurrentView(), &frame.panes[0]);

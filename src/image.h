@@ -19,19 +19,36 @@ typedef struct ImageRendering {
   i32 rows;
   u64 key;
 
-  // the area it was made for, in cells, and the size of a cell in pixels.
+  // the share of the image's size it is drawn at, as a percentage to show: 100 when it is
+  // cut to the area at its actual size, less when shrunk, and 0 when it is whole at its
+  // own size.
+  u32 scale;
+
+  // the area it was made for, in cells, the size of a cell in pixels, and the part of the
+  // image it shows when cut, from its top left pixel.
   i32 areaColumns;
   i32 areaRows;
   i32 cellWidth;
   i32 cellHeight;
+  bool cut;
+  u32 left;
+  u32 top;
 } ImageRendering;
 
 typedef struct Image {
   Bitmap bitmap;
 
-  // the format's name ("PNG") and what its decoder said of the pixels ("8-bit RGBA").
+  // the format's name ("PNG"), what its decoder said of the pixels ("8-bit RGBA") and the
+  // file's size in bytes.
   const char *format;
   StrBuf details;
+  u64 fileSize;
+
+  // shown at its actual size, cut to the area, rather than shrunk to fit; and then the
+  // pixel at the top left of the part shown, for every view of it.
+  bool actualSize;
+  u32 left;
+  u32 top;
 
   // the last two renderings, so both sides of a split can show the image at their own
   // sizes; next is the one made over next.
@@ -49,11 +66,28 @@ ImageOpen(const char *path, FileStamp *stamp, StrBuf *message);
 void
 ImageFree(Image *image);
 
-// the image drawn in an area of columns by rows cells, each cellWidth by cellHeight pixels.
+// the image drawn in an area of columns by rows cells, each cellWidth by cellHeight pixels:
+// fitted to it, or at its actual size cut to it (with the part shown kept inside the
+// image), with transparent pixels over a checkerboard.
 // it is valid until the image is drawn for two other areas, or freed.
 const ImageRendering *
 ImageRender(Image *image, i32 columns, i32 rows, i32 cellWidth, i32 cellHeight);
 
+// switches between fitting the image to its area and showing it at its actual size, from
+// its top left corner, and returns whether it is now at its actual size.
+bool
+ImageToggleSize(Image *image);
+
+// moves the part of an image shown at its actual size across and down by pixels, stopping
+// at its edges; it does nothing while the image is fitted.
+void
+ImagePan(Image *image, i64 across, i64 down);
+
 // appends the format and size, as "PNG 1920×1080".
 void
 ImageDescribe(const Image *image, StrBuf *text);
+
+// appends the format, size, what the pixels are and the file's size, as
+// "PNG 1920×1080, 8-bit RGBA, 2.4 MB".
+void
+ImageStatistics(const Image *image, StrBuf *text);

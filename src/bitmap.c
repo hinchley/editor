@@ -64,6 +64,42 @@ BitmapShrink(const Bitmap *source, u32 width, u32 height, Bitmap *scaled)
 }
 
 void
+BitmapCrop(const Bitmap *source, u32 x, u32 y, u32 width, u32 height, Bitmap *part)
+{
+  BitmapInit(part, width, height);
+  part->alpha = source->alpha;
+
+  for (u32 row = 0; row < height; row++) {
+    const u8 *from = source->pixels + ((u64)(y + row) * source->width + x) * 4;
+    memcpy(part->pixels + (u64)row * width * 4, from, (u64)width * 4);
+  }
+}
+
+void
+BitmapFlatten(Bitmap *bitmap, u32 size)
+{
+  // the two greys of the checkerboard.
+  static const u8 greys[2] = {0x3A, 0x4E};
+
+  u8 *pixel = bitmap->pixels;
+
+  for (u32 y = 0; y < bitmap->height; y++) {
+    for (u32 x = 0; x < bitmap->width; x++, pixel += 4) {
+      u32 grey = greys[(x / size + y / size) % 2];
+      u32 alpha = pixel[3];
+
+      for (u32 channel = 0; channel < 3; channel++) {
+        pixel[channel] = (u8)((pixel[channel] * alpha + grey * (255 - alpha) + 127) / 255);
+      }
+
+      pixel[3] = 255;
+    }
+  }
+
+  bitmap->alpha = false;
+}
+
+void
 BitmapOrient(Bitmap *bitmap, u32 orientation)
 {
   if (orientation < 2 || orientation > 8) return;
