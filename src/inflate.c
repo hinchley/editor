@@ -7,11 +7,19 @@ static constexpr i32 maxBits = 15;
 static constexpr i32 literalCodes = 288;
 static constexpr i32 distanceCodes = 30;
 
+// codes up to this many bits long are found with one table lookup.
+static constexpr i32 fastBits = 9;
+
 // a canonical huffman code: how many codes there are of each length, and the symbols in
 // order of their codes.
 typedef struct Huffman {
   u16 counts[maxBits + 1];
   u16 symbols[literalCodes];
+
+  // the symbol and length of each code of up to fastBits bits, by the next fastBits bits
+  // of the stream (length 0 for a longer code).
+  u16 fastSymbols[1 << fastBits];
+  u8 fastLengths[1 << fastBits];
 } Huffman;
 
 // the stream being decoded, read a bit at a time from the least significant end.
@@ -95,18 +103,53 @@ Build(Huffman *code, const u8 *lengths, i32 count)
     if (lengths[symbol]) code->symbols[offsets[lengths[symbol]]++] = (u16)symbol;
   }
 
+  // codes are read from the stream a bit at a time, most significant first, so a short
+  // code's entries are those whose low bits are the code reversed.
+  memset(code->fastLengths, 0, sizeof(code->fastLengths));
+  u32 next = 0;
+  u32 index = 0;
+
+  for (i32 length = 1; length <= fastBits; length++, next <<= 1) {
+    for (u32 counted = 0; counted < code->counts[length]; counted++, next++, index++) {
+      u32 reversed = 0;
+      for (i32 bit = 0; bit < length; bit++)
+        reversed |= (next >> bit & 1) << (length - 1 - bit);
+
+      for (u32 fill = reversed; fill < 1u << fastBits; fill += 1u << length) {
+        code->fastSymbols[fill] = code->symbols[index];
+        code->fastLengths[fill] = (u8)length;
+      }
+    }
+  }
+
   return true;
 }
 
-// decodes one symbol, a bit at a time (codes are stored most significant bit first).
+// decodes one symbol, with one lookup for a short code, or else a bit at a time (codes
+// are stored most significant bit first).
+// the lookup reads whole bytes ahead into the bit buffer, which Stored gives back.
 static i32
 Decode(Inflater *inflater, const Huffman *code)
 {
+  while (inflater->bitCount < fastBits && inflater->at < inflater->size) {
+    inflater->bits |= (u32)inflater->data[inflater->at++] << inflater->bitCount;
+    inflater->bitCount += 8;
+  }
+
+  u32 peek = inflater->bits & ((1u << fastBits) - 1);
+  i32 length = code->fastLengths[peek];
+
+  if (length && length <= inflater->bitCount) {
+    inflater->bits >>= length;
+    inflater->bitCount -= length;
+    return code->fastSymbols[peek];
+  }
+
   i32 value = 0;
   i32 first = 0;
   i32 index = 0;
 
-  for (i32 length = 1; length <= maxBits; length++) {
+  for (length = 1; length <= maxBits; length++) {
     value |= (i32)Bits(inflater, 1);
     if (inflater->failed) return -1;
 
@@ -136,7 +179,9 @@ Room(Inflater *inflater, u64 count)
 static void
 Stored(Inflater *inflater)
 {
-  // a stored block starts at the next byte.
+  // a stored block starts at the next byte, so whole bytes Decode read ahead are given
+  // back, and the rest of the partial one dropped.
+  inflater->at -= (u64)(inflater->bitCount / 8);
   inflater->bits = 0;
   inflater->bitCount = 0;
 
