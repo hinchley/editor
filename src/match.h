@@ -49,6 +49,6 @@ MatchFind(
   bool *wrapped
 );
 
-// counts every match in the buffer.
+// counts the matches in the buffer, stopping at limit.
 u64
-MatchCount(const MatchSet *set, const Buffer *buffer);
+MatchCount(const MatchSet *set, const Buffer *buffer, u64 limit);

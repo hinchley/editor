@@ -67,6 +67,9 @@ static constexpr u64 maxImagePixels = 40'000'000;
 // project search lists at most this many matching lines.
 static constexpr u64 maxProjectHits = 10'000;
 
+// alt+c counts unknown words up to this many.
+static constexpr u64 maxSpellCount = 10'000;
+
 // syntax highlighting is skipped for buffers larger than this.
 static constexpr u64 maxHighlightSize = 16ull * 1024 * 1024;
 

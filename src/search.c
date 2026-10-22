@@ -1,9 +1,11 @@
 #include "search.h"
 
 #include <ctype.h>
+#include <string.h>
 
 #include "move.h"
 #include "prompt.h"
+#include "settings.h"
 #include "spell.h"
 #include "utf8.h"
 
@@ -221,11 +223,34 @@ Relabel(
   Label();
 }
 
+// true when the last pattern found nothing and text only adds to it, so text cannot match
+// either: it is literal text (no whole word, no "$" at the end, the same case matching)
+// that every match of text would hold a match of.
+// the last byte of the old pattern and the first added one are both ascii, which keeps
+// a grapheme break between them, and the old one is not a backslash, which would start
+// an escape.
+static bool
+CannotMatch(const char *text, u64 length)
+{
+  const StrBuf *old = &last.source;
+  bool literal = !regex && !last.options.regex && !last.options.wholeWord;
+  if (found || !literal || last.lineEnd || !last.text.length) return false;
+  if (last.options.caseSensitive != caseSensitive || length <= old->length) return false;
+
+  u8 before = (u8)old->data[old->length - 1];
+  u8 after = (u8)text[old->length];
+  if (before >= 0x80 || after >= 0x80 || before == '\\') return false;
+  return memcmp(text, old->data, old->length) == 0;
+}
+
 static void
 FindChanged([[maybe_unused]] void *context, const char *text, u64 length)
 {
+  // the buffer cannot change while find is open, so the search can be skipped.
+  bool hopeless = CannotMatch(text, length);
   SetPattern(text, length);
-  ShowFirst();
+  if (hopeless) Label();
+  else ShowFirst();
 }
 
 static void
@@ -363,22 +388,27 @@ SearchSpell(void)
   Document *document = Current();
   document->marks = MatchKindSpell;
   MatchSet set = SearchMarks(document);
-  u64 count = MatchCount(&set, &document->buffer);
+  View *view = document->view;
+  Position from = CursorSetPrimary(&view->cursors)->head;
+  Range match;
+  bool around;
 
-  if (!count) {
+  if (!MatchFind(&set, &document->buffer, from, false, &match, &around)) {
     document->marks = MatchKindNone;
     ReportNoMatch(&set);
     return;
   }
 
-  View *view = document->view;
   CursorSetCollapse(&view->cursors);
-  Position from = CursorSetPrimary(&view->cursors)->head;
-  Range match;
-  bool around;
-  MatchFind(&set, &document->buffer, from, false, &match, &around);
   Select(match);
-  StrBufAppendFormat(message, "%lu unknown word%s", count, count == 1 ? "" : "s");
+
+  // counting stops at maxSpellCount, as counting every word of a large file takes seconds.
+  u64 count = MatchCount(&set, &document->buffer, maxSpellCount + 1);
+  if (count > maxSpellCount) {
+    StrBufAppendFormat(message, "over %lu unknown words", maxSpellCount);
+  } else {
+    StrBufAppendFormat(message, "%lu unknown word%s", count, count == 1 ? "" : "s");
+  }
 }
 
 static void

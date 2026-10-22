@@ -124,13 +124,13 @@ MatchFind(
 }
 
 u64
-MatchCount(const MatchSet *set, const Buffer *buffer)
+MatchCount(const MatchSet *set, const Buffer *buffer, u64 limit)
 {
   u64 count = 0;
 
-  for (u64 line = 0; line < BufferLineCount(buffer); line++) {
+  for (u64 line = 0; line < BufferLineCount(buffer) && count < limit; line++) {
     PatternMatch match = {};
-    while (MatchInLine(set, buffer, line, match.end, &match)) count++;
+    while (count < limit && MatchInLine(set, buffer, line, match.end, &match)) count++;
   }
 
   return count;
