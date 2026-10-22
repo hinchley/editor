@@ -144,10 +144,9 @@ CompareEntries(const void *a, const void *b)
   if (!first->unnamed != !second->unnamed) return first->unnamed ? 1 : -1;
   if (first->unnamed) return first->unnamed < second->unnamed ? -1 : 1;
 
-  // by the names shown, so the files of each folder come together.
-  const StrBuf *firstName = WorkspaceShownName(workspace, *(const u64 *)a);
-  const StrBuf *secondName = WorkspaceShownName(workspace, *(const u64 *)b);
-  return strcmp(firstName->data, secondName->data);
+  // by the names shown (brought up to date before sorting), so the files of each folder
+  // come together.
+  return strcmp(first->name.data, second->name.data);
 }
 
 static const char *
@@ -207,6 +206,7 @@ Pick(bool unsavedOnly, u64 selected)
     return;
   }
 
+  for (u64 index = 0; index < count; index++) WorkspaceShownName(workspace, order[index]);
   qsort(order, count, sizeof(u64), CompareEntries);
   PickerBegin();
   StrBuf name = {};

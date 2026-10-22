@@ -358,7 +358,8 @@ Resolve(const char *path, StrBuf *real)
   if (!lastResolved) return;
 
   StrBufAppend(real, lastReal.data, lastReal.length);
-  StrBufAppendFormat(real, "/%s", slash ? slash + 1 : path);
+  StrBufAppendByte(real, '/');
+  StrBufAppendString(real, slash ? slash + 1 : path);
 }
 
 // the start of the last count components of a folder's resolved path.
