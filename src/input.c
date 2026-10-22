@@ -28,7 +28,7 @@ typedef struct Csi {
   u32 fields[4][3];
 } Csi;
 
-// a keypad key the kitty protocol reports with a private use code point.
+// a keypad key foot reports with a private use code point.
 typedef struct KeypadKey {
   u32 code;
   u32 key;
@@ -102,6 +102,8 @@ KeyEvent(Parse *parse, u32 code, u8 modifiers)
   return ParseEvent;
 }
 
+// a key reported as CSI code u.
+// foot always reports the unshifted key, and sends a shifted letter as plain text.
 static enum ParseResult
 KittyKey(Parse *parse, u32 code, u8 modifiers)
 {
@@ -112,36 +114,19 @@ KittyKey(Parse *parse, u32 code, u8 modifiers)
 
   // other private use codes are functional keys the editor has no use for.
   if (code >= 57344 && code <= 63743) return ParseSkip;
-
-  // the protocol reports the unshifted key, but be tolerant of terminals that do not.
-  if (code >= 'A' && code <= 'Z') {
-    code += 'a' - 'A';
-    modifiers |= KeyModifierShift;
-  }
-
-  // shift alone on a letter is just a capital letter.
-  if (modifiers == KeyModifierShift && code >= 'a' && code <= 'z') {
-    code -= 'a' - 'A';
-    modifiers = 0;
-  }
-
   return KeyEvent(parse, code, modifiers);
 }
 
+// a key reported as CSI number ~.
+// F3 and above are reported this way too, and are skipped.
 static u32
 TildeKey(u32 number)
 {
   switch (number) {
-    case 1:
-    case 7:
-      return KeyHome;
     case 2:
       return KeyInsert;
     case 3:
       return KeyDelete;
-    case 4:
-    case 8:
-      return KeyEnd;
     case 5:
       return KeyPageUp;
     case 6:
@@ -151,6 +136,8 @@ TildeKey(u32 number)
   }
 }
 
+// a key reported as CSI 1 ; modifiers letter, or CSI letter without modifiers.
+// F1, F2 and F4 are reported this way too, and are skipped.
 static u32
 LetterKey(u8 final)
 {
@@ -248,11 +235,9 @@ InterpretCsi(Parse *parse, const Csi *csi)
   u8 modifiers = DecodeModifiers(csi->fields[1][0]);
 
   if (csi->marker == '?') {
-    if (csi->final == 'R') return CursorReport(parse, csi);
     if (csi->final != 'u') return ParseSkip;
 
     parse->event->type = InputEventKeyboardReport;
-    parse->event->flags = first;
     return ParseEvent;
   }
 
@@ -266,8 +251,6 @@ InterpretCsi(Parse *parse, const Csi *csi)
     case '~':
       if (first == 200) return Paste(parse);
       return KeyEvent(parse, TildeKey(first), modifiers);
-    case 'Z':
-      return KeyEvent(parse, KeyTab, KeyModifierShift);
     case 'R':
       return CursorReport(parse, csi);
     default:
@@ -320,78 +303,53 @@ ParseCsi(Parse *parse)
 }
 
 static enum ParseResult
-ParseControl(Parse *parse, u8 byte, u8 modifiers)
+ParseControl(Parse *parse, u8 byte)
 {
-  // legacy control bytes, still sent for unmodified enter, tab and backspace.
+  // the only control bytes foot sends: enter, tab and backspace without modifiers.
   switch (byte) {
     case '\r':
-      return KeyEvent(parse, KeyEnter, modifiers);
+      return KeyEvent(parse, KeyEnter, 0);
     case '\t':
-      return KeyEvent(parse, KeyTab, modifiers);
-    case 0x08:
+      return KeyEvent(parse, KeyTab, 0);
     case 0x7F:
-      return KeyEvent(parse, KeyBackspace, modifiers);
-    case 0x00:
-      return KeyEvent(parse, KeySpace, modifiers | KeyModifierControl);
+      return KeyEvent(parse, KeyBackspace, 0);
     default:
-      if (byte > 0x1A) return ParseSkip;
-      return KeyEvent(parse, (u32)('a' + byte - 1), modifiers | KeyModifierControl);
+      return ParseSkip;
   }
 }
 
 static enum ParseResult
-ParseText(Parse *parse, u64 offset, u8 modifiers)
+ParseText(Parse *parse)
 {
-  const u8 *bytes = (const u8 *)parse->text + offset;
-  u64 length = parse->length - offset;
+  const u8 *bytes = (const u8 *)parse->text;
 
   if (bytes[0] < 0x20 || bytes[0] == 0x7F) {
-    parse->size = offset + 1;
-    return ParseControl(parse, bytes[0], modifiers);
+    parse->size = 1;
+    return ParseControl(parse, bytes[0]);
   }
 
   u32 expected = Utf8SequenceLength(bytes[0]);
-  if (expected > length) return ParseIncomplete;
+  if (expected > parse->length) return ParseIncomplete;
 
   u32 codepoint;
-  u32 size = Utf8Decode((const char *)bytes, length, &codepoint);
-  parse->size = offset + size;
+  u32 size = Utf8Decode(parse->text, parse->length, &codepoint);
+  parse->size = size;
 
   // a stray invalid byte is noise rather than something the user typed.
   if (codepoint == utf8Replacement && size == 1) return ParseSkip;
-  return KittyKey(parse, codepoint, modifiers);
-}
-
-static enum ParseResult
-ParseEscape(Parse *parse)
-{
-  if (parse->length < 2) return ParseIncomplete;
-
-  u8 next = (u8)parse->text[1];
-  if (next == '[') return ParseCsi(parse);
-
-  if (next == 'O') {
-    // ss3 form of the cursor keys.
-    if (parse->length < 3) return ParseIncomplete;
-
-    parse->size = 3;
-    return KeyEvent(parse, LetterKey((u8)parse->text[2]), 0);
-  }
-
-  if (next == 0x1B) {
-    parse->size = 1;
-    return KeyEvent(parse, KeyEscape, 0);
-  }
-
-  // legacy alt prefix.
-  return ParseText(parse, 1, KeyModifierAlt);
+  return KeyEvent(parse, codepoint, 0);
 }
 
 static enum ParseResult
 ParseAny(Parse *parse)
 {
-  if (parse->text[0] == '\x1b') return ParseEscape(parse);
-  return ParseText(parse, 0, 0);
+  if (parse->text[0] != '\x1b') return ParseText(parse);
+  if (parse->length < 2) return ParseIncomplete;
+  if (parse->text[1] == '[') return ParseCsi(parse);
+
+  // foot sends every key with an escape as a csi sequence, so anything else is noise.
+  parse->size = 1;
+  return ParseSkip;
 }
 
 void
@@ -418,9 +376,9 @@ InputNext(InputEvent *event)
     if (result == ParseIncomplete) {
       if (!expired || pasteOpen) return false;
 
-      // a lone escape was the key itself, anything longer is a broken sequence.
+      // the rest of the sequence is not coming, so it is dropped.
       parse.size = parse.length;
-      result = parse.length == 1 ? KeyEvent(&parse, KeyEscape, 0) : ParseSkip;
+      result = ParseSkip;
     }
 
     inputStart += parse.size;

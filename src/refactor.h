@@ -2,7 +2,7 @@
 
 // refactor: the commands that change code as the buffer's language server says: renaming
 // the symbol at the cursor wherever it is used (alt+shift+n), taking a fix for a
-// diagnostic on the cursor's line (alt+y), and formatting the buffer (alt+shift+i).
+// diagnostic on the cursor's line (alt+y), and formatting the buffer (ctrl+shift+i).
 // the changes go into each file's buffer as one undo step, opening the files that are not
 // open, and nothing is saved.
 #include "strbuf.h"

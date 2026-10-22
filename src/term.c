@@ -137,7 +137,7 @@ Handshake(void)
 {
   // ask for the keyboard protocol flags, then the cursor position.
   // every terminal answers the second, so a cursor report without a keyboard report
-  // before it means the protocol is not supported.
+  // before it means the protocol is not supported, and this is not foot.
   static constexpr char query[] = "\x1b[?u\x1b[6n";
   TermWrite(query, sizeof(query) - 1);
 
@@ -150,7 +150,7 @@ Handshake(void)
     while (InputNext(&event)) {
       if (event.type == InputEventKeyboardReport) keyboardProtocol = true;
       if (event.type != InputEventCursorReport) continue;
-      if (!keyboardProtocol) Fatal("the kitty keyboard protocol is not supported");
+      if (!keyboardProtocol) Fatal("no kitty keyboard protocol (the editor runs in foot)");
 
       return;
     }

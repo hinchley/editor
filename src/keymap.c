@@ -155,7 +155,7 @@ const Binding keymapBindings[] = {
   {{'p', alt}, CommandFindPrevious, "go to the previous match"},
   {{'w', control}, CommandJumpWord, "go to the next occurrence of the word at the cursor"},
   {{'r', control}, CommandReplace, "search and replace in the buffer"},
-  {{'f', alt | shift}, CommandProjectSearch, "search the loaded files"},
+  {{'f', control | shift}, CommandProjectSearch, "search the loaded files"},
   {{'f', alt}, CommandProjectResults, "reopen the list of matches in the loaded files"},
   {{'l', control}, CommandGoToLine, "go to a line number"},
 
@@ -194,7 +194,7 @@ const Binding keymapBindings[] = {
     CommandRename,
     "rename the name at the cursor everywhere (language server)"},
   {{'y', alt}, CommandFix, "fix a diagnostic on the line (language server)"},
-  {{'i', alt | shift}, CommandFormat, "format the buffer (language server)"},
+  {{'i', control | shift}, CommandFormat, "format the buffer (language server)"},
   {{'z', alt | shift},
     CommandReviewMultifile,
     "list the last change across files (ctrl+z and ctrl+y in the list undo and redo it)"},

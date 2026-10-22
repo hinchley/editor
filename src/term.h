@@ -1,7 +1,8 @@
 #pragma once
 
-// the terminal session: raw mode, the alternate screen, the kitty keyboard protocol,
-// bracketed paste, mouse reporting, the cursor shape, window size and resize notification.
+// the terminal session in foot: raw mode, the alternate screen, the kitty keyboard
+// protocol, bracketed paste, mouse reporting, the cursor shape, window size and resize
+// notification.
 // every way out of the program goes through TermStop, so the terminal is always restored.
 #include <poll.h>
 
@@ -22,8 +23,8 @@ enum TermWait {
 };
 
 // puts the terminal into editor mode.
-// ends the program with a message if the terminal is unsuitable (for example, no kitty
-// keyboard protocol), leaving it as it was.
+// ends the program with a message if the terminal does not answer as foot does (it has no
+// kitty keyboard protocol, as in the linux console or tmux), leaving it as it was.
 void
 TermStart(void);
 

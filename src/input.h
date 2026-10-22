@@ -1,9 +1,9 @@
 #pragma once
 
-// decodes the byte stream from the terminal into input events.
-// it understands the kitty keyboard protocol, the legacy sequences terminals still send
-// for some keys under it, bracketed paste, sgr mouse reports and the replies to terminal
-// queries.
+// decodes the byte stream from foot into input events.
+// it understands the kitty keyboard protocol with the disambiguate flag as foot sends it
+// (with the cursor keys, home, end, page up and down, insert and delete in their csi
+// forms), bracketed paste, sgr mouse reports and the replies to the startup queries.
 // the decoder only parses bytes; term.c reads them and feeds them in.
 #include "key.h"
 #include "types.h"
@@ -58,9 +58,6 @@ typedef struct InputEvent {
   i32 row;
   i32 column;
 
-  // InputEventKeyboardReport: the active kitty keyboard protocol flags.
-  u32 flags;
-
   // InputEventMouse.
   MouseEvent mouse;
 
@@ -84,7 +81,6 @@ InputNext(InputEvent *event);
 bool
 InputPending(void);
 
-// resolves an incomplete sequence after a timeout.
-// a lone escape byte becomes the escape key, anything else is dropped.
+// drops an incomplete sequence after a timeout.
 void
 InputExpire(void);
