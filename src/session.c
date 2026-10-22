@@ -433,16 +433,6 @@ OpenFile(LoaderFile *file)
   if (index != workspaceNone) Switch(index);
 }
 
-// true when the file is one of the loaded entries, by file or by path (a save replaces
-// the file, so its file id changes).
-static bool
-Loaded(const LoaderFile *file)
-{
-  LoaderFile byPath = {.path = file->path};
-  if (WorkspaceFind(workspace, file) != workspaceNone) return true;
-  return WorkspaceFind(workspace, &byPath) != workspaceNone;
-}
-
 // true when path is one of the remembered folders, as given or once resolved.
 static bool
 FolderOpen(const char *path)
@@ -473,7 +463,7 @@ AddPending(void)
 
   for (u64 index = 0; index < pending.count; index++) {
     LoaderFile *file = &pending.files[index];
-    if (Loaded(file)) continue;
+    if (WorkspaceFind(workspace, file) != workspaceNone) continue;
 
     if (workspace->count >= maxFileCount) {
       left++;
@@ -657,7 +647,8 @@ SessionLoadNew(void)
 
   for (u64 index = 0; index < list.count; index++) {
     LoaderFile *file = &list.files[index];
-    bool fresh = !PathsHas(&known, file->path.data) && !Loaded(file);
+    bool fresh = !PathsHas(&known, file->path.data) &&
+      WorkspaceFind(workspace, file) == workspaceNone;
 
     if (fresh && !full && Full()) full = true;
     if (fresh && full) continue;

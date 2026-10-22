@@ -80,7 +80,9 @@ StampOf(const struct stat *status)
     .inode = status->st_ino,
     .size = (u64)status->st_size,
     .seconds = status->st_mtim.tv_sec,
-    .nanoseconds = status->st_mtim.tv_nsec
+    .nanoseconds = status->st_mtim.tv_nsec,
+    .changeSeconds = status->st_ctim.tv_sec,
+    .changeNanoseconds = status->st_ctim.tv_nsec
   };
 }
 
@@ -91,7 +93,8 @@ FileStampEqual(FileStamp a, FileStamp b)
   if (!a.exists) return true;
 
   return a.device == b.device && a.inode == b.inode && a.size == b.size &&
-    a.seconds == b.seconds && a.nanoseconds == b.nanoseconds;
+    a.seconds == b.seconds && a.nanoseconds == b.nanoseconds &&
+    a.changeSeconds == b.changeSeconds && a.changeNanoseconds == b.changeNanoseconds;
 }
 
 // true when the version current on disk is not the file's own.
@@ -482,7 +485,10 @@ WriteAndReplace(Save *save)
     unlink(temporary.data);
     AppendError(save->message, file, step, error);
   } else {
-    file->stamp = StampOf(&status);
+    // the rename sets the file's change time, so it is read again from the target.
+    struct stat placed;
+    bool same = stat(save->target.data, &placed) == 0 && placed.st_ino == status.st_ino;
+    file->stamp = StampOf(same ? &placed : &status);
     file->readOnly = false;
   }
 

@@ -1,6 +1,7 @@
 #include "git.h"
 
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
@@ -40,7 +41,8 @@ enum ObjectType {
   ObjectRefDelta = 7
 };
 
-// one pack: its index and its data, mapped into memory until the editor exits.
+// one pack: its index and its data, mapped into memory until the editor exits or the pack
+// is removed (see DropRemovedPacks).
 typedef struct Pack {
   StrBuf name;
   const u8 *index;
@@ -752,6 +754,40 @@ ReadRef(GitRepo *repo, const char *name, GitHash *hash, StrBuf *target, FileStam
   return found;
 }
 
+// unmaps the packs whose files are gone, which git gc and repack replace, forgetting the
+// objects cached from them, so their space is freed; their objects are found in the new
+// packs when next asked for.
+// only called between reads, since a read may be using a pack.
+static void
+DropRemovedPacks(GitRepo *repo)
+{
+  u32 kept = 0;
+
+  for (u32 index = 0; index < repo->packCount; index++) {
+    Pack *pack = repo->packs[index];
+    StrBuf path = {};
+    StrBufAppendFormat(&path, "%s/objects/pack/%s", repo->gitDir.data, pack->name.data);
+    bool gone = access(path.data, F_OK) != 0 && errno == ENOENT;
+    StrBufFree(&path);
+
+    if (!gone) {
+      repo->packs[kept++] = pack;
+      continue;
+    }
+
+    for (u32 slot = 0; slot < cacheSize; slot++) {
+      if (cache[slot].pack == pack) cache[slot] = (CacheEntry){.data = cache[slot].data};
+    }
+
+    munmap((void *)pack->index, pack->indexSize);
+    munmap((void *)pack->data, pack->dataSize);
+    StrBufFree(&pack->name);
+    free(pack);
+  }
+
+  repo->packCount = kept;
+}
+
 static void
 ReadHead(GitRepo *repo)
 {
@@ -821,6 +857,8 @@ GitHead(GitRepo *repo, GitHash *commit)
     }
   }
 
+  // a commit, gc or repack changes the refs, and the last two replace packs.
+  if (!fresh) DropRemovedPacks(repo);
   if (!fresh) ReadHead(repo);
   *commit = repo->head;
   return repo->headValid;

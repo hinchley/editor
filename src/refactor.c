@@ -349,13 +349,15 @@ Fixed([[maybe_unused]] void *context, const LspAction *actions, u32 count, bool 
   // the server's preferred fix comes first.
   KeepFixes(actions, count);
   PickerBegin();
-  u32 first = 0;
+  u32 first = count;
 
   for (u32 index = 0; index < count; index++) {
     const char *title = actions[index].title;
     PickerAdd(title, strlen(title), actions[index].preferred ? "preferred" : nullptr, index);
-    if (actions[index].preferred && !first) first = index;
+    if (actions[index].preferred && first == count) first = index;
   }
+
+  if (first == count) first = 0;
 
   StrBuf title = {};
   StrBufAppendFormat(&title, "%u fixes for line %lu", count, asked.head.line + 1);

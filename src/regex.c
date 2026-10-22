@@ -359,8 +359,12 @@ ParseClass(Parser *parser)
     bool range = Peek(parser) == '-' && parser->at + 1 < parser->length &&
       parser->source[parser->at + 1] != ']';
 
+    // without case, a member's folded form counts too (the text's own forms are tried as
+    // it is matched), so [ſ] takes s; a range is left as it is.
     if (!range) {
       AddRange(&list, low, low);
+      u32 folded = Utf8Fold(low);
+      if (parser->regex->ignoreCase && folded != low) AddRange(&list, folded, folded);
       continue;
     }
 

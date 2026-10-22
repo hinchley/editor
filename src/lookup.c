@@ -9,11 +9,9 @@
 #include "lsp.h"
 #include "memory.h"
 #include "move.h"
+#include "picker.h"
 #include "places.h"
 #include "symbols.h"
-
-// what a reference's note keeps of its line.
-static constexpr u64 maxNoteLength = 200;
 
 static Workspace *workspace;
 static StrBuf *message;
@@ -233,8 +231,8 @@ CompareReferences(const void *first, const void *second)
   return order ? order : PositionCompare(a->range.start, b->range.start);
 }
 
-// appends a reference's line without the blanks before it, from its buffer when it is
-// open, or else from its file, read once for every reference in it.
+// appends a reference's line as a list shows it, from its buffer when it is open, or else
+// from its file, read once for every reference in it.
 static void
 AppendLine(StrBuf *note, const Reference *reference, StrBuf *read, u64 *readSerial)
 {
@@ -271,12 +269,7 @@ AppendLine(StrBuf *note, const Reference *reference, StrBuf *read, u64 *readSeri
     }
   }
 
-  while (length && (*text == ' ' || *text == '\t')) {
-    text++;
-    length--;
-  }
-
-  StrBufAppend(note, text, length < maxNoteLength ? length : maxNoteLength);
+  PickerAppendLine(note, text, length);
 }
 
 static void

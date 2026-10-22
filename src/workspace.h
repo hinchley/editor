@@ -109,8 +109,8 @@ WorkspaceFree(Workspace *workspace);
 void
 WorkspaceAddList(Workspace *workspace, LoaderList *list);
 
-// the entry already loaded for the same file (or, for a file that does not exist yet,
-// the same path), or workspaceNone.
+// the entry already loaded for the same file, found by its file id (as the entry last
+// loaded or saved it) or by the same path, or workspaceNone.
 u64
 WorkspaceFind(const Workspace *workspace, const LoaderFile *file);
 

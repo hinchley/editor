@@ -88,21 +88,24 @@ EntryPath(const WorkspaceEntry *entry)
   return entry->document ? &entry->document->file.path : &entry->path;
 }
 
-// the file an entry is, including one that a save has created since it was loaded.
+// the file an entry is: an open document's as last loaded or saved (a save gives it a new
+// inode), or else the one the loader found.
 static FileId
 EntryId(const WorkspaceEntry *entry)
 {
-  if (entry->id.inode || !entry->document) return entry->id;
-
-  const FileStamp *stamp = &entry->document->file.stamp;
-  return stamp->exists ? (FileId){stamp->device, stamp->inode} : (FileId){};
+  const FileStamp *stamp = entry->document ? &entry->document->file.stamp : nullptr;
+  if (stamp && stamp->exists) return (FileId){stamp->device, stamp->inode};
+  return entry->id;
 }
 
+// true when the entry is the file, by file id or else by path, since another program may
+// have replaced the file since the entry last read or wrote it.
 static bool
 SameFile(const WorkspaceEntry *entry, const LoaderFile *file)
 {
   FileId id = EntryId(entry);
-  if (file->id.inode) return id.device == file->id.device && id.inode == file->id.inode;
+  bool sameId = file->id.inode && id.device == file->id.device && id.inode == file->id.inode;
+  if (sameId) return true;
 
   const StrBuf *path = EntryPath(entry);
   if (path->length != file->path.length || !path->length) return false;

@@ -458,14 +458,21 @@ Changed(void *context, const BufferChange *change)
   InvalidateWindows(highlight);
   highlight->size = highlight->size - change->oldLength + change->newLength;
 
-  // the offsets of lines up to the change's first line are still right afterwards.
-  u64 start = LineOffset(highlight, change->start.line) + change->start.byte;
-  highlight->offsetCount = change->start.line + 1;
-
   bool tooLarge = highlight->size > maxHighlightSize;
   if (tooLarge && !highlight->tooLarge) ForgetTrees(highlight);
   highlight->tooLarge = tooLarge;
-  if (tooLarge || highlight->tooSlow) return;
+
+  // the offsets of lines up to the change's first line are still right afterwards.
+  // a highlighter that is off only drops the rest, rather than walk every line up to the
+  // change to work out where it starts.
+  if (tooLarge || highlight->tooSlow) {
+    u64 kept = change->start.line + 1;
+    if (highlight->offsetCount > kept) highlight->offsetCount = kept;
+    return;
+  }
+
+  u64 start = LineOffset(highlight, change->start.line) + change->start.byte;
+  highlight->offsetCount = change->start.line + 1;
 
   TSInputEdit edit = {
     .start_byte = (u32)start,
@@ -566,11 +573,13 @@ Read(void *payload, [[maybe_unused]] u32 byte, TSPoint point, u32 *bytesRead)
   return "\n";
 }
 
+// the processor time this thread has used, so a busy machine, a stopped process or a
+// suspend during a parse does not count against its deadline.
 static i64
 Milliseconds(void)
 {
   struct timespec now;
-  clock_gettime(CLOCK_MONOTONIC, &now);
+  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now);
   return now.tv_sec * 1000 + now.tv_nsec / 1'000'000;
 }
 
@@ -1466,7 +1475,7 @@ HighlightSymbolsOfText(
 )
 {
   u32 grammar = lang->index;
-  if (length > maxHighlightSize || !CompileTags(grammar)) return false;
+  if (length > maxHighlightSize || !CompileTags(grammar)) return true;
 
   TSParser *parser = ts_parser_new();
   ts_parser_set_language(parser, compiled[grammar].language);

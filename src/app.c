@@ -1564,6 +1564,9 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
   }
 
   // the language, noting when the buffer is too large or slow to colour.
+  // asking for the top line's colours first parses the buffer, which may be what finds it
+  // too slow, so the note shows in the frame drawn without colour.
+  HighlightLine(document->highlight, view->top.line, 0);
   if (document->lang) StrBufAppendString(&pane->type, document->lang->name);
   if (HighlightDisabled(document->highlight)) StrBufAppendString(&pane->type, " (uncoloured)");
   LspDescribe(document->lsp, &pane->type);

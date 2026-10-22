@@ -121,12 +121,17 @@ LuaClass(char letter)
 // rewrites a lua pattern (for #lua-match?) as a posix regular expression: %a style classes
 // (a capital letter is the complement, outside brackets), %x escapes, and the lazy
 // repetition "-", which is "*" for a test that only asks whether it matches.
-// characters special to posix but not to lua ({, }, | and \) are escaped.
+// characters special to posix but not to lua ({, }, | and \, and ^ and $ away from the
+// ends) are escaped.
+// %] in brackets moves to their start, the only place posix takes it literally.
 // %b and %f have no equivalent and match their letter.
 static void
 ConvertLuaPattern(const char *source, StrBuf *output)
 {
   bool inBracket = false;
+
+  // where the members of the open bracket start in output.
+  u64 members = 0;
 
   for (const char *at = source; *at; at++) {
     if (*at == '%' && at[1]) {
@@ -134,7 +139,9 @@ ConvertLuaPattern(const char *source, StrBuf *output)
       const char *class = LuaClass(*at);
       bool complement = *at >= 'A' && *at <= 'Z';
 
-      if (!class) {
+      if (inBracket && *at == ']') {
+        if (output->data[members] != ']') StrBufInsert(output, members, "]", 1);
+      } else if (!class) {
         if (!inBracket) StrBufAppendByte(output, '\\');
         StrBufAppendByte(output, *at);
       } else if (inBracket) {
@@ -156,6 +163,7 @@ ConvertLuaPattern(const char *source, StrBuf *output)
       inBracket = true;
       StrBufAppendByte(output, *at);
       if (at[1] == '^') StrBufAppendByte(output, *++at);
+      members = output->length;
       if (at[1] == ']') StrBufAppendByte(output, *++at);
       continue;
     }
@@ -165,7 +173,9 @@ ConvertLuaPattern(const char *source, StrBuf *output)
       continue;
     }
 
-    if (*at == '{' || *at == '}' || *at == '|' || *at == '\\') StrBufAppendByte(output, '\\');
+    bool anchor = (*at == '^' && at == source) || (*at == '$' && !at[1]);
+    bool special = *at == '{' || *at == '}' || *at == '|' || *at == '\\';
+    if (special || ((*at == '^' || *at == '$') && !anchor)) StrBufAppendByte(output, '\\');
     StrBufAppendByte(output, *at);
   }
 }

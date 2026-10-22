@@ -7,9 +7,6 @@
 #include "picker.h"
 #include "places.h"
 
-// what a place's note keeps of its line.
-static constexpr u64 maxNoteLength = 200;
-
 // a file's part of the change: its entry, and the undo group that made it.
 typedef struct Part {
   u64 serial;
@@ -307,18 +304,12 @@ ListKey([[maybe_unused]] void *context, Key key)
   return true;
 }
 
-// appends a place's line, without the blanks before it, to note.
+// appends a place's line to note, as a list shows it.
 static void
 AppendLine(StrBuf *note, const Buffer *buffer, u64 line)
 {
   const StrBuf *text = BufferLine(buffer, line);
-  u64 start = 0;
-  while (start < text->length && (text->data[start] == ' ' || text->data[start] == '\t')) {
-    start++;
-  }
-
-  u64 length = text->length - start;
-  StrBufAppend(note, text->data + start, length < maxNoteLength ? length : maxNoteLength);
+  PickerAppendLine(note, text->data ? text->data : "", text->length);
 }
 
 void

@@ -15,9 +15,6 @@
 #include "search.h"
 #include "settings.h"
 
-// how much of a matching line the list keeps, in bytes.
-static constexpr u64 maxShownLength = 200;
-
 static constexpr u64 noHit = UINT64_MAX;
 
 // the revision of a hit read from a file on disk rather than from an open buffer.
@@ -29,8 +26,10 @@ typedef struct Hit {
   u64 entry;
   u64 line;
 
-  // the revision of the buffer it was found in, or noRevision.
+  // the revision of the buffer it was found in, or noRevision and the version of the file
+  // it was read from.
   u64 revision;
+  FileStamp stamp;
 
   // its first match, in bytes.
   u64 start;
@@ -109,32 +108,25 @@ AppendHit(Hit hit)
   if (hitCount == maxProjectHits) capped = true;
 }
 
+// appends hit, which has its entry, line and source, with its match and shown text.
 static void
-AddHit(u64 entry, u64 line, u64 revision, const char *text, u64 length, PatternMatch match)
+AddHit(Hit hit, const char *text, u64 length, PatternMatch match)
 {
-  // the list shows the line without its indent, cut short on a code point boundary.
-  u64 start = 0;
-  while (start < length && (text[start] == ' ' || text[start] == '\t')) start++;
-  u64 end = length - start > maxShownLength ? start + maxShownLength : length;
-  while (end < length && end > start && ((u8)text[end] & 0xC0) == 0x80) end--;
-
-  u64 shown = shownTexts.length;
-
-  // a tab would show as a control character.
-  for (u64 index = start; index < end; index++) {
-    StrBufAppendByte(&shownTexts, text[index] == '\t' ? ' ' : text[index]);
-  }
-
-  AppendHit((Hit){entry, line, revision, match.start, match.end, shown, end - start});
+  hit.start = match.start;
+  hit.end = match.end;
+  hit.shown = shownTexts.length;
+  PickerAppendLine(&shownTexts, text, length);
+  hit.shownLength = shownTexts.length - hit.shown;
+  AppendHit(hit);
 }
 
 static void
-SearchLine(u64 entry, u64 line, u64 revision, const char *text, u64 length)
+SearchLine(Hit hit, const char *text, u64 length)
 {
   PatternMatch match;
   if (!PatternFind(&pattern, text, length, 0, &match)) return;
 
-  AddHit(entry, line, revision, text, length, match);
+  AddHit(hit, text, length, match);
 }
 
 static void
@@ -144,13 +136,14 @@ SearchBuffer(u64 entry, const Buffer *buffer)
 
   for (u64 line = 0; line < count && !capped; line++) {
     const StrBuf *text = BufferLine(buffer, line);
-    SearchLine(entry, line, buffer->revision, TextOf(text), text->length);
+    Hit hit = {.entry = entry, .line = line, .revision = buffer->revision};
+    SearchLine(hit, TextOf(text), text->length);
   }
 }
 
 // searches text read from disk, where a "\r" before a line break is part of the break.
 static void
-SearchText(u64 entry, const char *text, u64 length)
+SearchText(u64 entry, FileStamp stamp, const char *text, u64 length)
 {
   // a line that matches case exactly holds the literal text, so a file without it has
   // no match.
@@ -164,7 +157,8 @@ SearchText(u64 entry, const char *text, u64 length)
     const char *newline = memchr(text + at, '\n', length - at);
     u64 end = newline ? (u64)(newline - text) : length;
     u64 textEnd = newline && end > at && text[end - 1] == '\r' ? end - 1 : end;
-    SearchLine(entry, line, noRevision, text + at, textEnd - at);
+    Hit hit = {.entry = entry, .line = line, .revision = noRevision, .stamp = stamp};
+    SearchLine(hit, text + at, textEnd - at);
     if (!newline) break;
 
     at = end + 1;
@@ -177,7 +171,7 @@ SearchEntry([[maybe_unused]] void *context, const ScanItem *item)
 {
   u64 serial = workspace->entries[item->index].serial;
   if (item->document) SearchBuffer(serial, &item->document->buffer);
-  else SearchText(serial, item->text, item->length);
+  else SearchText(serial, item->stamp, item->text, item->length);
   return !capped;
 }
 
@@ -419,15 +413,38 @@ ChosenFiles(void)
   return files;
 }
 
+// true when hits read from disk no longer number the lines of the entry at index: its
+// file changed since, or it was opened and then edited.
+// the lines of a buffer edited since its search are matched again, so those stay.
+static bool
+Moved(const Hit *hit, u64 index)
+{
+  if (hit->revision != noRevision) return false;
+
+  const Document *document = workspace->entries[index].document;
+  if (document && DocumentModified(document)) return true;
+
+  const StrBuf *path = WorkspacePath(workspace, index);
+  FileStamp now = document ? document->file.stamp : FileStampOf(path->data);
+  return !FileStampEqual(now, hit->stamp);
+}
+
 // replaces every match on the lines of the chosen hits from first to end, which are in one
 // entry, matching each line again as its document has it now.
 // the lines change from the last up, so a replacement holding a line break leaves the
 // lines above where they were, and the whole entry undoes in one step.
-// returns false when the entry has been closed or cannot be opened.
+// returns false, changing nothing, when the entry has been closed or cannot be opened, or
+// its file changed since the search (counted in moved).
 static bool
-ReplaceInEntry(u64 first, u64 end, u64 *lines, u64 *matches)
+ReplaceInEntry(u64 first, u64 end, u64 *lines, u64 *matches, u64 *moved)
 {
   u64 index = WorkspaceEntryOf(workspace, hits[chosen[first]].entry);
+
+  if (index != workspaceNone && Moved(&hits[chosen[first]], index)) {
+    (*moved)++;
+    return false;
+  }
+
   Document *document = MultifileEditBegin(index);
   if (!document) return false;
 
@@ -469,6 +486,7 @@ ReplaceChosen(void)
   u64 matches = 0;
   u64 changedFiles = 0;
   u64 failed = 0;
+  u64 moved = 0;
   u64 first = 0;
   MultifileBegin("replace");
 
@@ -477,7 +495,9 @@ ReplaceChosen(void)
     while (end < chosenCount && hits[chosen[end]].entry == hits[chosen[first]].entry) end++;
 
     u64 before = matches;
-    if (!ReplaceInEntry(first, end, &lines, &matches)) failed++;
+    u64 movedBefore = moved;
+    bool done = ReplaceInEntry(first, end, &lines, &matches, &moved);
+    if (!done && moved == movedBefore) failed++;
     else if (matches > before) changedFiles++;
     first = end;
   }
@@ -505,6 +525,11 @@ ReplaceChosen(void)
 
   if (failed) {
     StrBufAppendFormat(message, ", %lu file%s could not be opened", failed, Plural(failed));
+  }
+
+  if (moved) {
+    const char *format = ", %lu file%s changed since the search (search again)";
+    StrBufAppendFormat(message, format, moved, Plural(moved));
   }
 }
 

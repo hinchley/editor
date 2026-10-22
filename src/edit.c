@@ -1022,7 +1022,7 @@ JoinAt(Buffer *buffer, u64 line)
   u64 indent = IndentLength(next);
 
   bool nextEmpty = indent == next->length;
-  bool closer = !nextEmpty && strchr(")]}", next->data[indent]);
+  bool closer = !nextEmpty && next->data[indent] && strchr(")]}", next->data[indent]);
   bool endsBlank = !text->length || IsBlank(text->data[text->length - 1]);
   u64 space = !nextEmpty && !closer && !endsBlank;
 

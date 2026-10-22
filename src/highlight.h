@@ -88,8 +88,8 @@ HighlightSymbols(Highlight *highlight, HighlightVisit visit, void *context);
 
 // visits the symbols of text in a language, as HighlightSymbols does, parsing it with a
 // parser of its own within maxParseTime.
-// returns false when the language has no symbols or the text is too large or slow to
-// parse.
+// returns false only when the parse ran out of time, which may not happen again; a
+// language without symbols, or text too large to parse, visits nothing.
 bool
 HighlightSymbolsOfText(
   const Lang *lang,

@@ -340,16 +340,48 @@ ParseText(Parse *parse)
   return KeyEvent(parse, codepoint, 0);
 }
 
+// skips a control string (osc, dcs, apc, pm or sos) up to its end, bel or st.
+static enum ParseResult
+ParseString(Parse *parse)
+{
+  for (u64 at = 2; at < parse->length; at++) {
+    bool bel = parse->text[at] == '\a';
+    bool st = parse->text[at] == '\\' && parse->text[at - 1] == '\x1b';
+    if (!bel && !st) continue;
+
+    parse->size = at + 1;
+    return ParseSkip;
+  }
+
+  return ParseIncomplete;
+}
+
 static enum ParseResult
 ParseAny(Parse *parse)
 {
   if (parse->text[0] != '\x1b') return ParseText(parse);
   if (parse->length < 2) return ParseIncomplete;
-  if (parse->text[1] == '[') return ParseCsi(parse);
 
-  // foot sends every key with an escape as a csi sequence, so anything else is noise.
-  parse->size = 1;
-  return ParseSkip;
+  // foot sends every key with an escape as a csi sequence, so anything else is noise,
+  // skipped whole so none of it is typed: a string up to its end, ss3 with its final byte,
+  // or else the escape and the byte after it.
+  switch (parse->text[1]) {
+    case '[':
+      return ParseCsi(parse);
+    case ']':
+    case 'P':
+    case '_':
+    case '^':
+    case 'X':
+      return ParseString(parse);
+    case 'O':
+      if (parse->length < 3) return ParseIncomplete;
+      parse->size = 3;
+      return ParseSkip;
+    default:
+      parse->size = 2;
+      return ParseSkip;
+  }
 }
 
 void

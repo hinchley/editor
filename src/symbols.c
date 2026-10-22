@@ -610,7 +610,11 @@ Visit([[maybe_unused]] void *context, const ScanItem *item)
   file->stamp = item->stamp;
   file->lang = lang;
   Adding adding = Renew(file);
-  if (lang) HighlightSymbolsOfText(lang, item->text, item->length, AddSymbol, &adding);
+
+  // a parse that ran out of time is tried again by the next scan.
+  bool parsed = !lang ||
+    HighlightSymbolsOfText(lang, item->text, item->length, AddSymbol, &adding);
+  if (!parsed) file->stamp = (FileStamp){};
   return true;
 }
 

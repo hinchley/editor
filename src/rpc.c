@@ -93,7 +93,7 @@ RpcStart(
   posix_spawn_file_actions_init(&actions);
   posix_spawn_file_actions_adddup2(&actions, inputPipe[0], STDIN_FILENO);
   posix_spawn_file_actions_adddup2(&actions, outputPipe[1], STDOUT_FILENO);
-  i32 flags = O_WRONLY | O_CREAT | O_TRUNC;
+  i32 flags = O_WRONLY | O_CREAT | O_APPEND;
   const char *errors = log ? log : "/dev/null";
   posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, errors, flags, 0644);
   posix_spawn_file_actions_addchdir_np(&actions, folder);

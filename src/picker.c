@@ -101,6 +101,26 @@ Fold(const char *text, u64 length, StrBuf *output)
 }
 
 void
+PickerAppendLine(StrBuf *out, const char *text, u64 length)
+{
+  while (length && (*text == ' ' || *text == '\t')) {
+    text++;
+    length--;
+  }
+
+  if (length && text[length - 1] == '\r') length--;
+
+  if (length > pickerLineLength) {
+    length = pickerLineLength;
+    while (length && ((u8)text[length] & 0xC0) == 0x80) length--;
+  }
+
+  for (u64 index = 0; index < length; index++) {
+    StrBufAppendByte(out, text[index] == '\t' ? ' ' : text[index]);
+  }
+}
+
+void
 PickerBegin(void)
 {
   // reserved so an item's text always points into memory, even when every text is empty.

@@ -70,8 +70,8 @@ static constexpr u64 maxProjectHits = 10'000;
 // syntax highlighting is skipped for buffers larger than this.
 static constexpr u64 maxHighlightSize = 16ull * 1024 * 1024;
 
-// a parse that takes longer than this many milliseconds turns highlighting off for the
-// buffer, rather than leave the editor waiting.
+// a parse that takes longer than this many milliseconds of processor time turns
+// highlighting off for the buffer, rather than leave the editor waiting.
 static constexpr i64 maxParseTime = 1000;
 
 // a symbol's signature is cut to this many bytes.

@@ -20,6 +20,8 @@ typedef struct FileId {
 } FileId;
 
 // identifies one version of a file on disk, to notice changes made by other programs.
+// the change time catches a rewrite of the same size whose modification time was set
+// back (rsync, touch -d).
 typedef struct FileStamp {
   bool exists;
   u64 device;
@@ -27,6 +29,8 @@ typedef struct FileStamp {
   u64 size;
   i64 seconds;
   i64 nanoseconds;
+  i64 changeSeconds;
+  i64 changeNanoseconds;
 } FileStamp;
 
 // the file behind a buffer.

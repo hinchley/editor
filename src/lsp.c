@@ -1,5 +1,6 @@
 #include "lsp.h"
 
+#include <fcntl.h>
 #include <libgen.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -225,11 +226,20 @@ FindRoot(const char *path, const char *const *names, StrBuf *root)
 
 // the server's standard error goes to <state folder>/editor/<language id>.log; false when
 // the folder cannot be made.
+// the log is emptied unless another server of the language is running, which writes to
+// it too.
 static bool
 LogPath(const Lang *lang, StrBuf *path)
 {
   if (!FileStateFolder(nullptr, 0755, path)) return false;
   StrBufAppendFormat(path, "/%s.log", lang->id);
+
+  for (u32 index = 0; index < serverCount; index++) {
+    if (servers[index]->lang == lang && servers[index]->rpc) return true;
+  }
+
+  i32 descriptor = open(path->data, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+  if (descriptor >= 0) close(descriptor);
   return true;
 }
 

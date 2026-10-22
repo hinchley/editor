@@ -9,7 +9,11 @@
 // the selected one picks it, and the wheel moves through the list.
 // one picker is open at a time, and while it is open it takes every key.
 #include "key.h"
+#include "strbuf.h"
 #include "types.h"
+
+// how much of a line of text a list keeps, in bytes.
+static constexpr u64 pickerLineLength = 200;
 
 // draws a preview of the item with id in the area from row 0 and column, of width and
 // height cells.
@@ -18,6 +22,12 @@ typedef void (*PickerPreview)(void *context, u64 id, i32 column, i32 width, i32 
 // receives the id of the picked item, or picked is false when the picker was cancelled.
 // the picker is closed before this runs, so it may open another.
 typedef void (*PickerDone)(void *context, bool picked, u64 id);
+
+// appends a line of text as a list shows it, as an item or a note: without the blanks
+// before it or a "\r" at its end, cut to pickerLineLength bytes on a code point boundary,
+// and with tabs (which would show as control characters) as spaces.
+void
+PickerAppendLine(StrBuf *out, const char *text, u64 length);
 
 // starts building a new list, dropping any previous one.
 void

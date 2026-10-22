@@ -11,7 +11,8 @@
 #include "prompt.h"
 #include "settings.h"
 
-// one run of saves: the entries still to save and what to do once they are.
+// one run of saves: the serials of the entries still to save and what to do once they
+// are.
 static Workspace *workspace;
 static StrBuf *message;
 static SaveFinished afterSave;
@@ -30,10 +31,17 @@ static u64 menuSerial;
 static char menuChoice;
 static StrBuf menuPath;
 
+// the index of the entry being saved, or workspaceNone once it is gone.
+static u64
+SavingIndex(void)
+{
+  return WorkspaceEntryOf(workspace, queue[position]);
+}
+
 static Document *
 Saving(void)
 {
-  return workspace->entries[queue[position]].document;
+  return workspace->entries[SavingIndex()].document;
 }
 
 static void
@@ -56,7 +64,7 @@ Queue(u64 index)
     queue = MemoryResize(queue, queueCapacity, sizeof(u64));
   }
 
-  queue[queueCount++] = index;
+  queue[queueCount++] = workspace->entries[index].serial;
 }
 
 // a save that fails after the save as prompt leaves the document unnamed again.
@@ -153,7 +161,7 @@ static void
 AskForName(void)
 {
   // during save all, the buffer is shown so the user can see what is being named.
-  u64 index = queue[position];
+  u64 index = SavingIndex();
   StrBuf label = {};
 
   if (saveAll) {
@@ -174,6 +182,8 @@ AskForName(void)
 static void
 Next(void)
 {
+  while (position < queueCount && SavingIndex() == workspaceNone) position++;
+
   if (position == queueCount) {
     u64 count = queueCount;
     const char *plural = count == 1 ? "" : "s";
