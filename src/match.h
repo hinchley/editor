@@ -26,13 +26,15 @@ typedef struct MatchSet {
   Highlight *scope;
 } MatchSet;
 
-// finds the first match in a line of a buffer that starts at or after from.
+// finds the first match in a line of a buffer that starts at or after from and before
+// limit.
 bool
 MatchInLine(
   const MatchSet *set,
   const Buffer *buffer,
   u64 line,
   u64 from,
+  u64 limit,
   PatternMatch *match
 );
 

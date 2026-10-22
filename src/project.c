@@ -124,7 +124,7 @@ static void
 SearchLine(Hit hit, const char *text, u64 length)
 {
   PatternMatch match;
-  if (!PatternFind(&pattern, text, length, 0, &match)) return;
+  if (!PatternFind(&pattern, text, length, 0, UINT64_MAX, &match)) return;
 
   AddHit(hit, text, length, match);
 }
@@ -369,8 +369,8 @@ SelectHit(const Hit *hit)
   const StrBuf *text = BufferLine(buffer, line);
   u64 from = hit->start <= text->length ? hit->start : 0;
   PatternMatch match = {};
-  bool found = PatternFind(&pattern, TextOf(text), text->length, from, &match) ||
-    PatternFind(&pattern, TextOf(text), text->length, 0, &match);
+  bool found = PatternFind(&pattern, TextOf(text), text->length, from, UINT64_MAX, &match) ||
+    PatternFind(&pattern, TextOf(text), text->length, 0, UINT64_MAX, &match);
 
   Position start = {line, match.start};
   Position end = {line, match.end};
@@ -457,7 +457,7 @@ ReplaceInEntry(u64 first, u64 end, u64 *lines, u64 *matches, u64 *moved)
 
     const StrBuf *text = BufferLine(buffer, line);
     PatternMatch match;
-    if (!PatternFind(&pattern, text->data, text->length, 0, &match)) continue;
+    if (!PatternFind(&pattern, text->data, text->length, 0, UINT64_MAX, &match)) continue;
 
     u64 stop = PatternReplaceLine(
       &pattern,

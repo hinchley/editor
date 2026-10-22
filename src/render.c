@@ -25,6 +25,10 @@ static constexpr char removedBelowSymbol[] = "\u2581";
 // the status bar drops fields on the right rather than shorten the name below this.
 static constexpr i32 minNameWidth = 8;
 
+// how far past the cluster being drawn matches are looked for at a time; more than a
+// window shows of a line.
+static constexpr u64 matchReach = 65536;
+
 // bytes of the line being drawn.
 typedef struct Span {
   u64 start;
@@ -84,11 +88,15 @@ typedef struct Canvas {
   u32 lineWorst;
   u32 lineCount;
 
-  // the matches on the current line, in order, the first one that may still hold the
-  // cluster being drawn, and the group they draw with.
+  // the match on the current line that may still hold the cluster being drawn (when
+  // matched is set), where the next one is looked for from, the offset before which no
+  // other starts, and the group matches draw with.
   const MatchSet *marks;
-  SpanList matched;
-  u32 nextMatch;
+  u64 matchLine;
+  PatternMatch match;
+  bool matched;
+  u64 matchFrom;
+  u64 matchClear;
   enum ThemeGroup matchGroup;
 } Canvas;
 
@@ -175,16 +183,10 @@ FindSelection(Canvas *canvas, u64 line, u64 length)
 static void
 FindMatches(Canvas *canvas, u64 line)
 {
-  canvas->matched.count = 0;
-  canvas->nextMatch = 0;
-  if (canvas->marks->kind == MatchKindNone) return;
-
-  PatternMatch match = {};
-  const Buffer *buffer = canvas->view->buffer;
-
-  while (MatchInLine(canvas->marks, buffer, line, match.end, &match)) {
-    AddSpan(&canvas->matched, match.start, match.end);
-  }
+  canvas->matchLine = line;
+  canvas->matched = false;
+  canvas->matchFrom = 0;
+  canvas->matchClear = canvas->marks->kind == MatchKindNone ? UINT64_MAX : 0;
 }
 
 static void
@@ -268,16 +270,31 @@ IsSelected(const Canvas *canvas, u64 byte)
 }
 
 // clusters are drawn in order, so the matches before byte can be passed over for good.
+// matches are looked for from where the last one ended to matchReach past the cluster
+// drawn, so a long line is not searched beyond what is drawn of it.
 static bool
 IsMatched(Canvas *canvas, u64 byte)
 {
-  const SpanList *list = &canvas->matched;
+  PatternMatch *match = &canvas->match;
 
-  while (canvas->nextMatch < list->count && list->spans[canvas->nextMatch].end <= byte) {
-    canvas->nextMatch++;
+  for (;;) {
+    if (canvas->matched && match->end > byte) return match->start <= byte;
+
+    if (canvas->matched) {
+      canvas->matched = false;
+      canvas->matchFrom = match->end;
+      canvas->matchClear = match->end;
+    }
+
+    if (byte < canvas->matchClear) return false;
+
+    u64 limit = byte + matchReach;
+    const Buffer *buffer = canvas->view->buffer;
+    u64 line = canvas->matchLine;
+    canvas->matched =
+      MatchInLine(canvas->marks, buffer, line, canvas->matchFrom, limit, match);
+    if (!canvas->matched) canvas->matchClear = limit;
   }
-
-  return canvas->nextMatch < list->count && list->spans[canvas->nextMatch].start <= byte;
 }
 
 // the group a byte is drawn over with: a match, the selection, or ThemeNone.
@@ -285,7 +302,7 @@ static enum ThemeGroup
 MarkOf(Canvas *canvas, u64 byte)
 {
   bool selected = canvas->selected.count && IsSelected(canvas, byte);
-  bool matched = canvas->matched.count && IsMatched(canvas, byte);
+  bool matched = IsMatched(canvas, byte);
   if (matched) return selected ? ThemeMatchSelected : canvas->matchGroup;
   return selected ? ThemeSelection : ThemeNone;
 }
@@ -568,7 +585,6 @@ DrawView(const FramePane *pane)
   }
 
   free(canvas.selected.spans);
-  free(canvas.matched.spans);
   free(canvas.curls);
 }
 

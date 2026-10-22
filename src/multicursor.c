@@ -82,9 +82,10 @@ FindOccurrences(View *view, MatchSet marks, Occurrences *occurrences, StrBuf *me
 
   if (marks.kind != MatchKindNone && oneLine) {
     u64 line = selection.start.line;
-    bool found = MatchInLine(&marks, view->buffer, line, selection.start.byte, &match);
+    u64 start = selection.start.byte;
+    bool found = MatchInLine(&marks, view->buffer, line, start, start + 1, &match);
 
-    if (found && match.start == selection.start.byte && match.end == selection.end.byte) {
+    if (found && match.start == start && match.end == selection.end.byte) {
       occurrences->set = marks;
       return true;
     }
@@ -227,7 +228,7 @@ MultiCursorAddAll(View *view, MatchSet marks, StrBuf *message)
   for (u64 line = 0; line < count; line++) {
     u64 from = 0;
 
-    while (MatchInLine(&occurrences.set, view->buffer, line, from, &found)) {
+    while (MatchInLine(&occurrences.set, view->buffer, line, from, UINT64_MAX, &found)) {
       Range match = {{line, found.start}, {line, found.end}};
       from = found.end;
 

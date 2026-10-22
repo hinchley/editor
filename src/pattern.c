@@ -196,11 +196,18 @@ FoldedMatches(const Pattern *pattern, const char *text, u64 length, u64 next, u6
 }
 
 static bool
-FindFolded(const Pattern *pattern, const char *text, u64 length, u64 from, PatternMatch *match)
+FindFolded(
+  const Pattern *pattern,
+  const char *text,
+  u64 length,
+  u64 from,
+  u64 limit,
+  PatternMatch *match
+)
 {
   u32 first = pattern->folded[0];
 
-  for (u64 at = from; at < length;) {
+  for (u64 at = from; at < length && at < limit;) {
     u32 codepoint;
     u64 next = ReadFolded(text, length, at, &codepoint);
     u64 end = 0;
@@ -219,13 +226,24 @@ FindFolded(const Pattern *pattern, const char *text, u64 length, u64 from, Patte
 }
 
 static bool
-FindExact(const Pattern *pattern, const char *text, u64 length, u64 from, PatternMatch *match)
+FindExact(
+  const Pattern *pattern,
+  const char *text,
+  u64 length,
+  u64 from,
+  u64 limit,
+  PatternMatch *match
+)
 {
   const char *wanted = pattern->text.data;
   u64 size = pattern->text.length;
+  if (size > length) return false;
 
-  for (u64 at = from; at + size <= length; at++) {
-    const char *first = memchr(text + at, wanted[0], length - size + 1 - at);
+  // one past the last offset a match can start at.
+  u64 end = length - size + 1 < limit ? length - size + 1 : limit;
+
+  for (u64 at = from; at < end; at++) {
+    const char *first = memchr(text + at, wanted[0], end - at);
     if (!first) return false;
 
     at = (u64)(first - text);
@@ -243,11 +261,18 @@ FindExact(const Pattern *pattern, const char *text, u64 length, u64 from, Patter
 // a match the regular expression finds may still fail the checks of Accepts, and then
 // the search goes on from the code point after its start.
 static bool
-FindRegex(const Pattern *pattern, const char *text, u64 length, u64 from, PatternMatch *match)
+FindRegex(
+  const Pattern *pattern,
+  const char *text,
+  u64 length,
+  u64 from,
+  u64 limit,
+  PatternMatch *match
+)
 {
   RegexSpan span;
 
-  for (u64 at = from; RegexFind(&pattern->regex, text, length, at, false, &span, 1);) {
+  for (u64 at = from; RegexFind(&pattern->regex, text, length, at, limit, false, &span, 1);) {
     *match = (PatternMatch){span.start, span.end};
     if (Accepts(pattern, text, length, *match)) return true;
 
@@ -264,15 +289,18 @@ PatternFind(
   const char *text,
   u64 length,
   u64 from,
+  u64 limit,
   PatternMatch *match
 )
 {
-  if (pattern->impossible || from >= length) return false;
+  if (pattern->impossible || from >= length || from >= limit) return false;
   if (pattern->lineStart && from > 0) return false;
 
-  if (pattern->options.regex) return FindRegex(pattern, text, length, from, match);
-  if (pattern->options.caseSensitive) return FindExact(pattern, text, length, from, match);
-  return FindFolded(pattern, text, length, from, match);
+  if (pattern->options.regex) return FindRegex(pattern, text, length, from, limit, match);
+  if (pattern->options.caseSensitive) {
+    return FindExact(pattern, text, length, from, limit, match);
+  }
+  return FindFolded(pattern, text, length, from, limit, match);
 }
 
 void
@@ -310,7 +338,16 @@ PatternExpand(
     if (next > '0') {
       if (!grouped) {
         const Regex *compiled = &pattern->regex;
-        bool found = RegexFind(compiled, text, length, match.start, true, groups, regexGroups);
+        bool found = RegexFind(
+          compiled,
+          text,
+          length,
+          match.start,
+          UINT64_MAX,
+          true,
+          groups,
+          regexGroups
+        );
         RegexSpan unset = {regexUnset, regexUnset};
         for (u32 index = 0; index < regexGroups && !found; index++) groups[index] = unset;
         grouped = true;
@@ -349,7 +386,7 @@ PatternReplaceLine(
     PatternExpand(pattern, text, length, hit, replacement, rebuilt);
     copied = hit.end;
     (*count)++;
-  } while (PatternFind(pattern, text, length, copied, &hit) && hit.start < limit);
+  } while (PatternFind(pattern, text, length, copied, limit, &hit));
 
   return copied;
 }

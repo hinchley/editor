@@ -974,12 +974,13 @@ RegexFind(
   const char *text,
   u64 length,
   u64 from,
+  u64 limit,
   bool anchored,
   RegexSpan *spans,
   u32 spanCount
 )
 {
-  if (!regex->count || from >= length) return false;
+  if (!regex->count || from >= length || from >= limit) return false;
   if (regex->lineStart && from > 0) return false;
 
   u32 slotCount = 2 * spanCount;
@@ -997,10 +998,10 @@ RegexFind(
   anchored = anchored || regex->lineStart;
 
   for (;;) {
-    if (!matched && (!anchored || at == from)) {
+    if (!matched && (!anchored || at == from) && at < limit) {
       if (!current->count && !anchored && regex->firstByte) {
         u64 found = NextFirst(regex, text, length, at);
-        if (found == length) break;
+        if (found == length || found >= limit) break;
         if (found != at) place = PlaceAt(text, length, found, &codepoint, &size);
         at = found;
       }
@@ -1011,7 +1012,7 @@ RegexFind(
     }
 
     // with no threads left an unanchored search still goes on to the next start.
-    if (!current->count && (matched || anchored)) break;
+    if (!current->count && (matched || anchored || at >= limit)) break;
 
     u64 after = at + size;
     u32 nextCodepoint = 0;

@@ -56,7 +56,8 @@ PatternSet(Pattern *pattern, const char *source, u64 length, PatternOptions opti
 void
 PatternFree(Pattern *pattern);
 
-// finds the first match in a line that starts at or after from.
+// finds the first match in a line that starts at or after from and before limit (a match
+// may end after it).
 // matches start and end on grapheme cluster boundaries and are never empty.
 bool
 PatternFind(
@@ -64,6 +65,7 @@ PatternFind(
   const char *text,
   u64 length,
   u64 from,
+  u64 limit,
   PatternMatch *match
 );
 

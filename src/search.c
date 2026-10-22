@@ -467,7 +467,7 @@ NextMatch(Range *match)
       const StrBuf *text = BufferLine(buffer, line);
       u64 from = line == replacing.next.line ? replacing.next.byte : 0;
       PatternMatch hit;
-      if (!PatternFind(&last, text->data, text->length, from, &hit)) continue;
+      if (!PatternFind(&last, text->data, text->length, from, UINT64_MAX, &hit)) continue;
 
       bool pastStop = replacing.wrapped && line == replacing.stop.line;
       if (pastStop && hit.start >= replacing.stop.byte) return false;

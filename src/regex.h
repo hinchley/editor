@@ -60,15 +60,17 @@ void
 RegexFree(Regex *regex);
 
 // finds the first non-empty match in a line that starts at or after from (or exactly at
-// from, when anchored), and fills spans with the first spanCount groups (1 to
-// regexGroups).
-// ^, $ and \b see the whole line, not just the part from from.
+// from, when anchored) and before limit, and fills spans with the first spanCount groups
+// (1 to regexGroups).
+// ^, $ and \b see the whole line, not just the part from from, and a match may end after
+// limit.
 bool
 RegexFind(
   const Regex *regex,
   const char *text,
   u64 length,
   u64 from,
+  u64 limit,
   bool anchored,
   RegexSpan *spans,
   u32 spanCount

@@ -157,7 +157,7 @@ DrawLine(const PreviewRow *place, const char *text, u64 length, const LayoutRows
     // matches are found from the start of the line, so one that starts out of sight still
     // shows.
     if (more && cluster.start >= match.end) {
-      more = PatternFind(place->pattern, text, length, cluster.start, &match);
+      more = PatternFind(place->pattern, text, length, cluster.start, UINT64_MAX, &match);
     }
 
     if (row < place->row || cluster.column < left) continue;

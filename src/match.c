@@ -2,11 +2,20 @@
 
 #include "spell.h"
 
-// the first unknown word from from, passing over words spell check does not look at.
+// the first unknown word from from that starts before limit, passing over words spell
+// check does not look at.
 static bool
-FindUnknown(const MatchSet *set, const StrBuf *text, u64 line, u64 from, PatternMatch *match)
+FindUnknown(
+  const MatchSet *set,
+  const StrBuf *text,
+  u64 line,
+  u64 from,
+  u64 limit,
+  PatternMatch *match
+)
 {
   while (SpellFind(text->data, text->length, from, &match->start, &match->end)) {
+    if (match->start >= limit) return false;
     if (!set->scope || HighlightSpellable(set->scope, line, match->start)) return true;
     from = match->end;
   }
@@ -15,16 +24,23 @@ FindUnknown(const MatchSet *set, const StrBuf *text, u64 line, u64 from, Pattern
 }
 
 bool
-MatchInLine(const MatchSet *set, const Buffer *buffer, u64 line, u64 from, PatternMatch *match)
+MatchInLine(
+  const MatchSet *set,
+  const Buffer *buffer,
+  u64 line,
+  u64 from,
+  u64 limit,
+  PatternMatch *match
+)
 {
   const StrBuf *text = BufferLine(buffer, line);
   const Pattern *pattern = set->pattern;
 
   switch (set->kind) {
     case MatchKindSearch:
-      return PatternFind(pattern, text->data, text->length, from, match);
+      return PatternFind(pattern, text->data, text->length, from, limit, match);
     case MatchKindSpell:
-      return FindUnknown(set, text, line, from, match);
+      return FindUnknown(set, text, line, from, limit, match);
     case MatchKindNone:
       return false;
   }
@@ -37,7 +53,7 @@ static bool
 FirstOnLine(const MatchSet *set, const Buffer *buffer, u64 line, u64 from, Range *found)
 {
   PatternMatch match;
-  if (!MatchInLine(set, buffer, line, from, &match)) return false;
+  if (!MatchInLine(set, buffer, line, from, UINT64_MAX, &match)) return false;
 
   *found = (Range){{line, match.start}, {line, match.end}};
   return true;
@@ -51,7 +67,7 @@ LastOnLine(const MatchSet *set, const Buffer *buffer, u64 line, u64 before, Rang
   bool any = false;
   u64 from = 0;
 
-  while (MatchInLine(set, buffer, line, from, &match) && match.start < before) {
+  while (MatchInLine(set, buffer, line, from, before, &match)) {
     *found = (Range){{line, match.start}, {line, match.end}};
     any = true;
     from = match.end;
@@ -130,7 +146,9 @@ MatchCount(const MatchSet *set, const Buffer *buffer, u64 limit)
 
   for (u64 line = 0; line < BufferLineCount(buffer) && count < limit; line++) {
     PatternMatch match = {};
-    while (count < limit && MatchInLine(set, buffer, line, match.end, &match)) count++;
+    while (count < limit && MatchInLine(set, buffer, line, match.end, UINT64_MAX, &match)) {
+      count++;
+    }
   }
 
   return count;
