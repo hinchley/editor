@@ -164,7 +164,7 @@ IssuesTick(void)
   if (hover.asked || TermNow() - hover.since < hoverDelay) return;
 
   hover.asked = true;
-  hover.request = LspHover(document->lsp, head, HoverDone, nullptr);
+  hover.request = LspHover(document->lsp, head, true, HoverDone, nullptr);
 }
 
 i32

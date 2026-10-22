@@ -202,7 +202,7 @@ SignatureDone([[maybe_unused]] void *context, const char *text, u64 length, bool
 void
 LookupSignature(i32 width)
 {
-  LspRequest request = LspHover(Current()->lsp, Head(), SignatureDone, nullptr);
+  LspRequest request = LspHover(Current()->lsp, Head(), false, SignatureDone, nullptr);
   Asking(request);
   asked.width = width;
   if (!request) SymbolsShowSignature(width);

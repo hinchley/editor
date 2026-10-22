@@ -127,6 +127,8 @@ LspDiagnostics(const LspDocument *document);
 // (with its declaration), or what it is (its hover text, markdown or plain); or, from
 // clangd, which file pairs with the document (a header's source, or a source's header).
 // done is called once, from LspPump, unless the request is cancelled.
+// while a request waits for its answer the status bar says so (see LspDescribe), apart
+// from a hover asked in the background.
 // returns 0, asking nothing, when the server is not ready or cannot answer such a question.
 LspRequest
 LspDefinition(LspDocument *document, Position position, LspLocationsDone done, void *context);
@@ -135,7 +137,13 @@ LspRequest
 LspReferences(LspDocument *document, Position position, LspLocationsDone done, void *context);
 
 LspRequest
-LspHover(LspDocument *document, Position position, LspTextDone done, void *context);
+LspHover(
+  LspDocument *document,
+  Position position,
+  bool background,
+  LspTextDone done,
+  void *context
+);
 
 LspRequest
 LspOtherFile(LspDocument *document, LspLocationsDone done, void *context);
@@ -186,7 +194,7 @@ i32
 LspTimeout(void);
 
 // appends what the status bar says about the document's server: " (clangd)", or with
-// "starting" or "stopped" after the name.
+// "starting", "stopped" or "waiting" (for the answer to a command) after the name.
 void
 LspDescribe(const LspDocument *document, StrBuf *text);
 

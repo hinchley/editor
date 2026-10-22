@@ -111,6 +111,9 @@ typedef struct Pending {
   u64 id;
   i64 deadline;
   enum PendingKind kind;
+
+  // asked without a command, so nothing shows it waits.
+  bool background;
   StrBuf uri;
   Position position;
   LspLocationsDone locationsDone;
@@ -989,6 +992,14 @@ LspDescribe(const LspDocument *document, StrBuf *text)
   StrBufAppendFormat(text, " (%s", server->name.data);
   if (server->state == ServerStarting) StrBufAppendString(text, " starting");
   if (server->state == ServerStopped) StrBufAppendString(text, " stopped");
+
+  bool waiting = false;
+
+  for (u32 index = 0; index < pendingCount && !waiting; index++) {
+    waiting = pendings[index].server == server && !pendings[index].background;
+  }
+
+  if (waiting) StrBufAppendString(text, " waiting");
   StrBufAppendByte(text, ')');
 }
 
@@ -1689,14 +1700,21 @@ LspReferences(LspDocument *document, Position position, LspLocationsDone done, v
 }
 
 LspRequest
-LspHover(LspDocument *document, Position position, LspTextDone done, void *context)
+LspHover(
+  LspDocument *document,
+  Position position,
+  bool background,
+  LspTextDone done,
+  void *context
+)
 {
   if (!document) return 0;
 
   StrBuf params = {};
   AppendPositionParams(&params, document, position);
   StrBufAppendByte(&params, '}');
-  Pending pending = {.kind = PendingText, .textDone = done, .context = context};
+  Pending pending =
+    {.kind = PendingText, .background = background, .textDone = done, .context = context};
   bool answers = document->server->hovers;
   LspRequest request = Ask(document, answers, "textDocument/hover", &params, pending);
   StrBufFree(&params);
