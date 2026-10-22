@@ -1,6 +1,7 @@
 #include "layout.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "memory.h"
 #include "settings.h"
@@ -91,6 +92,17 @@ SkipAscii(LayoutIterator *iterator, u64 limit)
   u64 start = iterator->at;
   u64 at = start;
   if (limit > iterator->length) limit = iterator->length;
+
+  // eight bytes at a time while all are printable: subtracting 0x20 from each sets its top
+  // bit when it is below 0x20, adding 1 when it is 0x7F, and a byte from 0x80 has it set.
+  // a borrow or carry only reaches the bytes after the first that sets it.
+  while (at + 8 <= limit) {
+    u64 word;
+    memcpy(&word, text + at, 8);
+    u64 outside = (word - 0x2020'2020'2020'2020ull) | (word + 0x0101'0101'0101'0101ull) | word;
+    if (outside & 0x8080'8080'8080'8080ull) break;
+    at += 8;
+  }
 
   while (at < limit && IsPrintableAscii((u8)text[at])) at++;
   if (at > start && at < iterator->length && (u8)text[at] >= 0x80) at--;
