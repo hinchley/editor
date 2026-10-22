@@ -580,18 +580,21 @@ A fix is asked for with the cursor's whole line as the range and the diagnostics
 
 ## Performance
 
-Measured on the release build, timed from the key to the end of the frame:
+Measured on the release build in a 200×50 window on an idle machine (20 cores), timed from the key to the end of the frame, as medians (October 2026, with `.review/tools/bench.py` and the review's scenarios):
 
-- A 100 MB file of 1.3 million lines loads in about half a second. Moving, typing, paging and undo each take under 10 ms. Indenting every line takes 0.3 seconds, and spell check (which counts every unknown word) about 3 seconds.
-- A 17 MB line without soft wrap takes about 35 ms a key, and with soft wrap 5 to 75 ms (more right after an edit, when its rows are laid out again).
-- Tree-sitter highlighting is skipped above 16 MB, and stops for a buffer whose parse takes over a second (a 7 MB minified file does after its first edit). The first edit after parsing a 3 MB Markdown file pauses for about 0.3 seconds, and typing in a 2,000 line fenced block costs about 35 ms, because the Markdown grammar scans the whole block again.
-- 100,000 files load and draw the picker in about 60 ms from the page cache, filtering them takes 2 to 4 ms a key, and searching them all takes about 0.35 seconds.
+- Typing in a 1,400 line C file (`src/edit.c`) takes about 2.5 ms a key, and in a 34,000 line one (1 MB) about 9 ms, most of it tree-sitter's incremental parse; the same text with no grammar takes 0.9 ms. Highlighting re-runs its query over 112 lines after each edit (see Highlighting).
+- In a file git tracks, the change marks are worked out again only once the buffer has rested 150 ms, so typing costs what it does in an untracked file: about 8.5 ms a key in a 10,000 line C file, with 244 changed lines or none, and 10.5 ms in the 34,000 line one with 850 (13.4 and 20.3 ms when the marks were worked out after every key).
+- A 100 MB file of 1.79 million lines loads in about 0.2 seconds. Moving, typing and paging each take about 1 ms, Enter 2.5 ms and undo 7 ms. Indenting every line takes 0.33 seconds and undoing it 0.11. Spell check selects the first unknown word and counts up to 10,000 of them in about 30 ms (3.5 seconds when it counted all 2.1 million).
+- Find on that file: each key typed after the pattern stopped matching takes 1 ms instead of a full search (about 0.1 seconds). A regular expression that matches nothing takes about 1.1 seconds for `\d{3}x` or `[0-9]{9}z`, and 2.9 seconds for `\w+@` (see Regular expressions).
+- A 17 MB line without soft wrap takes about 17 ms a key, and End 19 ms; with soft wrap about 75 ms right after an edit, when its rows are laid out again. Matches drawn on it are only looked for up to what is shown, so typing with a literal highlighted takes about 3 ms (23 ms before), and with `\d{3}x` highlighted 5 ms (0.45 seconds before).
+- Tree-sitter highlighting is skipped above 16 MB, and stops for a buffer whose parse takes over a second of processor time (a 7 MB minified file does after its first edit). A 3 MB Markdown file opens in about 1.1 seconds (and 320 MB of memory), and typing in it, also in a 2,000 line fenced block, takes about 0.9 ms.
+- 100,000 files load and draw the picker in about 95 ms from the page cache, and filtering them takes about 3 ms a key.
 - An edit with 1,000 cursors takes 4 to 22 ms, and with 10,000 about 0.2 seconds (see Multiple cursors).
-- Comparing a 15 MB file of 330,000 lines with its committed text takes about 25 ms with one line changed, and about 85 ms with 330 changes spread through it (release build, reading both files included). Reading a file from a pack takes about 3 ms for a source file, and about 40 ms for the 3.9 MB C grammar `parser.c` or the 17 MB SQL one, as inflating is done a bit at a time.
-- Opening a 12 megapixel JPEG takes about 0.4 seconds, baseline or progressive (libjpeg-turbo, with SIMD, takes 0.04).
-- Opening a 3000×2000 PNG takes about 0.35 seconds, nearly all of it inflating (a bit at a time), and a 12 megapixel PNG of incompressible noise (61 MB) about 1.3 seconds. Shrinking it to the window and encoding the sixels adds a few tens of milliseconds, and is only done again when the window or split changes size.
+- Comparing a 15 MB file of 330,000 lines with its committed text takes about 25 ms with one line changed, and about 85 ms with 330 changes spread through it (release build, reading both files included). Reading a file from a pack takes about 3 ms for a source file, and about 40 ms for the 3.9 MB C grammar `parser.c` or the 17 MB SQL one (measured before inflating used a lookup table, which cut inflating `parser.c` from 5.5 to 3.6 ms).
+- Opening a 12 megapixel JPEG takes about 0.5 seconds, baseline or progressive (libjpeg-turbo, with SIMD, takes 0.04).
+- Opening a 3000×2000 16-bit PNG takes about 0.5 seconds, and a 12 megapixel PNG of incompressible noise (61 MB) about 1.2 seconds. Shrinking it to the window and encoding the sixels adds a few tens of milliseconds, and is only done again when the window or split changes size.
 - 500 diagnostics, one on every visible row, add nothing measurable to a frame of a 15,000 line file (about 4.5 ms a keystroke either way, nearly all of it parsing).
-- With clangd following the buffer, a keystroke costs the same as without it (about 0.35 ms from the key to the end of the frame on a 1,500 line C file, median of 300), since an edit only adds one small message to a queue.
+- With clangd following the buffer, a keystroke costs the same as without it, since an edit only adds one small message to a queue. While a command waits for an answer, the status bar says `waiting`.
 - Indexing the symbols of `src/` (about 100 files) and resolving all 3,872 calls in it takes 0.5 seconds. The 99,600-file tree of random C keywords (390 MB) indexes in about 170 seconds, about 2 MB/s, because tree-sitter's error recovery is slow on such text; Esc stops it within 0.1 seconds, and once the index is complete a lookup takes under 0.1 seconds.
 
 ## Comments
