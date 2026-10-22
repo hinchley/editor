@@ -12,6 +12,7 @@
 #include "changes.h"
 #include "file.h"
 #include "highlight.h"
+#include "image.h"
 #include "lang.h"
 #include "lsp.h"
 #include "match.h"
@@ -52,10 +53,16 @@ typedef struct Document {
   // what the language server knows of the document, or nullptr when its language has no
   // server or servers are off.
   LspDocument *lsp;
+
+  // the picture of an image file, which is shown in place of the (empty) text and never
+  // changed, or nullptr for a text file.
+  // an image has no language, highlighter, changes or language server.
+  Image *image;
 } Document;
 
 // opens path, or an unnamed empty document when path is nullptr.
 // a path that does not exist yet gives an empty document that its first save creates.
+// a binary file opens as an image when it is one the editor can show.
 // anything worth telling the user is appended to message.
 // unless the status is FileStatusOk or FileStatusNew the file was not read, and the
 // document (left empty) should be freed.
@@ -76,6 +83,7 @@ DocumentModified(const Document *document);
 
 // saves to the document's path; see FileSave.
 // a save under a new name with another extension changes the language.
+// an image is never saved.
 enum FileStatus
 DocumentSave(Document *document, bool overwriteChanged, StrBuf *message);
 
@@ -85,7 +93,7 @@ bool
 DocumentRename(Document *document, const char *path, StrBuf *message);
 
 // replaces the text with the file's current contents, forgets the history and keeps the
-// cursors inside the new text.
+// cursors inside the new text, or reads an image again.
 // returns false, changing nothing, when the file cannot be read.
 bool
 DocumentReload(Document *document, StrBuf *message);

@@ -3,6 +3,7 @@
 // a grid of styled cells that is drawn in full each frame and then sent to the terminal.
 // only cells that differ from the previous frame are written, inside one synchronized
 // update, so the terminal never shows a half drawn frame.
+#include "strbuf.h"
 #include "types.h"
 
 // colour value meaning the terminal's default colour.
@@ -64,6 +65,18 @@ ScreenFill(i32 row, i32 column, i32 count, Style style);
 // changes the style of the cell at row and column, both halves of a wide character.
 void
 ScreenSetStyle(i32 row, i32 column, Style style);
+
+// the most images a frame can place, one for each side of a split.
+static constexpr u32 screenMaxImages = 2;
+
+// places an image over the rectangle of columns by rows cells from row and column for this
+// frame: the cells are cleared, and the sixel sequence draws over them once flushed.
+// key tells pictures apart, so an image is only sent again when it changes, moves, or
+// something drawn over it has gone; sixel must stay valid until the frame is flushed.
+// an image drawn over by anything placed after it is left out, and one that does not fit
+// above the bottom row is not placed.
+void
+ScreenPutImage(i32 row, i32 column, i32 columns, i32 rows, const StrBuf *sixel, u64 key);
 
 // shows the terminal cursor at row and column for this frame.
 void

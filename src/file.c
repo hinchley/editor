@@ -194,19 +194,12 @@ ReadOpened(const char *path, i32 descriptor, StrBuf *text, FileStamp *stamp, Str
 
   text->length = (u64)count;
   text->data[text->length] = '\0';
-  u64 probe = text->length < binaryProbeSize ? text->length : binaryProbeSize;
-
-  if (probe && memchr(text->data, '\0', probe)) {
-    if (message) StrBufAppendFormat(message, "%s: binary file, not opened", path);
-    return FileStatusBinary;
-  }
-
   *stamp = StampOf(&status);
   return FileStatusOk;
 }
 
 enum FileStatus
-FileRead(const char *path, StrBuf *text, FileStamp *stamp, StrBuf *message)
+FileReadBytes(const char *path, StrBuf *text, FileStamp *stamp, StrBuf *message)
 {
   // without O_NONBLOCK, opening a named pipe would wait for a writer.
   // it changes nothing for regular files.
@@ -221,6 +214,22 @@ FileRead(const char *path, StrBuf *text, FileStamp *stamp, StrBuf *message)
   enum FileStatus result = ReadOpened(path, descriptor, text, stamp, message);
   close(descriptor);
   return result;
+}
+
+enum FileStatus
+FileRead(const char *path, StrBuf *text, FileStamp *stamp, StrBuf *message)
+{
+  enum FileStatus result = FileReadBytes(path, text, stamp, message);
+  if (result != FileStatusOk) return result;
+
+  u64 probe = text->length < binaryProbeSize ? text->length : binaryProbeSize;
+
+  if (probe && memchr(text->data, '\0', probe)) {
+    if (message) StrBufAppendFormat(message, "%s: binary file, not opened", path);
+    return FileStatusBinary;
+  }
+
+  return FileStatusOk;
 }
 
 enum FileStatus
@@ -479,7 +488,7 @@ FileSave(File *file, const Buffer *buffer, bool overwriteChanged, StrBuf *messag
 // copies the file at from over to through a temporary file next to it, keeping the
 // permissions, and returns 0 or the error with step set to what failed.
 static i32
-CopyFile(const char *from, const char *to, const char **step)
+Copy(const char *from, const char *to, const char **step)
 {
   *step = "cannot read";
   i32 source = open(from, O_RDONLY | O_CLOEXEC);
@@ -547,7 +556,7 @@ FileRename(File *file, const char *path, StrBuf *message)
   bool copied = false;
 
   if (error == EXDEV) {
-    error = CopyFile(file->path.data, path, &step);
+    error = Copy(file->path.data, path, &step);
     copied = !error;
   }
 
@@ -567,4 +576,13 @@ FileRename(File *file, const char *path, StrBuf *message)
   StrBufAppendString(&file->path, path);
   if (current && stat(path, &status) == 0) file->stamp = StampOf(&status);
   return true;
+}
+
+bool
+FileCopy(const char *from, const char *to, StrBuf *message)
+{
+  const char *step;
+  i32 error = Copy(from, to, &step);
+  if (error) StrBufAppendFormat(message, "%s: %s: %s", to, step, strerror(error));
+  return !error;
 }

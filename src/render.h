@@ -5,6 +5,7 @@
 #include "changes.h"
 #include "diagnostics.h"
 #include "highlight.h"
+#include "image.h"
 #include "match.h"
 #include "strbuf.h"
 #include "types.h"
@@ -27,6 +28,10 @@ typedef struct StatusInfo {
   // the errors and warnings its language server reports ("E2 W1"), or nullptr.
   const char *diagnostics;
 
+  // an image's format and size ("PNG 1920×1080"), shown in place of everything about
+  // text, or nullptr.
+  const char *image;
+
   u64 openCount;
   u64 loadedCount;
 } StatusInfo;
@@ -34,6 +39,7 @@ typedef struct StatusInfo {
 // one side of the window: a view, its syntax highlighting (or nullptr), its changes since
 // the last commit (or nullptr), its language server's diagnostics (or nullptr), the
 // matches to highlight in it and its status.
+// a pane with an image shows that instead of its view's text and cursor.
 typedef struct FramePane {
   View *view;
   Highlight *highlight;
@@ -41,6 +47,7 @@ typedef struct FramePane {
   const Diagnostics *diagnostics;
   const MatchSet *marks;
   const StatusInfo *status;
+  Image *image;
 } FramePane;
 
 // something drawn beside the focused pane instead of the other one, in the area from row 0
@@ -53,6 +60,10 @@ typedef struct FramePanel {
 typedef struct Frame {
   i32 width;
   i32 height;
+
+  // the size of a cell in pixels, or 0 when the terminal does not say.
+  i32 cellWidth;
+  i32 cellHeight;
 
   // the panes from left to right (two when split), and which one has focus.
   FramePane panes[2];

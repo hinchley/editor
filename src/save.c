@@ -257,6 +257,13 @@ SaveCopy(void)
   Document *document = MenuDocument();
   if (!document) return;
 
+  // an image is copied as it is on disk.
+  if (document->image) {
+    if (!FileCopy(document->file.path.data, menuPath.data, message)) return;
+    StrBufAppendFormat(message, "copied the image to %s", menuPath.data);
+    return;
+  }
+
   // a separate file, so the document's own path, stamp and save point stay as they are.
   // the target has already been confirmed when it exists.
   File copy = {.lineEnding = document->file.lineEnding};

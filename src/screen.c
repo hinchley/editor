@@ -15,12 +15,27 @@ typedef struct Cell {
   u8 textLength;
   u8 width;
   Style style;
+
+  // a blank cell an image is drawn over, which is only written to clear what was there.
+  bool image;
 } Cell;
 
 typedef struct Grid {
   Cell *cells;
   StrBuf text;
 } Grid;
+
+// an image over a rectangle of cells, and the key of the picture it is.
+typedef struct Placement {
+  i32 row;
+  i32 column;
+  i32 columns;
+  i32 rows;
+  u64 key;
+
+  // the sixel sequence that draws it, valid until the frame is flushed.
+  const StrBuf *sixel;
+} Placement;
 
 // where the frame writer last left the terminal cursor and pen.
 typedef struct Writer {
@@ -45,6 +60,12 @@ static i32 shownCursorColumn = -1;
 static bool shownCursorVisible;
 
 static StrBuf output;
+
+// the images placed in the frame being drawn, and those the terminal shows.
+static Placement placed[screenMaxImages];
+static u32 placedCount;
+static Placement shownImages[screenMaxImages];
+static u32 shownImageCount;
 
 static constexpr char replacementText[] = "\xEF\xBF\xBD";
 
@@ -73,7 +94,10 @@ StyleEqual(Style a, Style b)
 static bool
 CellEqual(const Cell *a, const Cell *b)
 {
-  if (a->width != b->width || a->textLength != b->textLength) return false;
+  if (a->width != b->width || a->textLength != b->textLength || a->image != b->image) {
+    return false;
+  }
+
   if (!StyleEqual(a->style, b->style)) return false;
   return memcmp(CellText(&back, a), CellText(&front, b), a->textLength) == 0;
 }
@@ -82,7 +106,7 @@ static void
 SetBlank(i32 row, i32 column, Style style)
 {
   // offset 0 of every frame's text is a single space.
-  *CellAt(&back, row, column) = (Cell){0, 1, 1, style};
+  *CellAt(&back, row, column) = (Cell){0, 1, 1, style, false};
 }
 
 static void
@@ -102,10 +126,10 @@ SetCell(i32 row, i32 column, const char *text, u32 length, u32 width, Style styl
   if (width == 2) BreakWide(row, column + 1);
 
   Cell *cell = CellAt(&back, row, column);
-  *cell = (Cell){(u32)back.text.length, (u8)length, (u8)width, style};
+  *cell = (Cell){(u32)back.text.length, (u8)length, (u8)width, style, false};
   StrBufAppend(&back.text, text, length);
 
-  if (width == 2) *CellAt(&back, row, column + 1) = (Cell){0, 0, 0, style};
+  if (width == 2) *CellAt(&back, row, column + 1) = (Cell){0, 0, 0, style, false};
   return cell;
 }
 
@@ -144,6 +168,7 @@ ScreenBegin(void)
   }
 
   cursorVisible = false;
+  placedCount = 0;
 }
 
 i32
@@ -248,6 +273,25 @@ ScreenSetStyle(i32 row, i32 column, Style style)
 }
 
 void
+ScreenPutImage(i32 row, i32 column, i32 columns, i32 rows, const StrBuf *sixel, u64 key)
+{
+  // the terminal would scroll for an image that reached the bottom row.
+  bool fits = row >= 0 && column >= 0 && row + rows < screenHeight &&
+    column + columns <= screenWidth;
+  if (!fits || columns <= 0 || rows <= 0 || placedCount == screenMaxImages) return;
+
+  placed[placedCount++] = (Placement){row, column, columns, rows, key, sixel};
+
+  for (i32 y = row; y < row + rows; y++) {
+    for (i32 x = column; x < column + columns; x++) {
+      BreakWide(y, x);
+      SetBlank(y, x, styleDefault);
+      CellAt(&back, y, x)->image = true;
+    }
+  }
+}
+
+void
 ScreenSetCursor(i32 row, i32 column)
 {
   cursorRow = row;
@@ -286,10 +330,12 @@ WriteStyle(Writer *writer, Style style)
   writer->styleKnown = true;
 }
 
+// an image cell is never plain, since writing it again would clear the image over it.
 static bool
 IsPlainCell(const Cell *cell)
 {
-  return cell->width == 1 && cell->textLength == 1 && (u8)CellText(&back, cell)[0] < 0x80;
+  return cell->width == 1 && cell->textLength == 1 && !cell->image &&
+    (u8)CellText(&back, cell)[0] < 0x80;
 }
 
 static void
@@ -339,8 +385,85 @@ WriteCell(Writer *writer, i32 row, i32 column)
   if (!ascii || writer->column >= screenWidth) writer->row = -1;
 }
 
+// true when a placement covers a whole rectangle of image cells, with nothing drawn over
+// any of them after it was placed.
 static bool
-WriteChangedCells(void)
+Uncovered(const Placement *placement)
+{
+  i32 bottom = placement->row + placement->rows;
+  i32 right = placement->column + placement->columns;
+
+  for (i32 row = placement->row; row < bottom; row++) {
+    for (i32 column = placement->column; column < right; column++) {
+      if (!CellAt(&back, row, column)->image) return false;
+    }
+  }
+
+  return true;
+}
+
+// turns the image cells of a placement back into the plain blanks they hold.
+static void
+Unmark(const Placement *placement)
+{
+  i32 bottom = placement->row + placement->rows;
+  i32 right = placement->column + placement->columns;
+
+  for (i32 row = placement->row; row < bottom; row++) {
+    for (i32 column = placement->column; column < right; column++) {
+      CellAt(&back, row, column)->image = false;
+    }
+  }
+}
+
+// leaves out the images something was drawn over, making the rest of their cells plain
+// blanks, so they are drawn again once nothing covers them.
+static void
+DropCovered(void)
+{
+  u32 kept = 0;
+
+  for (u32 index = 0; index < placedCount; index++) {
+    Placement *placement = &placed[index];
+
+    if (Uncovered(placement)) placed[kept++] = *placement;
+    else Unmark(placement);
+  }
+
+  placedCount = kept;
+}
+
+static bool
+PlacementEqual(const Placement *a, const Placement *b)
+{
+  return a->row == b->row && a->column == b->column && a->columns == b->columns &&
+    a->rows == b->rows && a->key == b->key;
+}
+
+// true when the frame places other images than the terminal shows, or the same ones
+// elsewhere.
+static bool
+ImagesChanged(void)
+{
+  if (placedCount != shownImageCount) return true;
+
+  for (u32 index = 0; index < placedCount; index++) {
+    bool found = false;
+
+    for (u32 other = 0; other < shownImageCount && !found; other++) {
+      found = PlacementEqual(&placed[index], &shownImages[other]);
+    }
+
+    if (!found) return true;
+  }
+
+  return false;
+}
+
+// writes the cells that changed, and when the images changed every image cell, which clears
+// whatever was under the new ones.
+static bool
+WriteChangedCells(bool imagesChanged)
 {
   Writer writer = {.row = -1};
   bool changed = false;
@@ -350,7 +473,9 @@ WriteChangedCells(void)
       // the right half of a wide character is drawn with its left half.
       const Cell *cell = CellAt(&back, row, column);
       if (cell->width == 0) continue;
-      if (!redrawAll && CellEqual(cell, CellAt(&front, row, column))) continue;
+
+      bool forced = redrawAll || (cell->image && imagesChanged);
+      if (!forced && CellEqual(cell, CellAt(&front, row, column))) continue;
 
       WriteCell(&writer, row, column);
       changed = true;
@@ -367,7 +492,26 @@ ScreenFlush(void)
   StrBufAppendString(&output, "\x1b[?2026h\x1b[?25l");
   if (redrawAll) StrBufAppendString(&output, "\x1b[0m\x1b[2J");
 
-  bool changed = WriteChangedCells() || redrawAll;
+  DropCovered();
+
+  // a full redraw clears the images too.
+  bool imagesChanged = redrawAll || ImagesChanged();
+  bool changed = WriteChangedCells(imagesChanged) || redrawAll;
+
+  // the images go over the cells cleared for them.
+  for (u32 index = 0; imagesChanged && index < placedCount; index++) {
+    const Placement *placement = &placed[index];
+    StrBufAppendFormat(&output, "\x1b[%d;%dH", placement->row + 1, placement->column + 1);
+    StrBufAppend(&output, placement->sixel->data, placement->sixel->length);
+    changed = true;
+  }
+
+  for (u32 index = 0; index < placedCount; index++) {
+    shownImages[index] = placed[index];
+    shownImages[index].sixel = nullptr;
+  }
+
+  shownImageCount = placedCount;
   bool cursorMoved = cursorVisible != shownCursorVisible || cursorRow != shownCursorRow ||
     cursorColumn != shownCursorColumn;
 

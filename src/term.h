@@ -8,9 +8,12 @@
 
 #include "types.h"
 
+// the window in cells, and its text area in pixels (0 when the terminal does not say).
 typedef struct TermSize {
   i32 width;
   i32 height;
+  i32 pixelWidth;
+  i32 pixelHeight;
 } TermSize;
 
 enum TermWait {
@@ -33,7 +36,7 @@ TermStart(void);
 void
 TermStop(void);
 
-// window size from the kernel.
+// window size from the kernel, which foot keeps in pixels too.
 TermSize
 TermGetSize(void);
 

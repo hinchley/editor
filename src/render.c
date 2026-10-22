@@ -597,6 +597,22 @@ AppendField(StrBuf *status, const char *field)
   StrBufAppendString(status, field);
 }
 
+// the fields of an image's status: its format and size, and the share of its size it is
+// shown at when that is less than all of it.
+static void
+DescribeImage(const StatusInfo *info, u32 scale, bool full, StrBuf *right)
+{
+  if (full) StrBufAppendString(right, info->image);
+
+  if (scale && scale < 100) {
+    if (right->length) StrBufAppendString(right, "  ");
+    StrBufAppendFormat(right, "%u%%", scale);
+  }
+
+  if (full) StrBufAppendFormat(right, "  %lu:%lu", info->openCount, info->loadedCount);
+  if (right->length) StrBufAppendByte(right, ' ');
+}
+
 static void
 DescribePosition(View *view, const StatusInfo *info, bool full, StrBuf *right)
 {
@@ -624,8 +640,9 @@ DescribePosition(View *view, const StatusInfo *info, bool full, StrBuf *right)
 }
 
 // the unfocused view of a split shows only its name and flags, dimmed.
+// scale is the share of an image's size it is shown at, as a percentage.
 static void
-DrawStatus(View *view, const StatusInfo *info, bool focused, i32 row)
+DrawStatus(View *view, const StatusInfo *info, u32 scale, bool focused, i32 row)
 {
   Style style = ThemeStyle(focused ? ThemeStatus : ThemeStatusDim);
   ScreenFill(row, view->column, view->width, style);
@@ -642,7 +659,8 @@ DrawStatus(View *view, const StatusInfo *info, bool focused, i32 row)
 
   for (i32 attempt = focused ? 0 : 2; attempt < 3; attempt++) {
     StrBufClear(&right);
-    if (attempt < 2) DescribePosition(view, info, attempt == 0, &right);
+    if (attempt < 2 && info->image) DescribeImage(info, scale, attempt == 0, &right);
+    else if (attempt < 2) DescribePosition(view, info, attempt == 0, &right);
     rightWidth = (i32)right.length;
     nameWidth = view->width - rightWidth - (i32)flags.length - 2;
     if (nameWidth >= minNameWidth) break;
@@ -663,6 +681,30 @@ DrawStatus(View *view, const StatusInfo *info, bool focused, i32 row)
   StrBufFree(&right);
 }
 
+// draws a pane's image in the middle of its area, and returns the share of the image's
+// size it is shown at, as a percentage.
+static u32
+DrawImage(const Frame *frame, Image *image, i32 column, i32 width, i32 height)
+{
+  if (!frame->cellWidth || !frame->cellHeight) {
+    static constexpr char text[] = "foot did not report its size in pixels";
+    u64 length = sizeof(text) - 1 < (u64)width ? sizeof(text) - 1 : (u64)width;
+    ScreenPutText(0, column, text, length, ThemeStyle(ThemeMessage));
+    return 0;
+  }
+
+  i32 cellWidth = frame->cellWidth;
+  i32 cellHeight = frame->cellHeight;
+  const ImageRendering *rendering = ImageRender(image, width, height, cellWidth, cellHeight);
+  i32 row = (height - rendering->rows) / 2;
+  i32 left = column + (width - rendering->columns) / 2;
+  const StrBuf *sixel = &rendering->sixel;
+  ScreenPutImage(row, left, rendering->columns, rendering->rows, sixel, rendering->key);
+
+  u64 scale = (u64)rendering->width * 100 / image->bitmap.width;
+  return scale ? (u32)scale : 1;
+}
+
 static void
 DrawPane(const Frame *frame, const FramePane *pane, i32 column, i32 width, i32 height)
 {
@@ -670,9 +712,16 @@ DrawPane(const Frame *frame, const FramePane *pane, i32 column, i32 width, i32 h
   drawnAreas[pane - frame->panes] = (PaneArea){column, width, height};
   View *view = pane->view;
   ViewSetArea(view, 0, column, width, height);
-  ViewScrollToCursor(view);
-  DrawView(pane);
-  DrawStatus(view, pane->status, focused, height);
+  u32 scale = 0;
+
+  if (pane->image) {
+    scale = DrawImage(frame, pane->image, column, width, height);
+  } else {
+    ViewScrollToCursor(view);
+    DrawView(pane);
+  }
+
+  DrawStatus(view, pane->status, scale, focused, height);
 }
 
 void
@@ -713,8 +762,9 @@ RenderFrame(const Frame *frame)
   Style style = ThemeStyle(ThemeMessage);
   ScreenPutText(frame->height - 1, 0, message->data, message->length, style);
 
-  // only the focused view shows its cursors.
+  // only the focused view shows its cursors, and an image has none.
   View *view = focused->view;
+  if (focused->image) return;
 
   if (view->cursors.count > 1) {
     DrawCursorBlocks(view);

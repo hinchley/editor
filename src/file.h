@@ -69,6 +69,10 @@ enum FileStatus {
 enum FileStatus
 FileRead(const char *path, StrBuf *text, FileStamp *stamp, StrBuf *message);
 
+// reads the whole file at path into text as FileRead does, but takes binary files too.
+enum FileStatus
+FileReadBytes(const char *path, StrBuf *text, FileStamp *stamp, StrBuf *message);
+
 // the stamp of the file at path now; one that does not exist is not marked as existing.
 FileStamp
 FileStampOf(const char *path);
@@ -106,6 +110,12 @@ FileChangedOnDisk(const File *file);
 // to message.
 bool
 FileRename(File *file, const char *path, StrBuf *message);
+
+// copies the file at from over the file at to (replacing it atomically), with from's
+// permissions.
+// returns false when it cannot, with the reason appended to message.
+bool
+FileCopy(const char *from, const char *to, StrBuf *message);
 
 // appends the path of name in the editor's config folder:
 // ${XDG_CONFIG_HOME:-~/.config}/editor/name.

@@ -235,7 +235,7 @@ TermGetSize(void)
     Fatal("cannot read the window size: %s", strerror(errno));
   }
 
-  return (TermSize){size.ws_col, size.ws_row};
+  return (TermSize){size.ws_col, size.ws_row, size.ws_xpixel, size.ws_ypixel};
 }
 
 enum TermWait

@@ -153,7 +153,8 @@ Reload(void)
   Document *document = Current();
   if (!DocumentReload(document, &message)) return;
 
-  StrBufAppendFormat(&message, "reloaded %lu lines", BufferLineCount(&document->buffer));
+  if (document->image) StrBufAppendString(&message, "reloaded the image");
+  else StrBufAppendFormat(&message, "reloaded %lu lines", BufferLineCount(&document->buffer));
 }
 
 static void
@@ -1053,10 +1054,73 @@ SearchCommand(enum Command command)
   return true;
 }
 
+// true when a command can run while the current buffer is an image, which is only looked
+// at: it leaves the buffer's text, cursors and file alone, or works on other buffers.
+static bool
+ViewOnly(enum Command command)
+{
+  switch (command) {
+    case CommandCancel:
+    case CommandNewBuffer:
+    case CommandOpen:
+    case CommandReload:
+    case CommandLoadNewFiles:
+    case CommandCopyPath:
+    case CommandOpenTerminal:
+    case CommandNextBuffer:
+    case CommandPreviousBuffer:
+    case CommandLastBuffer:
+    case CommandPickBuffer:
+    case CommandPickUnsaved:
+    case CommandCloseBuffer:
+    case CommandCloseFolder:
+    case CommandFileMenu:
+    case CommandSplitSame:
+    case CommandSplitNew:
+    case CommandFocusOtherView:
+    case CommandSwapViews:
+    case CommandCloseView:
+    case CommandProjectSearch:
+    case CommandProjectResults:
+    case CommandJumpBack:
+    case CommandJumpForward:
+    case CommandProjectSymbols:
+    case CommandPickChanged:
+    case CommandPickDiagnostic:
+    case CommandReviewMultifile:
+    case CommandToggleExpandTab:
+    case CommandToggleSoftWrap:
+    case CommandToggleLineNumbers:
+    case CommandToggleWhitespace:
+    case CommandToggleRuler:
+    case CommandToggleServers:
+    case CommandSetRulerColumn:
+    case CommandSaveAll:
+    case CommandQuit:
+    case CommandHelp:
+    case CommandLearn:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// true, after saying so, when the current buffer is an image, which nothing can change.
+static bool
+RefuseImage(void)
+{
+  if (!Current()->image) return false;
+
+  StrBufAppendString(&message, "images are view only");
+  return true;
+}
+
 static void
 RunCommand(const Binding *binding)
 {
   enum Command command = binding->command;
+  if (!ViewOnly(command) && RefuseImage()) return;
+
   View *view = CurrentView();
 
   // only consecutive backspaces or deletes join one undo step.
@@ -1191,6 +1255,8 @@ HandleKey(Key key)
   }
 
   if (KeyIsText(key)) {
+    if (RefuseImage()) return;
+
     char text[4];
     EditContext edit = Editing();
     EditInsert(&edit, text, Utf8Encode(key.code, text));
@@ -1213,6 +1279,8 @@ HandlePaste(const char *text, u64 length)
 
   // a terminal paste is one undo step and is never indented.
   StrBufClear(&message);
+  if (RefuseImage()) return;
+
   UndoBreak(&Current()->undo);
   EditContext edit = Editing();
   EditPaste(&edit, text, length, false);
@@ -1282,6 +1350,12 @@ HandleMouse(const MouseEvent *mouse)
   Document *document;
   View *view = ViewAt(row, column, &document);
   if (!view) return;
+
+  // an image has no text to place a cursor in or scroll, but a press still moves the focus.
+  if (document->image) {
+    if (press && view != CurrentView()) SessionFocusOther();
+    return;
+  }
 
   // the wheel scrolls the view under the pointer without giving it focus.
   // cursors carried along, like cursors put somewhere else, end a run of typing.
@@ -1373,6 +1447,21 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
   const Document *document = workspace.entries[index].document;
   WorkspaceName(&workspace, index, &pane->name);
 
+  if (document->image) {
+    ImageDescribe(document->image, &pane->type);
+
+    pane->status = (StatusInfo){
+      .name = &pane->name,
+      .readOnly = true,
+      .image = pane->type.data,
+      .openCount = workspace.openCount,
+      .loadedCount = workspace.count
+    };
+
+    *framePane = (FramePane){.view = view, .status = &pane->status, .image = document->image};
+    return;
+  }
+
   // the language, noting when the buffer is too large or slow to colour.
   if (document->lang) StrBufAppendString(&pane->type, document->lang->name);
   if (HighlightDisabled(document->highlight)) StrBufAppendString(&pane->type, " (uncoloured)");
@@ -1434,6 +1523,11 @@ Draw(void)
     .paneCount = 1,
     .message = &message
   };
+
+  if (windowSize.width && windowSize.height) {
+    frame.cellWidth = windowSize.pixelWidth / windowSize.width;
+    frame.cellHeight = windowSize.pixelHeight / windowSize.height;
+  }
 
   Pane panes[2] = {};
   DescribePane(&panes[0], workspace.current, CurrentView(), &frame.panes[0]);

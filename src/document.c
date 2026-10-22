@@ -42,6 +42,18 @@ DocumentRefreshServer(Document *document)
   document->lsp = LspOpen(&document->buffer, document->lang, path);
 }
 
+// opens the document's binary file as an image, which is never written.
+static enum FileStatus
+OpenImage(Document *document, StrBuf *message)
+{
+  File *file = &document->file;
+  document->image = ImageOpen(file->path.data, &file->stamp, message);
+  if (!document->image) return FileStatusBinary;
+
+  file->readOnly = true;
+  return FileStatusOk;
+}
+
 enum FileStatus
 DocumentOpen(
   Document *document,
@@ -60,13 +72,20 @@ DocumentOpen(
 
   if (path) {
     StrBufAppendString(&document->file.path, path);
+    u64 mark = message->length;
     status = FileLoad(&document->file, &document->buffer, message);
     if (status == FileStatusNew) StrBufAppendFormat(message, "%s: new file", path);
+
+    // a binary file may be an image, which says for itself why it cannot be shown.
+    if (status == FileStatusBinary) {
+      StrBufTruncate(message, mark);
+      status = OpenImage(document, message);
+    }
   }
 
   document->savedLineEnding = document->file.lineEnding;
   bool read = status == FileStatusOk || status == FileStatusNew;
-  if (!read) return status;
+  if (!read || document->image) return status;
 
   const StrBuf *first = BufferLine(&document->buffer, 0);
   document->scriptLang = LangOfScript(first->data, first->length);
@@ -87,6 +106,7 @@ DocumentFree(Document *document)
   UndoFree(&document->undo);
   BufferFree(&document->buffer);
   FileFree(&document->file);
+  ImageFree(document->image);
 }
 
 bool
@@ -100,6 +120,12 @@ enum FileStatus
 DocumentSave(Document *document, bool overwriteChanged, StrBuf *message)
 {
   File *file = &document->file;
+
+  if (document->image) {
+    StrBufAppendFormat(message, "%s: images are view only, not saved", file->path.data);
+    return FileStatusError;
+  }
+
   enum FileStatus status = FileSave(file, &document->buffer, overwriteChanged, message);
   if (status != FileStatusOk) return status;
 
@@ -119,6 +145,7 @@ bool
 DocumentRename(Document *document, const char *path, StrBuf *message)
 {
   if (!FileRename(&document->file, path, message)) return false;
+  if (document->image) return true;
 
   DetectLanguage(document, message);
   DetectChanges(document);
@@ -126,9 +153,25 @@ DocumentRename(Document *document, const char *path, StrBuf *message)
   return true;
 }
 
+// reads the image again, leaving the one shown when that fails.
+static bool
+ReloadImage(Document *document, StrBuf *message)
+{
+  FileStamp stamp = {};
+  Image *image = ImageOpen(document->file.path.data, &stamp, message);
+  if (!image) return false;
+
+  ImageFree(document->image);
+  document->image = image;
+  document->file.stamp = stamp;
+  return true;
+}
+
 bool
 DocumentReload(Document *document, StrBuf *message)
 {
+  if (document->image) return ReloadImage(document, message);
+
   // the file is read into a separate buffer, so a failure leaves the text alone.
   // the copy of the file shares its path but is never freed.
   File loaded = document->file;
