@@ -27,6 +27,7 @@
 #include "preview.h"
 #include "project.h"
 #include "prompt.h"
+#include "recover.h"
 #include "refactor.h"
 #include "render.h"
 #include "review.h"
@@ -1498,11 +1499,12 @@ WaitForInput(void)
   i32 timeout = pending ? escapeTimeout : -1;
   if (ScanBusy() && !pending) timeout = 0;
 
-  // a request running out of time, or the cursor resting long enough for the diagnostics
-  // panel to ask what is under it, wakes the loop too.
-  i32 waits[] = {LspTimeout(), IssuesTimeout()};
+  // a request running out of time, the cursor resting long enough for the diagnostics
+  // panel to ask what is under it, or input resting long enough for recovery copies,
+  // wakes the loop too.
+  i32 waits[] = {LspTimeout(), IssuesTimeout(), RecoverTimeout(&workspace)};
 
-  for (u32 index = 0; index < 2; index++) {
+  for (u32 index = 0; index < 3; index++) {
     if (waits[index] >= 0 && (timeout < 0 || waits[index] < timeout)) timeout = waits[index];
   }
 
@@ -1512,10 +1514,12 @@ WaitForInput(void)
 
   switch (TermWait(timeout, servers, serverCount)) {
     case TermWaitInput:
+      RecoverInput();
       TermReadInput();
       break;
     case TermWaitResize:
-      Resize();
+      // a hang up wakes the loop this way too, and the window size can no longer be read.
+      if (!TermHungUp()) Resize();
       break;
     case TermWaitTimeout:
       if (pending) InputExpire();
@@ -1523,6 +1527,9 @@ WaitForInput(void)
     case TermWaitOther:
       break;
   }
+
+  // checked whatever woke the loop, so busy language servers cannot hold the copies back.
+  if (RecoverTimeout(&workspace) == 0) RecoverWrite(&workspace);
 }
 
 // what one side of the window shows.
@@ -1677,11 +1684,12 @@ AppRun(i32 argc, char **argv)
   MultifileInit(&workspace, &message);
   LearnInit(&message);
   SessionStart(&workspace, &message, argv + 1, (u64)argc - 1);
+  RecoverReport(&message);
 
   TermStart();
   Resize();
 
-  while (running) {
+  while (running && !TermHungUp()) {
     // handle everything already buffered, then draw once.
     InputEvent event;
     while (running && InputNext(&event)) HandleEvent(&event);
@@ -1692,9 +1700,13 @@ AppRun(i32 argc, char **argv)
     // sends the edits just made, and takes in what the servers said, before drawing.
     if (running) IssuesTick();
     if (running) LspPump();
-    if (running) Draw();
-    if (running) WaitForInput();
+    if (running && !TermHungUp()) Draw();
+    if (running && !TermHungUp()) WaitForInput();
   }
+
+  // a hang up keeps copies of the work; a normal exit removes them.
+  if (TermHungUp()) RecoverHangUp(&workspace);
+  else RecoverForget();
 
   // the servers are given time to exit once the terminal is back to normal.
   TermStop();

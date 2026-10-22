@@ -122,6 +122,13 @@ FileCopy(const char *from, const char *to, StrBuf *message);
 void
 FileConfigPath(const char *name, StrBuf *path);
 
+// appends the path of the editor's state folder, ${XDG_STATE_HOME:-~/.local/state}/editor,
+// followed by "/name" unless name is nullptr, and makes each missing folder along the way
+// with mode.
+// false when there is no home folder or a folder cannot be made.
+bool
+FileStateFolder(const char *name, u32 mode, StrBuf *path);
+
 // short name of a line ending for display, "LF" or "CRLF".
 const char *
 FileLineEndingName(enum LineEnding lineEnding);

@@ -55,6 +55,10 @@ static i32 wakePipe[2] = {-1, -1};
 static volatile sig_atomic_t rawModeActive;
 static volatile sig_atomic_t screenActive;
 
+// set when the terminal has gone (a hang up or termination signal, the end of input, or a
+// failed write), so the main loop keeps copies of the work and exits.
+static volatile sig_atomic_t hungUp;
+
 // writes everything without allocating or exiting, so it is safe in a signal handler.
 static bool
 WriteAll(const char *data, u64 length)
@@ -87,6 +91,13 @@ ResizeHandler([[maybe_unused]] int signal)
 }
 
 static void
+HangUpHandler(int signal)
+{
+  hungUp = 1;
+  ResizeHandler(signal);
+}
+
+static void
 StopHandler(int signal)
 {
   // the handler was installed with SA_RESETHAND, so the raised signal takes its default
@@ -114,14 +125,21 @@ InstallSignals(void)
   // a clipboard command that exits early must not end the editor through its pipe.
   signal(SIGPIPE, SIG_IGN);
 
+  // nothing is written from these: after a crash the heap and buffers may be damaged, and
+  // recover.c's last idle copy is already on disk.
   static constexpr i32 stopSignals[] =
-    {SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT};
+    {SIGINT, SIGQUIT, SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT};
   action.sa_handler = StopHandler;
   action.sa_flags = (i32)SA_RESETHAND;
 
   for (u32 index = 0; index < sizeof(stopSignals) / sizeof(stopSignals[0]); index++) {
     sigaction(stopSignals[index], &action, nullptr);
   }
+
+  action.sa_handler = HangUpHandler;
+  action.sa_flags = SA_RESTART;
+  sigaction(SIGHUP, &action, nullptr);
+  sigaction(SIGTERM, &action, nullptr);
 }
 
 static i64
@@ -155,6 +173,7 @@ Handshake(void)
       return;
     }
 
+    if (hungUp) Fatal("the terminal was closed");
     i64 remaining = deadline - NowMilliseconds();
     if (remaining <= 0) Fatal("the terminal did not answer the cursor position request");
     if (TermWait((i32)remaining, nullptr, 0) == TermWaitInput) TermReadInput();
@@ -278,17 +297,24 @@ TermReadInput(void)
   char buffer[65536];
   i64 count = read(STDIN_FILENO, buffer, sizeof(buffer));
 
-  if (count < 0) {
-    if (errno == EINTR || errno == EAGAIN) return;
-    Fatal("cannot read from the terminal: %s", strerror(errno));
+  if (count < 0 && (errno == EINTR || errno == EAGAIN)) return;
+
+  if (count <= 0) {
+    hungUp = 1;
+    return;
   }
 
-  if (count == 0) Fatal("the terminal was closed");
   InputFeed(buffer, (u64)count);
 }
 
 void
 TermWrite(const char *data, u64 length)
 {
-  if (!WriteAll(data, length)) Fatal("cannot write to the terminal: %s", strerror(errno));
+  if (!WriteAll(data, length)) hungUp = 1;
+}
+
+bool
+TermHungUp(void)
+{
+  return hungUp;
 }

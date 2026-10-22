@@ -116,3 +116,11 @@ static constexpr i64 hoverDelay = 150;
 // how many milliseconds a language server has to answer a command (go to definition,
 // references) before the command gives up on it.
 static constexpr i64 serverRequestTimeout = 5000;
+
+// how many milliseconds input rests before copies of the modified buffers are written to
+// the recovery folder.
+static constexpr i64 recoverDelay = 2000;
+
+// buffers larger than this are only copied to the recovery folder when the terminal hangs
+// up, since each copy rewrites the whole buffer.
+static constexpr u64 maxRecoverSize = 16ull * 1024 * 1024;

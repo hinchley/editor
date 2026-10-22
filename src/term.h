@@ -4,6 +4,8 @@
 // protocol, bracketed paste, mouse reporting, the cursor shape, window size and resize
 // notification.
 // every way out of the program goes through TermStop, so the terminal is always restored.
+// a hang up or termination signal (sighup, sigterm) only sets a flag, so the main loop can
+// keep copies of unsaved work (see recover.h) before it exits.
 #include <poll.h>
 
 #include "types.h"
@@ -46,9 +48,15 @@ enum TermWait
 TermWait(i32 timeoutMilliseconds, const struct pollfd *others, u32 count);
 
 // reads whatever input is available and passes it to the input decoder.
+// the end of input, or an error reading it, counts as a hang up.
 void
 TermReadInput(void);
 
-// writes all bytes to the terminal.
+// writes all bytes to the terminal; a failure counts as a hang up.
 void
 TermWrite(const char *data, u64 length);
+
+// true once the terminal has gone (closed, or a hang up or termination signal), when
+// nothing more can be read or drawn.
+bool
+TermHungUp(void);

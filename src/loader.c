@@ -234,6 +234,15 @@ typedef struct Folder {
 static void
 Walk(Walker *walker, i32 directory, StrBuf *path, const Filter *filter, u64 base);
 
+// true for a temporary file that a save cut short (by a crash or a hang up) left behind:
+// ".<name>.editor-XXXXXX" (see file.c).
+static bool
+Leftover(const char *name)
+{
+  u64 length = strlen(name);
+  return name[0] == '.' && length > 15 && memcmp(name + length - 14, ".editor-", 8) == 0;
+}
+
 // handles one entry, whose display path is in path.
 static void
 WalkEntry(
@@ -253,7 +262,7 @@ WalkEntry(
   if (FilterMatches(folder->filter, relative, relativeLength, kind == KindFolder)) return;
 
   if (kind == KindFile) {
-    AddFile(walker, path->data, path->length, id);
+    if (!Leftover(name)) AddFile(walker, path->data, path->length, id);
     return;
   }
 

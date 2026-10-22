@@ -1,6 +1,7 @@
 #include "document.h"
 
 #include <string.h>
+#include <unistd.h>
 
 // picks the language from the path and starts highlighting in it, when it changed.
 static void
@@ -107,6 +108,8 @@ DocumentFree(Document *document)
   BufferFree(&document->buffer);
   FileFree(&document->file);
   ImageFree(document->image);
+  if (document->recoveredPath.length) unlink(document->recoveredPath.data);
+  StrBufFree(&document->recoveredPath);
 }
 
 bool

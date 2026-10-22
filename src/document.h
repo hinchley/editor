@@ -58,6 +58,11 @@ typedef struct Document {
   // changed, or nullptr for a text file.
   // an image has no language, highlighter, changes or language server.
   Image *image;
+
+  // the buffer revision recover.c last looked at, and the path of the copy of unsaved work
+  // it wrote, or empty when there is none.
+  u64 recovered;
+  StrBuf recoveredPath;
 } Document;
 
 // opens path, or an unnamed empty document when path is nullptr.
@@ -74,6 +79,7 @@ DocumentOpen(
   StrBuf *message
 );
 
+// frees the document and removes its recovery copy, since its changes were dropped.
 void
 DocumentFree(Document *document);
 

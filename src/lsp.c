@@ -1,11 +1,9 @@
 #include "lsp.h"
 
-#include <errno.h>
 #include <libgen.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
 #include "file.h"
@@ -225,28 +223,12 @@ FindRoot(const char *path, const char *const *names, StrBuf *root)
   StrBufAppend(root, startFolder.data, startFolder.length);
 }
 
-// the server's standard error goes to <state folder>/editor/<language id>.log, where the
-// state folder is $XDG_STATE_HOME or ~/.local/state; false when the folder cannot be made.
+// the server's standard error goes to <state folder>/editor/<language id>.log; false when
+// the folder cannot be made.
 static bool
 LogPath(const Lang *lang, StrBuf *path)
 {
-  const char *state = getenv("XDG_STATE_HOME");
-  const char *home = getenv("HOME");
-  if (state && *state) StrBufAppendFormat(path, "%s/editor", state);
-  else if (home && *home) StrBufAppendFormat(path, "%s/.local/state/editor", home);
-  else return false;
-
-  // makes each folder along the way.
-  for (u64 at = 1; at <= path->length; at++) {
-    if (at < path->length && path->data[at] != '/') continue;
-
-    char saved = path->data[at];
-    path->data[at] = '\0';
-    bool made = mkdir(path->data, 0755) == 0 || errno == EEXIST;
-    path->data[at] = saved;
-    if (!made) return false;
-  }
-
+  if (!FileStateFolder(nullptr, 0755, path)) return false;
   StrBufAppendFormat(path, "/%s.log", lang->id);
   return true;
 }

@@ -35,6 +35,29 @@ FileConfigPath(const char *name, StrBuf *path)
   else StrBufAppendFormat(path, "%s/.config/editor/%s", home ? home : "", name);
 }
 
+bool
+FileStateFolder(const char *name, u32 mode, StrBuf *path)
+{
+  const char *state = getenv("XDG_STATE_HOME");
+  const char *home = getenv("HOME");
+  if (state && *state) StrBufAppendFormat(path, "%s/editor", state);
+  else if (home && *home) StrBufAppendFormat(path, "%s/.local/state/editor", home);
+  else return false;
+  if (name) StrBufAppendFormat(path, "/%s", name);
+
+  for (u64 at = 1; at <= path->length; at++) {
+    if (at < path->length && path->data[at] != '/') continue;
+
+    char saved = path->data[at];
+    path->data[at] = '\0';
+    bool made = mkdir(path->data, mode) == 0 || errno == EEXIST;
+    path->data[at] = saved;
+    if (!made) return false;
+  }
+
+  return true;
+}
+
 const char *
 FileLineEndingName(enum LineEnding lineEnding)
 {
@@ -365,6 +388,7 @@ ResolveTarget(Save *save)
 }
 
 // the temporary file sits next to the target so the final rename stays on one file system.
+// a long name is cut so the temporary one still fits in a file name (255 bytes).
 static void
 TemporaryPath(const StrBuf *target, StrBuf *temporary)
 {
@@ -373,7 +397,7 @@ TemporaryPath(const StrBuf *target, StrBuf *temporary)
   const char *name = target->data + folderLength;
 
   StrBufAppend(temporary, target->data, folderLength);
-  StrBufAppendFormat(temporary, ".%s.editor-XXXXXX", name);
+  StrBufAppendFormat(temporary, ".%.200s.editor-XXXXXX", name);
 }
 
 static u32
