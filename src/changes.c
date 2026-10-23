@@ -183,6 +183,13 @@ ChangesLineCount(const Changes *changes)
   return changes->buffer ? BufferLineCount(changes->buffer) : changes->textLines.count;
 }
 
+u64
+ChangesMarkLine(const Changes *changes, const DiffHunk *hunk)
+{
+  u64 last = ChangesLineCount(changes) - 1;
+  return hunk->newStart <= last ? hunk->newStart : last;
+}
+
 void
 ChangesLine(const Changes *changes, u64 line, const char **text, u64 *length)
 {
@@ -269,14 +276,6 @@ ChangesTimeout(void)
   return 0;
 }
 
-// the line of the buffer a hunk's mark is drawn on when it only removes lines.
-static u64
-RemovalLine(const Changes *changes, const DiffHunk *hunk)
-{
-  u64 last = ChangesLineCount(changes) - 1;
-  return hunk->newStart <= last ? hunk->newStart : last;
-}
-
 static u64
 HunkAt(Changes *changes, u64 line, bool settled)
 {
@@ -308,7 +307,7 @@ HunkAt(Changes *changes, u64 line, bool settled)
   if (count) {
     const DiffHunk *last = &hunks[count - 1];
     bool end = last->newCount == 0 && last->newStart > line;
-    if (end && RemovalLine(changes, last) == line) return count - 1;
+    if (end && ChangesMarkLine(changes, last) == line) return count - 1;
   }
 
   return UINT64_MAX;
@@ -361,32 +360,4 @@ void
 ChangesBaseLine(const Changes *changes, u64 line, const char **text, u64 *length)
 {
   LineOfLines(&changes->lines, line, text, length);
-}
-
-bool
-ChangesOfText(const char *path, const char *text, u64 length, DiffHunks *hunks)
-{
-  hunks->count = 0;
-  StrBuf relative = {};
-  GitRepo *repo = GitRepoOf(path, &relative);
-  GitHash commit;
-  StrBuf base = {};
-  bool tracked = repo && GitHead(repo, &commit) &&
-    GitReadFile(repo, &commit, relative.data, &base) == GitFileOk;
-  StrBufFree(&relative);
-
-  if (tracked && base.length <= maxDiffSize && length <= maxDiffSize) {
-    Lines old = {};
-    Lines new = {};
-    SplitLines(&old, base.data, base.length);
-    SplitLines(&new, text, length);
-    DiffSource oldSource = {old.count, LineOfLines, &old};
-    DiffSource newSource = {new.count, LineOfLines, &new};
-    DiffRun(&oldSource, &newSource, maxDiffCost, hunks);
-    free(old.starts);
-    free(new.starts);
-  }
-
-  StrBufFree(&base);
-  return tracked;
 }

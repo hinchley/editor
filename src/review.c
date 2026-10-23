@@ -50,15 +50,6 @@ DescribeCounts(const ChangeCounts *counts, StrBuf *text)
   StrBufAppendFormat(text, "+%lu ~%lu -%lu", counts->added, counts->changed, counts->removed);
 }
 
-// the line a hunk is marked and gone to on: its first new line, or for a removal the line
-// after it (the last line for a removal at the end).
-static u64
-HunkLine(const Document *document, const DiffHunk *hunk)
-{
-  u64 last = BufferLineCount(&document->buffer) - 1;
-  return hunk->newStart <= last ? hunk->newStart : last;
-}
-
 // the current document's hunks, or nullptr after saying why there are none.
 static const DiffHunk *
 CurrentHunks(Document *document, u64 *count)
@@ -95,7 +86,7 @@ ReviewStep(bool backward)
   u64 found = count;
 
   for (u64 index = 0; index < count; index++) {
-    u64 at = HunkLine(document, &hunks[index]);
+    u64 at = ChangesMarkLine(document->changes, &hunks[index]);
     if (backward && at < line) found = index;
     if (!backward && at > line) {
       found = index;
@@ -108,7 +99,7 @@ ReviewStep(bool backward)
     StrBufAppendString(message, backward ? "wrapped to the end" : "wrapped to the start");
   }
 
-  Position position = {HunkLine(document, &hunks[found]), 0};
+  Position position = {ChangesMarkLine(document->changes, &hunks[found]), 0};
   JumpRecord();
   MoveSelect(view, position, position);
 }
@@ -422,7 +413,7 @@ DrawHeader(const Document *document, const DiffHunk *hunk, i32 column, i32 width
   WorkspaceName(workspace, index, &header);
 
   if (hunk) {
-    StrBufAppendFormat(&header, ":%lu  ", HunkLine(document, hunk) + 1);
+    StrBufAppendFormat(&header, ":%lu  ", ChangesMarkLine(document->changes, hunk) + 1);
     ChangeCounts counts = {};
     ChangesCountHunk(hunk, &counts);
     DescribeCounts(&counts, &header);
@@ -439,24 +430,26 @@ DrawHeader(const Document *document, const DiffHunk *hunk, i32 column, i32 width
 static void
 DrawNoChange(Document *document, u64 line, i32 column)
 {
+  Changes *changes = document->changes;
   Style faint = ThemeStyle(ThemeGutter);
   const char *why = "no change at the cursor";
-  if (!document->changes) why = "not in a git repository";
-  else if (!ChangesTracked(document->changes)) why = "not in the last commit";
+  if (!changes) why = "not in a git repository";
+  else if (!ChangesTracked(changes)) why = "not in the last commit";
   ScreenPutString(1, column + 1, why, faint);
 
   u64 count;
-  const DiffHunk *hunks = ChangesHunks(document->changes, &count);
+  const DiffHunk *hunks = ChangesHunks(changes, &count);
   if (!count) return;
 
   u64 next = count;
   for (u64 index = 0; index < count && next == count; index++) {
-    if (HunkLine(document, &hunks[index]) > line) next = index;
+    if (ChangesMarkLine(changes, &hunks[index]) > line) next = index;
   }
 
   StrBuf note = {};
   if (next < count) {
-    StrBufAppendFormat(&note, "next change at line %lu", HunkLine(document, &hunks[next]) + 1);
+    u64 at = ChangesMarkLine(changes, &hunks[next]);
+    StrBufAppendFormat(&note, "next change at line %lu", at + 1);
   } else {
     StrBufAppendFormat(&note, "%lu change%s above", count, StrBufPlural(count));
   }
@@ -521,10 +514,9 @@ ReviewDrawPanel(i32 column, i32 width, i32 height)
 
 // the changes picker.
 
-// adds the changes of a file: of its document when it is open (so lines past the end are
-// marked on the last), or else of its text on disk.
+// adds the changes of a file: of its document when it is open, or else of its text on disk.
 static void
-AddChanged(u64 serial, const Document *document, const DiffHunk *hunks, u64 count)
+AddChanged(u64 serial, const Changes *changes, const DiffHunk *hunks, u64 count)
 {
   if (!count) return;
 
@@ -537,7 +529,7 @@ AddChanged(u64 serial, const Document *document, const DiffHunk *hunks, u64 coun
     }
 
     const DiffHunk *hunk = &hunks[index];
-    u64 line = document ? HunkLine(document, hunk) : hunk->newStart;
+    u64 line = ChangesMarkLine(changes, hunk);
     Changed *change = &changed[changedCount++];
     *change = (Changed){.serial = serial, .line = line, .hunk = index};
     ChangesCountHunk(hunk, &change->counts);
@@ -548,23 +540,19 @@ static bool
 VisitEntry([[maybe_unused]] void *context, const ScanItem *item)
 {
   u64 serial = workspace->entries[item->index].serial;
+  const Document *document = item->document;
+  const char *path = WorkspacePath(workspace, item->index)->data;
   scannedCount++;
 
-  if (item->document) {
-    Changes *changes = item->document->changes;
-    trackedCount += changes != nullptr;
-    ChangesRefresh(changes);
-    u64 count;
-    const DiffHunk *hunks = ChangesHunks(changes, &count);
-    AddChanged(serial, item->document, hunks, count);
-    return true;
-  }
-
-  DiffHunks hunks = {};
-  const char *path = WorkspacePath(workspace, item->index)->data;
-  trackedCount += ChangesOfText(path, item->text, item->length, &hunks);
-  AddChanged(serial, nullptr, hunks.hunks, hunks.count);
-  DiffFree(&hunks);
+  // an open document's changes follow its buffer; a file on disk is compared once.
+  Changes *changes = document ? document->changes
+                              : ChangesNewText(path, item->text, item->length);
+  trackedCount += changes != nullptr;
+  if (document) ChangesRefresh(changes);
+  u64 count;
+  const DiffHunk *hunks = ChangesHunks(changes, &count);
+  AddChanged(serial, changes, hunks, count);
+  if (!document) ChangesFree(changes);
   return true;
 }
 
@@ -850,10 +838,11 @@ Picked([[maybe_unused]] void *context, bool picked, u64 id)
 
   // the file may have changed since it was compared, so its changes are found again.
   Document *document = WorkspaceDocument(workspace);
+  Changes *changes = document->changes;
   u64 count;
-  const DiffHunk *hunks = ChangesHunks(document->changes, &count);
+  const DiffHunk *hunks = ChangesHunks(changes, &count);
   u64 hunk = changed[id].hunk;
-  u64 line = hunk < count ? HunkLine(document, &hunks[hunk]) : changed[id].line;
+  u64 line = hunk < count ? ChangesMarkLine(changes, &hunks[hunk]) : changed[id].line;
   u64 last = BufferLineCount(&document->buffer) - 1;
   Position position = {line <= last ? line : last, 0};
   MoveSelect(document->view, position, position);

@@ -56,6 +56,11 @@ ChangesPath(const Changes *changes);
 u64
 ChangesLineCount(const Changes *changes);
 
+// the line a hunk is marked and gone to on: its first new line, or for a removal the line
+// after it (the last line for a removal at the end).
+u64
+ChangesMarkLine(const Changes *changes, const DiffHunk *hunk);
+
 void
 ChangesLine(const Changes *changes, u64 line, const char **text, u64 *length);
 
@@ -98,8 +103,3 @@ ChangesCountHunk(const DiffHunk *hunk, ChangeCounts *counts);
 // a line of the base, valid until the base is read again.
 void
 ChangesBaseLine(const Changes *changes, u64 line, const char **text, u64 *length);
-
-// the hunks between text (a file as read from disk) and the base, for files that are not
-// open; returns false when the file at path has no changes to compare with.
-bool
-ChangesOfText(const char *path, const char *text, u64 length, DiffHunks *hunks);
