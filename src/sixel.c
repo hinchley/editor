@@ -152,8 +152,7 @@ SplitBox(Box *boxes, u32 *boxCount, u16 *sorted, const Bin *bins, u16 *scratch)
 }
 
 // picks the palette by median cut, and points the bins it was picked from at their entry.
-// returns false when every colour has an entry of its own, so nothing needs diffusing.
-static bool
+static void
 ChoosePalette(const Bin *bins, Palette *palette)
 {
   u16 *sorted = MemoryResize(nullptr, binCount, sizeof(u16));
@@ -192,7 +191,6 @@ ChoosePalette(const Bin *bins, Palette *palette)
   palette->count = boxCount;
   free(sorted);
   free(scratch);
-  return occupied > paletteSize;
 }
 
 // the palette entry closest to a colour, found once for each bin.
@@ -230,9 +228,11 @@ Clamp(i32 value)
 }
 
 // gives each pixel its palette entry, or transparent, carrying each one's error onto the
-// pixels not yet done when diffuse is set.
+// pixels not yet done.
+// a bin of one exact colour has that colour as its entry, so its pixels carry no error,
+// and an image of few colours stays crisp.
 static void
-MapPixels(const Bitmap *bitmap, Palette *palette, bool diffuse, u8 *entries)
+MapPixels(const Bitmap *bitmap, Palette *palette, u8 *entries)
 {
   u32 width = bitmap->width;
 
@@ -258,12 +258,11 @@ MapPixels(const Bitmap *bitmap, Palette *palette, bool diffuse, u8 *entries)
       i32 color[3];
 
       for (u32 channel = 0; channel < 3; channel++) {
-        color[channel] = Clamp(pixel[channel] + (diffuse ? carried[channel] / 16 : 0));
+        color[channel] = Clamp(pixel[channel] + carried[channel] / 16);
       }
 
       u8 entry = EntryOf(palette, (u32)color[0], (u32)color[1], (u32)color[2]);
       entries[at] = entry;
-      if (!diffuse) continue;
 
       for (u32 channel = 0; channel < 3; channel++) {
         i32 error = color[channel] - palette->colors[entry][channel];
@@ -391,11 +390,11 @@ SixelEncode(const Bitmap *bitmap, StrBuf *out)
   Palette palette = {};
   palette.entries = MemoryResize(nullptr, binCount, sizeof(u16));
   memset(palette.entries, 0xFF, binCount * sizeof(u16));
-  bool diffuse = ChoosePalette(bins, &palette);
+  ChoosePalette(bins, &palette);
   free(bins);
 
   u8 *entries = MemoryResize(nullptr, (u64)bitmap->width * bitmap->height, 1);
-  MapPixels(bitmap, &palette, diffuse, entries);
+  MapPixels(bitmap, &palette, entries);
   free(palette.entries);
 
   // a device control string: pixels left undrawn stay transparent (the 1), and the raster
