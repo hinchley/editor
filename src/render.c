@@ -648,11 +648,9 @@ DescribePosition(View *view, const StatusInfo *info, bool full, StrBuf *right)
 
   // only what differs from the defaults shows, and line:column comes last, so it stays in
   // place as the others come and go.
-  if (full && view->cursors.count > 1) {
-    StrBufAppendFormat(right, "%u cursors (esc)", view->cursors.count);
-  }
-
   if (full) {
+    u32 cursors = view->cursors.count;
+    if (cursors > 1) StrBufAppendFormat(right, "%u cursors (esc)", cursors);
     if (info->changes) AppendField(right, info->changes);
     if (info->diagnostics) AppendField(right, info->diagnostics);
     if (view->options->softWrap) AppendField(right, "wrap");
