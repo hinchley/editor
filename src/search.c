@@ -46,7 +46,7 @@ typedef struct Replacing {
 static Workspace *workspace;
 static StrBuf *message;
 
-// the last search, and whether a new one matches case (ctrl+t) and is a regular
+// the last search, and whether a new one always matches case (ctrl+t) and is a regular
 // expression (ctrl+r), for the whole session.
 static Pattern last;
 static bool caseSensitive;
@@ -98,10 +98,33 @@ SearchMarks(const Document *document)
   return (MatchSet){document->marks, &last, scope};
 }
 
+// whether a search for source matches case: always after ctrl+t, and otherwise when it has
+// an upper case letter (smart case).
+// the character after a backslash is an escape (\S in a regular expression), not a letter
+// typed.
+static bool
+MatchesCase(const char *source, u64 length)
+{
+  if (caseSensitive) return true;
+
+  for (u64 at = 0; at < length;) {
+    if (source[at] == '\\') {
+      at += 2;
+      continue;
+    }
+
+    u32 codepoint;
+    at += Utf8Decode(source + at, length - at, &codepoint);
+    if (Utf8Lower(codepoint) != codepoint) return true;
+  }
+
+  return false;
+}
+
 static void
 SetPattern(const char *source, u64 length)
 {
-  PatternOptions options = {.caseSensitive = caseSensitive, .regex = regex};
+  PatternOptions options = {.caseSensitive = MatchesCase(source, length), .regex = regex};
   PatternSet(&last, source, length, options);
 }
 
@@ -159,7 +182,10 @@ BadPattern(void)
   const StrBuf *text = PromptText();
   if (!regex || !text->length) return false;
 
-  PatternOptions options = {.caseSensitive = caseSensitive, .regex = true};
+  PatternOptions options = {
+    .caseSensitive = MatchesCase(text->data, text->length),
+    .regex = true
+  };
   PatternSet(&typed, text->data, text->length, options);
   return typed.error.length;
 }
@@ -172,9 +198,10 @@ Label(void)
   u32 count = 0;
   bool find = prompt == SearchPromptFind;
   bool bad = BadPattern();
-  if (caseSensitive) notes[count++] = "match case";
+  const StrBuf *text = PromptText();
+  if (MatchesCase(TextOf(text), text->length)) notes[count++] = "match case";
   if (regex) notes[count++] = bad ? "regex, bad pattern" : "regex";
-  if (find && PromptText()->length && !found && !bad) notes[count++] = "no match";
+  if (find && text->length && !found && !bad) notes[count++] = "no match";
   if (find && found && wrapped) notes[count++] = "wrapped";
 
   StrBuf label = {};
@@ -235,7 +262,8 @@ CannotMatch(const char *text, u64 length)
   const StrBuf *old = &last.source;
   bool literal = !regex && !last.options.regex && !last.options.wholeWord;
   if (found || !literal || last.lineEnd || !last.text.length) return false;
-  if (last.options.caseSensitive != caseSensitive || length <= old->length) return false;
+  bool matchesCase = MatchesCase(text, length);
+  if (last.options.caseSensitive != matchesCase || length <= old->length) return false;
 
   u8 before = (u8)old->data[old->length - 1];
   u8 after = (u8)text[old->length];
