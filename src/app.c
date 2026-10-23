@@ -1124,8 +1124,8 @@ ToggleImageSize(void)
   );
 }
 
-// moves the part of an image shown at its actual size, for the movement keys: by a cell,
-// a page, or to an edge or corner; false for any other command.
+// moves the part of an image shown at its actual size, for the movement keys: by a quarter
+// of the view, a page, or to an edge or corner; false for any other command.
 static bool
 PanImage(Image *image, enum Command command)
 {
@@ -1135,18 +1135,24 @@ PanImage(Image *image, enum Command command)
   i64 page = (i64)(windowSize.height - 3) * cellHeight;
   i64 far = INT32_MAX;
 
+  // each step encodes the part shown again, so a step of a quarter of the view crosses a
+  // large image in a few presses rather than hundreds.
+  i32 columns = workspace.split ? windowSize.width / 2 : windowSize.width;
+  i64 across = (i64)columns * cellWidth / 4;
+  i64 down = page / 4;
+
   switch (command) {
     case CommandMoveUp:
-      ImagePan(image, 0, -cellHeight);
+      ImagePan(image, 0, -down);
       break;
     case CommandMoveDown:
-      ImagePan(image, 0, cellHeight);
+      ImagePan(image, 0, down);
       break;
     case CommandMoveLeft:
-      ImagePan(image, -cellWidth, 0);
+      ImagePan(image, -across, 0);
       break;
     case CommandMoveRight:
-      ImagePan(image, cellWidth, 0);
+      ImagePan(image, across, 0);
       break;
     case CommandMovePageUp:
       ImagePan(image, 0, -page);
