@@ -2,8 +2,9 @@
 
 // sixel: the sixel graphics sequence that draws a bitmap in foot.
 // the colours are reduced to a palette of 255 picked for the bitmap by median cut, with
-// Floyd-Steinberg error diffusion to hide the steps between them, and pixels less than
-// half opaque are left transparent.
+// Floyd-Steinberg error diffusion to hide the steps between them.
+// the bitmap is drawn opaque, whatever its alpha says, so one with transparency is
+// flattened first (BitmapFlatten).
 #include "bitmap.h"
 #include "strbuf.h"
 

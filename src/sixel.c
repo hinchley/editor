@@ -5,9 +5,8 @@
 
 #include "memory.h"
 
-// the colours of the palette, and the index that marks a transparent pixel.
+// the colours of the palette.
 static constexpr u32 paletteSize = 255;
-static constexpr u8 transparent = 255;
 
 // colours are counted in bins of 5 bits a channel.
 static constexpr u32 binCount = 1u << 15;
@@ -54,8 +53,6 @@ CountColors(const Bitmap *bitmap, Bin *bins)
   u64 count = (u64)bitmap->width * bitmap->height;
 
   for (u64 index = 0; index < count; index++, pixel += 4) {
-    if (pixel[3] < 128) continue;
-
     Bin *bin = &bins[BinOf(pixel[0], pixel[1], pixel[2])];
     bin->count++;
     for (u32 channel = 0; channel < 3; channel++) bin->sums[channel] += pixel[channel];
@@ -227,7 +224,7 @@ Clamp(i32 value)
   return value < 0 ? 0 : value > 255 ? 255 : value;
 }
 
-// gives each pixel its palette entry, or transparent, carrying each one's error onto the
+// gives each pixel its palette entry, carrying each one's error onto the
 // pixels not yet done.
 // a bin of one exact colour has that colour as its entry, so its pixels carry no error,
 // and an image of few colours stays crisp.
@@ -248,12 +245,6 @@ MapPixels(const Bitmap *bitmap, Palette *palette, u8 *entries)
     for (u32 x = 0; x < width; x++) {
       u64 at = (u64)y * width + x;
       const u8 *pixel = bitmap->pixels + at * 4;
-
-      if (pixel[3] < 128) {
-        entries[at] = transparent;
-        continue;
-      }
-
       i32 *carried = current + ((u64)x + 1) * 3;
       i32 color[3];
 
@@ -334,8 +325,6 @@ AppendBands(const Bitmap *bitmap, const u8 *entries, StrBuf *out)
 
       for (u32 x = 0; x < width; x++) {
         u8 entry = line[x];
-        if (entry == transparent) continue;
-
         if (!present[entry]) {
           present[entry] = true;
           used[usedCount++] = entry;
