@@ -640,7 +640,7 @@ STYLE.md covers how code in `src/` is written: naming, types, idioms, comments a
   The tags queries and `language` files the editor needs live in `languages/`, outside `vendor/`.
 - `src/` is C23, built with strict warnings (`-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wformat-nonliteral -Wjump-misses-init -Werror`).
   `compile_commands.json` carries the same flags except `-Wjump-misses-init`, which clang does not know, and `-Werror`.
-- Documents (this one, README.md, STYLE.md) put each sentence on its own line, so diffs show the sentences that changed and nothing needs reflowing.
+- This document and README.md put each sentence on its own line, so diffs show the sentences that changed and nothing needs reflowing.
 
 ## The default packages
 
