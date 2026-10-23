@@ -534,8 +534,11 @@ SpellWordAnswered(
   if (!answer || *answer != 'y') return;
   if (!SpellChange(spellWord.data, spellWord.length, spellAdd, message)) return;
 
-  const char *done = spellAdd ? "added \"%s\" to" : "removed \"%s\" from";
-  StrBufAppendFormat(message, done, spellWord.data);
+  StrBufAppendFormat(
+    message,
+    spellAdd ? "added \"%s\" to" : "removed \"%s\" from",
+    spellWord.data
+  );
   StrBufAppendString(message, " the word list");
 }
 

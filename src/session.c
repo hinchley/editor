@@ -599,8 +599,12 @@ AddPending(void)
 
   if (left) {
     if (added) StrBufAppendString(message, "; ");
-    const char *text = "cannot load more than %lu files (%lu left out)";
-    StrBufAppendFormat(message, text, maxFileCount, left);
+    StrBufAppendFormat(
+      message,
+      "cannot load more than %lu files (%lu left out)",
+      maxFileCount,
+      left
+    );
   }
 
   ReportUnreadable(pending.unreadable);
@@ -640,8 +644,7 @@ AskAboutFolder(void)
   }
 
   StrBuf question = {};
-  const char *text = "%s: (a)dd, (r)eplace, (c)ancel";
-  StrBufAppendFormat(&question, text, pendingFolder.data);
+  StrBufAppendFormat(&question, "%s: (a)dd, (r)eplace, (c)ancel", pendingFolder.data);
   PromptChoose(question.data, "arc", FolderAnswered, nullptr);
   StrBufFree(&question);
 }
@@ -991,8 +994,12 @@ CloseFolder(u64 index)
   }
 
   StrBuf question = {};
-  const char *text = "%lu unsaved in %s: (s)ave all, (d)iscard, (c)ancel";
-  StrBufAppendFormat(&question, text, unsaved, closingName.data);
+  StrBufAppendFormat(
+    &question,
+    "%lu unsaved in %s: (s)ave all, (d)iscard, (c)ancel",
+    unsaved,
+    closingName.data
+  );
   PromptChoose(question.data, "sdc", FolderUnsavedAnswered, nullptr);
   StrBufFree(&question);
 }
@@ -1047,8 +1054,11 @@ SessionSplit(bool fresh, i32 width)
   }
 
   if (width < minSplitWidth) {
-    const char *text = "a split needs a window at least %d columns wide";
-    StrBufAppendFormat(message, text, minSplitWidth);
+    StrBufAppendFormat(
+      message,
+      "a split needs a window at least %d columns wide",
+      minSplitWidth
+    );
     return;
   }
 

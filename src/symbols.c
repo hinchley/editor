@@ -601,8 +601,13 @@ Visit([[maybe_unused]] void *context, const ScanItem *item)
 static void
 Progress([[maybe_unused]] void *context, u64 done, u64 count, StrBuf *text)
 {
-  const char *format = "indexing symbols: %lu of %lu file%s (escape stops)";
-  StrBufAppendFormat(text, format, done, count, StrBufPlural(count));
+  StrBufAppendFormat(
+    text,
+    "indexing symbols: %lu of %lu file%s (escape stops)",
+    done,
+    count,
+    StrBufPlural(count)
+  );
 }
 
 static void
@@ -614,8 +619,12 @@ Finished([[maybe_unused]] void *context, ScanResult result)
   StrBufClear(message);
 
   if (result.stopped) {
-    const char *format = "stopped indexing symbols after %lu file%s (they are kept)";
-    StrBufAppendFormat(message, format, result.done, StrBufPlural(result.done));
+    StrBufAppendFormat(
+      message,
+      "stopped indexing symbols after %lu file%s (they are kept)",
+      result.done,
+      StrBufPlural(result.done)
+    );
     pending = WantNone;
     return;
   }
@@ -645,8 +654,12 @@ StartScan(enum Want want)
 
   ScanStart(queue, count, &client, nullptr);
   free(queue);
-  const char *format = "indexing symbols in %lu file%s (escape stops)";
-  StrBufAppendFormat(message, format, count, StrBufPlural(count));
+  StrBufAppendFormat(
+    message,
+    "indexing symbols in %lu file%s (escape stops)",
+    count,
+    StrBufPlural(count)
+  );
 }
 
 // the range of symbols named name.

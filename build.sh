@@ -35,7 +35,7 @@ for argument in "$@"; do
 done
 
 common=(-std=c23 -D_DEFAULT_SOURCE)
-warnings=(-Wall -Wextra -Wpedantic -Wshadow -Wconversion)
+warnings=(-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wformat-nonliteral)
 strict=("${warnings[@]}" -Werror)
 if [[ $mode == debug ]]; then
   optimise=(-O0 -g3 -fno-omit-frame-pointer -fsanitize=address,undefined)

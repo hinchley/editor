@@ -166,8 +166,11 @@ IssuesTogglePanel(i32 width)
   ForgetHover();
 
   if (panelOpen && width < minSplitWidth) {
-    const char *format = "the diagnostics panel needs a window %d columns wide";
-    StrBufAppendFormat(message, format, minSplitWidth);
+    StrBufAppendFormat(
+      message,
+      "the diagnostics panel needs a window %d columns wide",
+      minSplitWidth
+    );
   }
 }
 

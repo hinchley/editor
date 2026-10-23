@@ -201,16 +201,26 @@ Finish([[maybe_unused]] void *context, ScanResult result)
 
   if (!hitCount && !stopped) {
     const char *source = StrBufText(&pattern.source);
-    const char *format = "no match for %s in %lu file%s";
-    StrBufAppendFormat(message, format, source, fileCount, StrBufPlural(fileCount));
+    StrBufAppendFormat(
+      message,
+      "no match for %s in %lu file%s",
+      source,
+      fileCount,
+      StrBufPlural(fileCount)
+    );
     if (skipped) StrBufAppendFormat(message, " (%lu skipped)", skipped);
     return;
   }
 
   if (!hitCount) {
     const char *source = StrBufText(&pattern.source);
-    const char *format = "stopped: no match for %s in the first %lu of %lu files";
-    StrBufAppendFormat(message, format, source, searched, fileCount);
+    StrBufAppendFormat(
+      message,
+      "stopped: no match for %s in the first %lu of %lu files",
+      source,
+      searched,
+      fileCount
+    );
     return;
   }
 
@@ -482,11 +492,10 @@ ReplaceChosen(void)
   ProjectClear();
 
   if (matches) {
-    const char *format = "replaced %lu match%s on %lu line%s in %lu file%s";
     const char *plural = matches == 1 ? "" : "es";
     StrBufAppendFormat(
       message,
-      format,
+      "replaced %lu match%s on %lu line%s in %lu file%s",
       matches,
       plural,
       lines,
@@ -509,8 +518,12 @@ ReplaceChosen(void)
   }
 
   if (moved) {
-    const char *format = ", %lu file%s changed since the search (search again)";
-    StrBufAppendFormat(message, format, moved, StrBufPlural(moved));
+    StrBufAppendFormat(
+      message,
+      ", %lu file%s changed since the search (search again)",
+      moved,
+      StrBufPlural(moved)
+    );
   }
 }
 
@@ -534,10 +547,9 @@ ReplacementGiven(const StrBuf *text)
 
   StrBuf question = {};
   u64 files = ChosenFiles();
-  const char *format = "replace in %lu line%s of %lu file%s? (y/n)";
   StrBufAppendFormat(
     &question,
-    format,
+    "replace in %lu line%s of %lu file%s? (y/n)",
     chosenCount,
     StrBufPlural(chosenCount),
     files,

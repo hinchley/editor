@@ -184,8 +184,11 @@ ReviewTogglePanel(i32 width)
   panelOpen = !panelOpen;
 
   if (panelOpen && width < minSplitWidth) {
-    const char *format = "the change panel needs a window %d columns wide";
-    StrBufAppendFormat(message, format, minSplitWidth);
+    StrBufAppendFormat(
+      message,
+      "the change panel needs a window %d columns wide",
+      minSplitWidth
+    );
   }
 
   if (panelOpen) ChangesRefresh(WorkspaceDocument(workspace)->changes);
@@ -541,8 +544,13 @@ VisitEntry([[maybe_unused]] void *context, const ScanItem *item)
 static void
 Progress([[maybe_unused]] void *context, u64 done, u64 count, StrBuf *text)
 {
-  const char *format = "comparing %lu of %lu file%s with the last commit";
-  StrBufAppendFormat(text, format, done, count, StrBufPlural(count));
+  StrBufAppendFormat(
+    text,
+    "comparing %lu of %lu file%s with the last commit",
+    done,
+    count,
+    StrBufPlural(count)
+  );
   StrBufAppendFormat(text, ": %lu changed (escape stops)", changedFiles);
 }
 
@@ -557,10 +565,14 @@ DescribeChanged(bool stopped, StrBuf *text)
     total.removed += changed[index].counts.removed;
   }
 
-  const char *changes = StrBufPlural(changedCount);
-  const char *files = StrBufPlural(changedFiles);
-  const char *format = "%lu change%s in %lu file%s since the last commit: ";
-  StrBufAppendFormat(text, format, changedCount, changes, changedFiles, files);
+  StrBufAppendFormat(
+    text,
+    "%lu change%s in %lu file%s since the last commit: ",
+    changedCount,
+    StrBufPlural(changedCount),
+    changedFiles,
+    StrBufPlural(changedFiles)
+  );
   DescribeCounts(&total, text);
   const char *plural = StrBufPlural(scannedCount);
   if (stopped) StrBufAppendFormat(text, " (stopped after %lu file%s)", scannedCount, plural);
@@ -843,8 +855,12 @@ Finish([[maybe_unused]] void *context, ScanResult result)
   }
 
   if (!changedCount) {
-    const char *format = "no changes since the last commit in %lu file%s";
-    StrBufAppendFormat(message, format, scannedCount, StrBufPlural(scannedCount));
+    StrBufAppendFormat(
+      message,
+      "no changes since the last commit in %lu file%s",
+      scannedCount,
+      StrBufPlural(scannedCount)
+    );
     if (result.stopped) StrBufAppendString(message, " (stopped)");
     return;
   }
@@ -905,6 +921,10 @@ ReviewPickChanged(void)
     {.visit = VisitEntry, .progress = Progress, .finish = Finish};
   ScanStart(queue, queueCount, &client, nullptr);
   free(queue);
-  const char *format = "comparing %lu file%s with the last commit";
-  StrBufAppendFormat(message, format, queueCount, StrBufPlural(queueCount));
+  StrBufAppendFormat(
+    message,
+    "comparing %lu file%s with the last commit",
+    queueCount,
+    StrBufPlural(queueCount)
+  );
 }
