@@ -41,6 +41,7 @@ static constexpr i32 handshakeTimeout = 1000;
 // leaving the alternate screen.
 // clang-format off
 static constexpr char leaveSequence[] =
+  "\x1b[?1004l"  // stop focus reports
   "\x1b[?1006l"  // stop sgr mouse coordinates
   "\x1b[?1002l"  // stop mouse reporting
   "\x1b[<u"      // pop the keyboard protocol flags
@@ -222,12 +223,13 @@ EnterEditorMode(void)
 
   // the window title is kept on the terminal's stack, to be given back on leaving.
   // mouse reports cover presses, releases and motion while a button is held (1002), in the
-  // sgr form, which has no limit on the coordinates (1006).
-  char sequence[64];
+  // sgr form, which has no limit on the coordinates (1006), and gaining and losing focus are
+  // reported too (1004).
+  char sequence[96];
   i32 length = snprintf(
     sequence,
     sizeof(sequence),
-    "\x1b[22;0t\x1b[?1049h\x1b[>%du\x1b[?2004h\x1b[%d q\x1b[?1002h\x1b[?1006h",
+    "\x1b[22;0t\x1b[?1049h\x1b[>%du\x1b[?2004h\x1b[%d q\x1b[?1002h\x1b[?1006h\x1b[?1004h",
     KeyboardFlagDisambiguate,
     shape
   );

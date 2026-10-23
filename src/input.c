@@ -253,6 +253,9 @@ InterpretCsi(Parse *parse, const Csi *csi)
       return KeyEvent(parse, TildeKey(first), modifiers);
     case 'R':
       return CursorReport(parse, csi);
+    case 'I':
+      parse->event->type = InputEventFocus;
+      return ParseEvent;
     default:
       return KeyEvent(parse, LetterKey(csi->final), modifiers);
   }

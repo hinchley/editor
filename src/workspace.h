@@ -162,11 +162,17 @@ bool
 WorkspaceOpen(Workspace *workspace, u64 index, StrBuf *message);
 
 // opens an entry and makes it current, shown in the focused view.
-// switching to an entry that was already open notes in message when its file changed on
-// disk since it was loaded or saved.
+// switching to an entry that was already open checks its file as WorkspaceReloadChanged
+// does.
 // returns false, leaving the current entry alone, when it cannot be opened.
 bool
 WorkspaceSwitch(Workspace *workspace, u64 index, StrBuf *message);
+
+// reloads every open entry whose file changed on disk since it was loaded or saved and that
+// has no unsaved changes, which loses its undo history, and notes in message what was
+// reloaded and which entries with unsaved changes have changed files.
+void
+WorkspaceReloadChanged(Workspace *workspace, StrBuf *message);
 
 // splits the window, showing an entry in a new view on the right that takes focus.
 // returns false, leaving the window alone, when the entry cannot be opened.

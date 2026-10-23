@@ -253,6 +253,84 @@ MakeCurrent(Workspace *workspace, u64 index)
   workspace->entries[index].used = ++workspace->clock;
 }
 
+// how an open entry's buffer stands against its file.
+enum Disk {
+  DiskSame,
+  DiskReloaded,
+
+  // the file changed, and the buffer has unsaved changes or could not be reloaded.
+  DiskChanged,
+  DiskCount
+};
+
+// reloads an open entry whose file changed on disk since it was loaded or saved, when the
+// buffer has no unsaved changes; a reload that fails appends why to failures.
+static enum Disk
+CheckDisk(Workspace *workspace, u64 index, StrBuf *failures)
+{
+  Document *document = workspace->entries[index].document;
+  if (!document || !document->file.path.length) return DiskSame;
+  if (!FileChangedOnDisk(&document->file)) return DiskSame;
+  if (DocumentModified(document)) return DiskChanged;
+
+  StrBuf failure = {};
+  bool reloaded = DocumentReload(document, &failure);
+  if (failure.length && failures->length) StrBufAppendString(failures, "; ");
+  StrBufAppend(failures, failure.data ? failure.data : "", failure.length);
+  StrBufFree(&failure);
+  return reloaded ? DiskReloaded : DiskChanged;
+}
+
+// checks the open entries from first up to end with CheckDisk, and appends to message what
+// was reloaded, what changed under unsaved changes, and why any reload failed.
+static void
+CheckEntries(Workspace *workspace, u64 first, u64 end, StrBuf *message)
+{
+  u64 counts[DiskCount] = {};
+  u64 last[DiskCount] = {};
+  StrBuf failures = {};
+
+  for (u64 index = first; index < end; index++) {
+    enum Disk disk = CheckDisk(workspace, index, &failures);
+    counts[disk]++;
+    last[disk] = index;
+  }
+
+  u64 reloaded = counts[DiskReloaded];
+  u64 changed = counts[DiskChanged];
+  StrBuf found = {};
+
+  if (reloaded == 1) {
+    const char *path = workspace->entries[last[DiskReloaded]].document->file.path.data;
+    StrBufAppendFormat(&found, "reloaded %s (changed on disk)", path);
+  } else if (reloaded) {
+    StrBufAppendFormat(&found, "reloaded %lu buffers changed on disk", reloaded);
+  }
+
+  if (changed && found.length) StrBufAppendString(&found, "; ");
+
+  if (changed == 1) {
+    const char *path = workspace->entries[last[DiskChanged]].document->file.path.data;
+    StrBufAppendFormat(&found, "%s: changed on disk (alt+r reloads)", path);
+  } else if (changed) {
+    StrBufAppendFormat(&found, "%lu buffers with unsaved changes changed on disk", changed);
+  }
+
+  if (failures.length && found.length) StrBufAppendString(&found, "; ");
+  StrBufAppend(&found, failures.data ? failures.data : "", failures.length);
+
+  if (found.length && message->length) StrBufAppendString(message, "; ");
+  StrBufAppend(message, found.data ? found.data : "", found.length);
+  StrBufFree(&found);
+  StrBufFree(&failures);
+}
+
+void
+WorkspaceReloadChanged(Workspace *workspace, StrBuf *message)
+{
+  CheckEntries(workspace, 0, workspace->count, message);
+}
+
 bool
 WorkspaceSwitch(Workspace *workspace, u64 index, StrBuf *message)
 {
@@ -266,12 +344,7 @@ WorkspaceSwitch(Workspace *workspace, u64 index, StrBuf *message)
   // a commit made since the entry was last shown changes what its text is compared with.
   if (wasOpen) ChangesRefresh(document->changes);
 
-  if (wasOpen && document->file.path.length && FileChangedOnDisk(&document->file)) {
-    if (message->length) StrBufAppendString(message, "; ");
-    const char *path = document->file.path.data;
-    StrBufAppendFormat(message, "%s: changed on disk (alt+r reloads)", path);
-  }
-
+  if (wasOpen) CheckEntries(workspace, index, index + 1, message);
   return true;
 }
 

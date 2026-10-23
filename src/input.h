@@ -3,7 +3,8 @@
 // decodes the byte stream from foot into input events.
 // it understands the kitty keyboard protocol with the disambiguate flag as foot sends it
 // (with the cursor keys, home, end, page up and down, insert and delete in their csi
-// forms), bracketed paste, sgr mouse reports and the replies to the startup queries.
+// forms), bracketed paste, sgr mouse reports, focus reports and the replies to the startup
+// queries.
 // the decoder only parses bytes; term.c reads them and feeds them in.
 #include "key.h"
 #include "types.h"
@@ -13,7 +14,10 @@ enum InputEventType {
   InputEventPaste,
   InputEventCursorReport,
   InputEventKeyboardReport,
-  InputEventMouse
+  InputEventMouse,
+
+  // the window has gained focus.
+  InputEventFocus
 };
 
 enum MouseButton {

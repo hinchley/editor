@@ -70,6 +70,9 @@ static u32 drawnFocus;
 
 static bool running = true;
 
+// the window gained focus, and the files of the open buffers wait to be checked.
+static bool focusReturned;
+
 // the current document and its focused view.
 // fetched afresh by every command, since opening a folder frees every document.
 static Document *
@@ -1525,6 +1528,28 @@ HandleEvent(const InputEvent *event)
   if (event->type == InputEventKey) HandleKey(event->key);
   else if (event->type == InputEventPaste) HandlePaste(event->text, event->length);
   else if (event->type == InputEventMouse) HandleMouse(&event->mouse);
+  else if (event->type == InputEventFocus) focusReturned = true;
+}
+
+// reloads the buffers whose files changed while the window was away, once nothing that
+// holds on to the text (a prompt, a picker, a search or a scan) is open.
+static void
+CheckFiles(void)
+{
+  if (!focusReturned || PromptActive() || PickerActive() || SearchActive() || ScanBusy())
+    return;
+  if (LearnActive()) return;
+
+  focusReturned = false;
+  StrBuf found = {};
+  WorkspaceReloadChanged(&workspace, &found);
+
+  if (found.length) {
+    StrBufClear(&message);
+    StrBufAppend(&message, found.data, found.length);
+  }
+
+  StrBufFree(&found);
 }
 
 static void
@@ -1750,6 +1775,7 @@ AppRun(i32 argc, char **argv)
     // handle everything already buffered, then draw once.
     InputEvent event;
     while (running && InputNext(&event)) HandleEvent(&event);
+    if (running) CheckFiles();
 
     // a scan runs a slice at a time, so its progress shows and escape stops it.
     if (running && ScanBusy()) ScanContinue();
