@@ -11,6 +11,7 @@
 #include "memory.h"
 #include "move.h"
 #include "picker.h"
+#include "render.h"
 #include "scan.h"
 #include "screen.h"
 #include "settings.h"
@@ -18,8 +19,6 @@
 
 // unchanged lines the panel shows before and after a change.
 static constexpr u64 contextLines = 3;
-
-static constexpr char invalidSymbol[] = "�";
 
 // marks a changed row, as the gutter does.
 static constexpr char markSymbol[] = "▎";
@@ -235,24 +234,7 @@ DrawText(
     if (x + cluster.width > width && layoutRow.last) break;
     if (x + cluster.width > width) continue;
 
-    i32 at = column + (i32)x;
-    char symbol[2] = {'^', (char)(text[cluster.start] ^ 0x40)};
-
-    switch (cluster.kind) {
-      case LayoutKindText:
-        u64 size = cluster.end - cluster.start;
-        ScreenPutCluster(row + index, at, text + cluster.start, size, cluster.width, style);
-        break;
-      case LayoutKindSpace:
-      case LayoutKindTab:
-        break;
-      case LayoutKindControl:
-        ScreenPutText(row + index, at, symbol, 2, control);
-        break;
-      case LayoutKindInvalid:
-        ScreenPutCluster(row + index, at, invalidSymbol, strlen(invalidSymbol), 1, control);
-        break;
-    }
+    RenderCluster(row + index, column + (i32)x, text, &cluster, style, control);
   }
 }
 

@@ -340,11 +340,25 @@ DrawBlank(
   PutFaintSymbol(canvas, row, canvas->textColumn + (i32)x, symbol, Curled(style, curl));
 }
 
-static void
-DrawControl(const Canvas *canvas, i32 row, i32 column, u64 byte, Style style)
+void
+RenderCluster(
+  i32 row,
+  i32 column,
+  const char *text,
+  const LayoutCluster *cluster,
+  Style style,
+  Style control
+)
 {
-  char symbol[2] = {'^', (char)(canvas->text[byte] ^ 0x40)};
-  ScreenPutText(row, column, symbol, 2, style);
+  if (cluster->kind == LayoutKindText) {
+    u64 size = cluster->end - cluster->start;
+    ScreenPutCluster(row, column, text + cluster->start, size, cluster->width, style);
+  } else if (cluster->kind == LayoutKindControl) {
+    char symbol[2] = {'^', (char)(text[cluster->start] ^ 0x40)};
+    ScreenPutText(row, column, symbol, 2, control);
+  } else if (cluster->kind == LayoutKindInvalid) {
+    PutSymbol(row, column, invalidSymbol, control);
+  }
 }
 
 // draws one cluster at x columns into the text area.
@@ -366,28 +380,13 @@ DrawCluster(Canvas *canvas, i32 row, const LayoutCluster *cluster, i64 x)
   }
 
   i32 column = canvas->textColumn + (i32)x;
-  const char *bytes = canvas->text + cluster->start;
-  u64 size = cluster->end - cluster->start;
   Style syntax = styleDefault;
   if (canvas->groups) syntax = ThemeStyle(HighlightGroup(canvas->groups, cluster->start));
 
   Style text = Curled(Overlay(syntax, mark), curl);
   Style control = Curled(Overlay(ThemeStyle(ThemeControl), mark), curl);
 
-  switch (cluster->kind) {
-    case LayoutKindText:
-      ScreenPutCluster(row, column, bytes, size, cluster->width, text);
-      break;
-    case LayoutKindControl:
-      DrawControl(canvas, row, column, cluster->start, control);
-      break;
-    case LayoutKindInvalid:
-      PutSymbol(row, column, invalidSymbol, control);
-      break;
-    case LayoutKindSpace:
-    case LayoutKindTab:
-      break;
-  }
+  RenderCluster(row, column, canvas->text, cluster, text, control);
 }
 
 // draws a change mark in the cell before the line number: a bar beside every row of a

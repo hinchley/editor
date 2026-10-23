@@ -7,12 +7,11 @@
 #include "file.h"
 #include "layout.h"
 #include "memory.h"
+#include "render.h"
 #include "screen.h"
 #include "theme.h"
 
 static constexpr u64 noEntry = UINT64_MAX;
-
-static constexpr char invalidSymbol[] = "�";
 
 // a file read from disk (of the entry with the serial entry), with where each line starts.
 typedef struct Lines {
@@ -164,25 +163,9 @@ DrawLine(const PreviewRow *place, const char *text, u64 length, const LayoutRows
     if (matched) control.background = style.background;
 
     i32 column = place->column + (i32)x;
-    const char *bytes = text + cluster.start;
-    u64 size = cluster.end - cluster.start;
-    char symbol[2] = {'^', (char)(text[cluster.start] ^ 0x40)};
-
-    switch (cluster.kind) {
-      case LayoutKindText:
-        ScreenPutCluster(row, column, bytes, size, cluster.width, style);
-        break;
-      case LayoutKindSpace:
-      case LayoutKindTab:
-        ScreenFill(row, column, (i32)cluster.width, style);
-        break;
-      case LayoutKindControl:
-        ScreenPutText(row, column, symbol, 2, control);
-        break;
-      case LayoutKindInvalid:
-        ScreenPutCluster(row, column, invalidSymbol, strlen(invalidSymbol), 1, control);
-        break;
-    }
+    bool blank = cluster.kind == LayoutKindSpace || cluster.kind == LayoutKindTab;
+    if (blank) ScreenFill(row, column, (i32)cluster.width, style);
+    else RenderCluster(row, column, text, &cluster, style, control);
   }
 
   i32 last = place->row - (i32)place->firstRow + (i32)rows->count;

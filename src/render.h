@@ -6,6 +6,7 @@
 #include "diagnostics.h"
 #include "highlight.h"
 #include "image.h"
+#include "layout.h"
 #include "match.h"
 #include "strbuf.h"
 #include "types.h"
@@ -78,6 +79,18 @@ typedef struct Frame {
   FramePanel panel;
   const StrBuf *message;
 } Frame;
+
+// draws a cluster of text at a cell: its text in style, or in control a control character
+// as ^X or an invalid byte as the replacement character; blanks are left to the caller.
+void
+RenderCluster(
+  i32 row,
+  i32 column,
+  const char *text,
+  const LayoutCluster *cluster,
+  Style style,
+  Style control
+);
 
 // sizes the views to the window, scrolls them to their cursors, and draws everything.
 // a split or panel narrower than minSplitWidth shows only the focused pane.
