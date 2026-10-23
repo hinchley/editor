@@ -306,8 +306,9 @@ ConvertRow(const Png *png, const u8 *row, u32 count, u8 *out, u32 step, bool *al
       case PngColorRgb: {
         bool clear = png->keyed && samples[0] == png->key[0] && samples[1] == png->key[1] &&
           samples[2] == png->key[2];
-        for (u32 channel = 0; channel < 3; channel++)
+        for (u32 channel = 0; channel < 3; channel++) {
           out[channel] = Scale(samples[channel], depth);
+        }
         out[3] = clear ? 0 : 255;
         break;
       }
@@ -323,8 +324,9 @@ ConvertRow(const Png *png, const u8 *row, u32 count, u8 *out, u32 step, bool *al
         out[3] = Scale(samples[1], depth);
         break;
       case PngColorRgba:
-        for (u32 channel = 0; channel < 4; channel++)
+        for (u32 channel = 0; channel < 4; channel++) {
           out[channel] = Scale(samples[channel], depth);
+        }
         break;
     }
 

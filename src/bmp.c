@@ -112,8 +112,9 @@ ReadHeader(Bmp *bmp, const u8 *data, u64 size)
 
   // the masks of an info header follow it, before the palette.
   u64 palette = infoStart + headerSize;
-  if (bitFields && headerSize == 40)
+  if (bitFields && headerSize == 40) {
     palette += bmp->compression == BmpCompressionAlphaBitFields ? 16 : 12;
+  }
 
   if (bmp->depth <= 8 && palette < size) {
     u32 count = colorsUsed && colorsUsed < 256 ? colorsUsed : 1u << bmp->depth;

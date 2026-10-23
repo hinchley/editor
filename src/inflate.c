@@ -112,8 +112,9 @@ Build(Huffman *code, const u8 *lengths, i32 count)
   for (i32 length = 1; length <= fastBits; length++, next <<= 1) {
     for (u32 counted = 0; counted < code->counts[length]; counted++, next++, index++) {
       u32 reversed = 0;
-      for (i32 bit = 0; bit < length; bit++)
+      for (i32 bit = 0; bit < length; bit++) {
         reversed |= (next >> bit & 1) << (length - 1 - bit);
+      }
 
       for (u32 fill = reversed; fill < 1u << fastBits; fill += 1u << length) {
         code->fastSymbols[fill] = code->symbols[index];

@@ -315,8 +315,9 @@ GifDecode(const u8 *data, u64 size, Bitmap *bitmap, StrBuf *details, StrBuf *mes
 
     StrBufAppendFormat(details, "%u colours", frame->paletteCount);
     if (frame->interlaced) StrBufAppendString(details, ", interlaced");
-    if (gif.frameCount > 1)
+    if (gif.frameCount > 1) {
       StrBufAppendFormat(details, ", first of %u frames", gif.frameCount);
+    }
   }
 
   StrBufFree(&gif.frame.codes);

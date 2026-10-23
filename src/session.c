@@ -793,9 +793,9 @@ void
 SessionCycle(i32 step)
 {
   u64 index = WorkspaceNext(workspace, step);
-  if (index == workspaceNone)
+  if (index == workspaceNone) {
     StrBufAppendString(message, "no other open buffer (ctrl+p picks any)");
-  else Switch(index);
+  } else Switch(index);
 }
 
 void

@@ -1391,8 +1391,9 @@ HandleKey(Key key)
   if (PromptActive()) {
     PromptKey(key);
     bool escape = key.code == KeyEscape && !key.modifiers;
-    if (escape && !PromptActive() && !message->length)
+    if (escape && !PromptActive() && !message->length) {
       StrBufAppendString(message, "cancelled");
+    }
     return;
   }
 
@@ -1544,8 +1545,9 @@ HandleEvent(const InputEvent *event)
 static void
 CheckFiles(void)
 {
-  if (!focusReturned || PromptActive() || PickerActive() || SearchActive() || ScanBusy())
+  if (!focusReturned || PromptActive() || PickerActive() || SearchActive() || ScanBusy()) {
     return;
+  }
   if (LearnActive()) return;
 
   focusReturned = false;
@@ -1652,10 +1654,12 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
   ChangeCounts counts = ChangesCount(document->changes);
   StrBuf *changes = &pane->changes;
   if (counts.added) StrBufAppendFormat(changes, "+%lu", counts.added);
-  if (counts.changed)
+  if (counts.changed) {
     StrBufAppendFormat(changes, "%s~%lu", changes->length ? " " : "", counts.changed);
-  if (counts.removed)
+  }
+  if (counts.removed) {
     StrBufAppendFormat(changes, "%s-%lu", changes->length ? " " : "", counts.removed);
+  }
 
   // the errors and warnings the language server reports, when there are any.
   const Diagnostics *diagnostics = LspDiagnostics(document->lsp);
