@@ -322,6 +322,37 @@ EditNewline(const EditContext *edit)
   End(edit);
 }
 
+void
+EditOpenLine(const EditContext *edit, bool above)
+{
+  Buffer *buffer = edit->view->buffer;
+  CursorSet *set = &edit->view->cursors;
+  Begin(edit, UndoKindOther);
+
+  for (u32 index = 0; index < set->count; index++) {
+    Cursor *cursor = &set->cursors[index];
+    u64 lineIndex = cursor->head.line;
+    const StrBuf *line = BufferLine(buffer, lineIndex);
+
+    if (!above) {
+      CursorPlace(cursor, (Position){lineIndex, line->length});
+      NewlineAt(edit, index);
+      continue;
+    }
+
+    u64 indent = IndentLength(line);
+    StrBuf text = {};
+    StrBufAppend(&text, line->data, indent);
+    StrBufAppendByte(&text, '\n');
+    Position start = {lineIndex, 0};
+    BufferReplace(buffer, (Range){start, start}, text.data, text.length);
+    CursorPlace(cursor, (Position){lineIndex, indent});
+    StrBufFree(&text);
+  }
+
+  End(edit);
+}
+
 // the lines a cursor touches.
 // a selection ending at the very start of a line does not touch that line.
 static LineBlock
@@ -700,6 +731,13 @@ WordBackwardRange(const EditContext *edit, const Cursor *cursor)
   return (Range){MovePosition(edit->view, cursor, MoveWordLeft), cursor->head};
 }
 
+static Range
+WordForwardRange(const EditContext *edit, const Cursor *cursor)
+{
+  if (CursorHasSelection(cursor)) return CursorRange(cursor);
+  return (Range){cursor->head, MovePosition(edit->view, cursor, MoveWordRight)};
+}
+
 void
 EditDeleteBackward(const EditContext *edit)
 {
@@ -716,6 +754,12 @@ void
 EditDeleteWordBackward(const EditContext *edit)
 {
   ReplaceEach(edit, UndoKindOther, WordBackwardRange);
+}
+
+void
+EditDeleteWordForward(const EditContext *edit)
+{
+  ReplaceEach(edit, UndoKindOther, WordForwardRange);
 }
 
 // appends lines first to last joined with "\n".

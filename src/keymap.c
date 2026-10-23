@@ -68,11 +68,14 @@ const Binding keymapBindings[] = {
 
   // editing.
   {{KeyEnter, 0}, CommandNewline, "insert a line break"},
+  {{KeyEnter, control}, CommandOpenLineBelow, "open a new line below the line"},
+  {{KeyEnter, control | shift}, CommandOpenLineAbove, "open a new line above the line"},
   {{KeyTab, 0}, CommandIndent, "insert a tab (or indent the selected lines)"},
   {{KeyTab, shift}, CommandDedent, "dedent the line (or the selected lines)"},
   {{KeyBackspace, 0}, CommandDeleteBackward, "delete the character before the cursor"},
   {{KeyDelete, 0}, CommandDeleteForward, "delete the character after the cursor"},
   {{KeyBackspace, control}, CommandDeleteWordBackward, "delete the word before the cursor"},
+  {{KeyDelete, control}, CommandDeleteWordForward, "delete the word after the cursor"},
   {{'z', control}, CommandUndo, "undo"},
   {{'y', control}, CommandRedo, "redo"},
   {{'c', control}, CommandCopy, "copy the selection (or the line)"},

@@ -730,6 +730,12 @@ EditCommand(enum Command command)
     case CommandNewline:
       EditNewline(&edit);
       break;
+    case CommandOpenLineBelow:
+      EditOpenLine(&edit, false);
+      break;
+    case CommandOpenLineAbove:
+      EditOpenLine(&edit, true);
+      break;
     case CommandIndent:
       EditIndent(&edit);
       break;
@@ -744,6 +750,9 @@ EditCommand(enum Command command)
       break;
     case CommandDeleteWordBackward:
       EditDeleteWordBackward(&edit);
+      break;
+    case CommandDeleteWordForward:
+      EditDeleteWordForward(&edit);
       break;
     case CommandUndo:
       Report(EditUndo(&edit), "nothing to undo");

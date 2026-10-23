@@ -33,6 +33,11 @@ EditPaste(const EditContext *edit, const char *text, u64 length, bool lineWise);
 void
 EditNewline(const EditContext *edit);
 
+// opens an empty line below each cursor's line, as a line break at its end would, or above
+// it, with the line's indentation, and puts the cursor on it.
+void
+EditOpenLine(const EditContext *edit, bool above);
+
 // indents every line touched by a selection, or without any selection inserts a tab (or
 // spaces up to the next tab stop) at each cursor.
 void
@@ -61,6 +66,10 @@ EditDeleteForward(const EditContext *edit);
 // deletes each selection, or back to the start of the previous word.
 void
 EditDeleteWordBackward(const EditContext *edit);
+
+// deletes each selection, or on to the start of the next word.
+void
+EditDeleteWordForward(const EditContext *edit);
 
 // the line commands below first collapse to the primary cursor, and act on its line or
 // every line its selection touches.
