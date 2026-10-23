@@ -613,6 +613,16 @@ AppendField(StrBuf *status, const char *field)
   StrBufAppendString(status, field);
 }
 
+// how many buffers are open of those loaded, when more than one is loaded.
+static void
+AppendBuffers(const StatusInfo *info, StrBuf *right)
+{
+  if (info->loadedCount < 2) return;
+
+  if (right->length) StrBufAppendString(right, "  ");
+  StrBufAppendFormat(right, "buf %lu/%lu", info->openCount, info->loadedCount);
+}
+
 // the fields of an image's status: its format and size, and the share of its size it is
 // shown at, unless it is whole at its own size.
 static void
@@ -625,7 +635,7 @@ DescribeImage(const StatusInfo *info, u32 scale, bool full, StrBuf *right)
     StrBufAppendFormat(right, "%u%%", scale);
   }
 
-  if (full) StrBufAppendFormat(right, "  %lu:%lu", info->openCount, info->loadedCount);
+  if (full) AppendBuffers(info, right);
   if (right->length) StrBufAppendByte(right, ' ');
 }
 
@@ -636,23 +646,26 @@ DescribePosition(View *view, const StatusInfo *info, bool full, StrBuf *right)
   const StrBuf *line = BufferLine(view->buffer, head.line);
   u64 column = LayoutColumn(line->data, line->length, head.byte);
 
+  // only what differs from the defaults shows, and line:column comes last, so it stays in
+  // place as the others come and go.
   if (full && view->cursors.count > 1) {
-    StrBufAppendFormat(right, "%u cursors", view->cursors.count);
+    StrBufAppendFormat(right, "%u cursors (esc)", view->cursors.count);
   }
 
   if (full) {
     if (info->changes) AppendField(right, info->changes);
     if (info->diagnostics) AppendField(right, info->diagnostics);
-    AppendField(right, view->options->softWrap ? "wrap" : "nowrap");
+    if (view->options->softWrap) AppendField(right, "wrap");
     if (info->fileType) AppendField(right, info->fileType);
-    AppendField(right, info->lineEnding);
+    if (info->lineEnding) AppendField(right, info->lineEnding);
+    u64 lines = BufferTextLineCount(view->buffer);
+    if (right->length) StrBufAppendString(right, "  ");
+    StrBufAppendFormat(right, "%lu line%s", lines, StrBufPlural(lines));
+    AppendBuffers(info, right);
   }
 
   if (right->length) StrBufAppendString(right, "  ");
-  StrBufAppendFormat(right, "%lu:%lu", head.line + 1, column + 1);
-  if (full) StrBufAppendFormat(right, "  %lu lines", BufferLineCount(view->buffer));
-  if (full) StrBufAppendFormat(right, "  %lu:%lu", info->openCount, info->loadedCount);
-  StrBufAppendByte(right, ' ');
+  StrBufAppendFormat(right, "%lu:%lu ", head.line + 1, column + 1);
 }
 
 // the unfocused view of a split shows only its name and flags, dimmed.

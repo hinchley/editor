@@ -20,9 +20,12 @@ typedef struct StatusInfo {
 
   // the language name, or nullptr when the file type is not known.
   const char *fileType;
+
+  // the line ending when it is not the default ("CRLF"), or nullptr.
   const char *lineEnding;
 
-  // the lines changed since the last commit ("+3 ~2 -1"), or nullptr.
+  // the lines changed since the last commit, without the kinds there are none of ("+3 ~2",
+  // "-1"), or nullptr.
   const char *changes;
 
   // the errors and warnings its language server reports ("E2 W1"), or nullptr.

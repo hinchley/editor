@@ -194,7 +194,7 @@ With more than one cursor, the terminal cursor is hidden and every cursor (the p
 
 A selection is drawn with the `selection` background behind the text's own colours. When a selection continues onto the next line, one selected cell after the end of the line shows that the line break is included.
 
-The status bar shows the name (shortened in the middle to fit) with `[+]` and `[RO]` on the left, and the cursor count (with more than one), the wrap state, file type, line ending, `line:column`, line count and `open:loaded` buffer counts on the right. When the window is too narrow it keeps only `line:column`, and then nothing, on the right. Below `minWindowWidth` by `minWindowHeight` the editor shows only "terminal too small".
+The status bar shows the name (shortened in the middle to fit) with `[+]` and `[RO]` on the left, and on the right the cursor count (with more than one), the change and diagnostic counts, `wrap` (only while on), the file type, the line ending (only for CRLF), the line count (`BufferTextLineCount`, as `wc -l` counts), `buf open/loaded` (with more than one loaded) and `line:column` last, where it stays put as the fields before it come and go. When the window is too narrow it keeps only `line:column`, and then nothing, on the right. Below `minWindowWidth` by `minWindowHeight` the editor shows only "terminal too small".
 
 ### Mouse
 

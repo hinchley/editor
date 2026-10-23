@@ -162,8 +162,13 @@ Reload(void)
   Document *document = Current();
   if (!DocumentReload(document, &message)) return;
 
-  if (document->image) StrBufAppendString(&message, "reloaded the image");
-  else StrBufAppendFormat(&message, "reloaded %lu lines", BufferLineCount(&document->buffer));
+  if (document->image) {
+    StrBufAppendString(&message, "reloaded the image");
+    return;
+  }
+
+  u64 lines = BufferTextLineCount(&document->buffer);
+  StrBufAppendFormat(&message, "reloaded %lu line%s", lines, StrBufPlural(lines));
 }
 
 static void
@@ -621,14 +626,15 @@ CountRange(const Buffer *buffer, Range range, u64 lineBreak, Counts *counts)
 static void
 AppendCounts(const Counts *part, const Counts *whole)
 {
-  const char *names[] = {"lines", "words", "characters", "bytes"};
+  const char *names[] = {"line", "word", "character", "byte"};
   u64 wholeCounts[] = {whole->lines, whole->words, whole->characters, whole->bytes};
   u64 partCounts[] = {part->lines, part->words, part->characters, part->bytes};
 
   for (u32 index = 0; index < 4; index++) {
     if (index) StrBufAppendString(&message, ", ");
     if (part != whole) StrBufAppendFormat(&message, "%lu of ", partCounts[index]);
-    StrBufAppendFormat(&message, "%lu %s", wholeCounts[index], names[index]);
+    u64 count = wholeCounts[index];
+    StrBufAppendFormat(&message, "%lu %s%s", count, names[index], StrBufPlural(count));
   }
 }
 
@@ -646,7 +652,7 @@ ShowStatistics(void)
 
   u64 lineBreak = document->file.lineEnding == LineEndingCrlf ? 2 : 1;
 
-  Counts whole = {.lines = BufferLineCount(buffer)};
+  Counts whole = {.lines = BufferTextLineCount(buffer)};
   CountRange(buffer, (Range){{}, BufferEnd(buffer)}, lineBreak, &whole);
 
   CursorSet *set = &document->view->cursors;
@@ -1603,13 +1609,14 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
   if (HighlightDisabled(document->highlight)) StrBufAppendString(&pane->type, " (uncoloured)");
   LspDescribe(document->lsp, &pane->type);
 
-  // the lines changed since the last commit, when there are any.
+  // the lines changed since the last commit, leaving out the kinds there are none of.
   ChangeCounts counts = ChangesCount(document->changes);
-  bool changed = counts.added || counts.changed || counts.removed;
-  if (changed) {
-    StrBuf *text = &pane->changes;
-    StrBufAppendFormat(text, "+%lu ~%lu -%lu", counts.added, counts.changed, counts.removed);
-  }
+  StrBuf *changes = &pane->changes;
+  if (counts.added) StrBufAppendFormat(changes, "+%lu", counts.added);
+  if (counts.changed)
+    StrBufAppendFormat(changes, "%s~%lu", changes->length ? " " : "", counts.changed);
+  if (counts.removed)
+    StrBufAppendFormat(changes, "%s-%lu", changes->length ? " " : "", counts.removed);
 
   // the errors and warnings the language server reports, when there are any.
   const Diagnostics *diagnostics = LspDiagnostics(document->lsp);
@@ -1619,13 +1626,14 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
   if (problems.errors && problems.warnings) StrBufAppendByte(&pane->diagnostics, ' ');
   if (problems.warnings) StrBufAppendFormat(&pane->diagnostics, "W%u", problems.warnings);
 
+  bool crlf = document->file.lineEnding == LineEndingCrlf;
   pane->status = (StatusInfo){
     .name = &pane->name,
     .modified = DocumentModified(document),
     .readOnly = document->file.readOnly,
     .fileType = pane->type.data,
-    .lineEnding = FileLineEndingName(document->file.lineEnding),
-    .changes = changed ? pane->changes.data : nullptr,
+    .lineEnding = crlf ? FileLineEndingName(LineEndingCrlf) : nullptr,
+    .changes = changes->length ? changes->data : nullptr,
     .diagnostics = pane->diagnostics.length ? pane->diagnostics.data : nullptr,
     .openCount = workspace.openCount,
     .loadedCount = workspace.count

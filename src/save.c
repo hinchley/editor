@@ -127,8 +127,8 @@ Write(bool overwriteChanged)
   }
 
   namedForSave = false;
-  u64 lines = BufferLineCount(&document->buffer);
-  if (!saveAll) StrBufAppendFormat(message, "saved %lu lines", lines);
+  u64 lines = BufferTextLineCount(&document->buffer);
+  if (!saveAll) StrBufAppendFormat(message, "saved %lu line%s", lines, StrBufPlural(lines));
   position++;
   Next();
 }
@@ -287,8 +287,15 @@ SaveCopy(void)
   FileFree(&copy);
   if (status != FileStatusOk) return;
 
-  u64 lines = BufferLineCount(&document->buffer);
-  StrBufAppendFormat(message, "saved a copy of %lu lines as %s", lines, menuPath.data);
+  u64 lines = BufferTextLineCount(&document->buffer);
+  const char *plural = StrBufPlural(lines);
+  StrBufAppendFormat(
+    message,
+    "saved a copy of %lu line%s as %s",
+    lines,
+    plural,
+    menuPath.data
+  );
 }
 
 static void

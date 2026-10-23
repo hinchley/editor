@@ -87,6 +87,14 @@ BufferLineCount(const Buffer *buffer)
   return buffer->lineCount;
 }
 
+// the lines as wc -l counts them, which leaves out the empty line after a final line
+// break, so an empty buffer has none.
+static inline u64
+BufferTextLineCount(const Buffer *buffer)
+{
+  return buffer->lineCount - !buffer->lines[buffer->lineCount - 1].length;
+}
+
 static inline const StrBuf *
 BufferLine(const Buffer *buffer, u64 line)
 {
