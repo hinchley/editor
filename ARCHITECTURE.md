@@ -302,7 +302,7 @@ The Alt-X file menu remembers the current entry's serial, then asks for the choi
 
 ### Clipboard
 
-Copy sends the text to `wl-copy` on standard input, and paste reads `wl-paste --no-newline --type text`. Both run with `posix_spawnp`, standard error to `/dev/null`, and a two second limit, after which the command is killed. The editor ignores SIGPIPE so a command that exits early cannot end it, and resets SIGPIPE to the default for the command. Without `WAYLAND_DISPLAY`, or when the command fails, the in-process copy is used.
+Copy sends the text to `wl-copy` on standard input, and paste reads `wl-paste --no-newline --type text`. Both run with `posix_spawnp`, standard error to `/dev/null`, and a time limit (two seconds to copy, half a second to paste, since the key waits for it), after which the command is killed. The editor ignores SIGPIPE so a command that exits early cannot end it, and resets SIGPIPE to the default for the command. Copy keeps the in-process copy too. Paste reads it only without `WAYLAND_DISPLAY`, or when `wl-paste` cannot be started, and then says so; a `wl-paste` that fails (the clipboard holds no text, or only an image) or runs out of time gives an empty clipboard, rather than the editor's last copy, which may be stale. Ctrl-V in a prompt (`PastePrompt` in `app`, ahead of pickers and the search prompts) pastes the first line of the clipboard as a terminal paste does.
 
 Copy with no selection is line wise: each cursor's line, ending in `\n`. The clipboard remembers the last copy and whether it was line wise. When a paste finds exactly that text, it is inserted as whole lines above the cursor's line instead of at the cursor.
 

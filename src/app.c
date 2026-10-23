@@ -304,20 +304,33 @@ Copy(bool cut)
   StrBufFree(&text);
 }
 
+// pastes the clipboard, saying so when it is the editor's own copy.
 static void
 Paste(void)
 {
   StrBuf text = {};
   bool lineWise;
-  ClipboardGet(&text, &lineWise);
+  bool system = ClipboardGet(&text, &lineWise);
 
   if (text.length) {
     EditContext edit = Editing();
     EditPaste(&edit, text.data, text.length, lineWise);
+    if (!system) DescribeCopy("pasted", &text, lineWise, system);
   } else {
     StrBufAppendString(&message, "the clipboard is empty");
   }
 
+  StrBufFree(&text);
+}
+
+// pastes the first line of the clipboard into the open text prompt.
+static void
+PastePrompt(void)
+{
+  StrBuf text = {};
+  bool lineWise;
+  ClipboardGet(&text, &lineWise);
+  if (text.length) PromptPaste(text.data, text.length);
   StrBufFree(&text);
 }
 
@@ -1321,6 +1334,13 @@ HandleKey(Key key)
   // learning mode answers with keys, so none of them runs a command.
   if (LearnActive()) {
     LearnKey(key);
+    return;
+  }
+
+  // ctrl+v pastes into any text prompt, a picker's filter included, as a terminal paste
+  // does.
+  if (PromptActive() && KeyEqual(key, (Key){'v', KeyModifierControl})) {
+    PastePrompt();
     return;
   }
 

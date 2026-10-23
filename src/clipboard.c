@@ -15,7 +15,9 @@
 extern char **environ;
 
 // how long wl-copy or wl-paste may take before it is stopped.
-static constexpr i64 commandTimeout = 2000;
+// pasting waits less, since a clipboard owner that does not answer holds up the key.
+static constexpr i64 copyTimeout = 2000;
+static constexpr i64 pasteTimeout = 500;
 
 static char *copyCommand[] = {"wl-copy", nullptr};
 static char *pasteCommand[] = {"wl-paste", "--no-newline", "--type", "text", nullptr};
@@ -23,6 +25,13 @@ static char *pasteCommand[] = {"wl-paste", "--no-newline", "--type", "text", nul
 // the in-process copy, and whether it was copied line wise.
 static StrBuf saved;
 static bool savedLineWise;
+
+// how running a command went.
+enum RunResult {
+  RunResultNotStarted,
+  RunResultFailed,
+  RunResultDone
+};
 
 // a command run with its input and output connected to pipes.
 typedef struct Command {
@@ -145,11 +154,12 @@ ReadSome(Command *command)
   return true;
 }
 
-// feeds the input and collects the output until both pipes are closed or time runs out.
+// feeds the input and collects the output until both pipes are closed or timeout
+// milliseconds run out.
 static bool
-Exchange(Command *command)
+Exchange(Command *command, i64 timeout)
 {
-  i64 deadline = TermNow() + commandTimeout;
+  i64 deadline = TermNow() + timeout;
   if (command->length == 0) CloseInput(command);
 
   while (command->input >= 0 || command->output >= 0) {
@@ -174,22 +184,23 @@ Exchange(Command *command)
   return true;
 }
 
-// runs a command, sending it text and appending its output to result (when not nullptr).
-// returns true when it succeeded in time.
-static bool
-Run(char *arguments[], const char *text, u64 length, StrBuf *result)
+// runs a command, sending it text and appending its output to result (when not nullptr),
+// and gives it timeout milliseconds to succeed.
+static enum RunResult
+Run(char *arguments[], const char *text, u64 length, StrBuf *result, i64 timeout)
 {
   Command command = {.text = text, .length = length, .result = result};
-  if (!Spawn(&command, arguments)) return false;
+  if (!Spawn(&command, arguments)) return RunResultNotStarted;
 
-  bool exchanged = Exchange(&command);
+  bool exchanged = Exchange(&command, timeout);
   if (command.input >= 0) close(command.input);
   if (command.output >= 0) close(command.output);
   if (!exchanged) kill(command.pid, SIGKILL);
 
   i32 status;
   while (waitpid(command.pid, &status, 0) < 0 && errno == EINTR) {}
-  return exchanged && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+  bool succeeded = exchanged && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+  return succeeded ? RunResultDone : RunResultFailed;
 }
 
 bool
@@ -199,19 +210,23 @@ ClipboardSet(const char *text, u64 length, bool lineWise)
   StrBufAppend(&saved, text, length);
   savedLineWise = lineWise;
 
-  return WaylandSession() && Run(copyCommand, text, length, nullptr);
+  return WaylandSession() &&
+    Run(copyCommand, text, length, nullptr, copyTimeout) == RunResultDone;
 }
 
 bool
 ClipboardGet(StrBuf *text, bool *lineWise)
 {
   u64 start = text->length;
-  bool fromSystem = WaylandSession() && Run(pasteCommand, nullptr, 0, text);
+  enum RunResult result = RunResultNotStarted;
+  if (WaylandSession()) result = Run(pasteCommand, nullptr, 0, text, pasteTimeout);
 
-  if (!fromSystem) {
-    text->length = start;
-    StrBufAppend(text, saved.data, saved.length);
-  }
+  // wl-paste fails when the clipboard holds no text (or only an image), which, like one
+  // that does not answer, leaves it empty: the in-process copy, which may be stale, only
+  // stands in when there is no system clipboard to ask.
+  bool fromSystem = result != RunResultNotStarted;
+  if (result != RunResultDone) text->length = start;
+  if (!fromSystem) StrBufAppend(text, saved.data, saved.length);
 
   // the system clipboard may still hold what was copied line wise here.
   u64 length = text->length - start;
