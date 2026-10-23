@@ -1,6 +1,7 @@
 #include "lang.h"
 
 #include <dirent.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -52,7 +53,8 @@ typedef struct Reading {
   u32 problemCount;
 } Reading;
 
-// one directive of a language file.
+// one directive of a language file, and where its value goes in a draft: the offset of
+// its text (a u64) or flag (a bool), or the list it fills.
 typedef struct Directive {
   const char *key;
   enum {
@@ -61,22 +63,23 @@ typedef struct Directive {
     DirectiveList,
     DirectiveFlag
   } kind;
+  u64 place;
 } Directive;
 
 static const Directive directives[] = {
-  {"name", DirectiveText},
-  {"extensions", DirectiveList},
-  {"files", DirectiveList},
-  {"interpreters", DirectiveList},
-  {"inject", DirectiveList},
-  {"symbol", DirectiveWord},
-  {"comment", DirectiveWord},
-  {"comment-end", DirectiveWord},
-  {"server", DirectiveText},
-  {"server-roots", DirectiveList},
-  {"prose", DirectiveFlag},
-  {"fresh-parse", DirectiveFlag},
-  {"first-pattern-wins", DirectiveFlag}
+  {"name", DirectiveText, offsetof(Draft, name)},
+  {"extensions", DirectiveList, ListExtensions},
+  {"files", DirectiveList, ListNames},
+  {"interpreters", DirectiveList, ListInterpreters},
+  {"inject", DirectiveList, ListInjections},
+  {"symbol", DirectiveWord, offsetof(Draft, symbol)},
+  {"comment", DirectiveWord, offsetof(Draft, commentStart)},
+  {"comment-end", DirectiveWord, offsetof(Draft, commentEnd)},
+  {"server", DirectiveText, offsetof(Draft, server)},
+  {"server-roots", DirectiveList, ListRoots},
+  {"prose", DirectiveFlag, offsetof(Draft, prose)},
+  {"fresh-parse", DirectiveFlag, offsetof(Draft, freshParse)},
+  {"first-pattern-wins", DirectiveFlag, offsetof(Draft, firstPatternWins)}
 };
 
 static constexpr u32 directiveCount = sizeof(directives) / sizeof(directives[0]);
@@ -157,6 +160,7 @@ Apply(
 )
 {
   const char *key = directives[directive].key;
+  u64 place = directives[directive].place;
 
   switch (directives[directive].kind) {
     case DirectiveWord:
@@ -166,26 +170,13 @@ Apply(
       }
       [[fallthrough]];
 
-    case DirectiveText: {
-      u64 text = AddText(reading, value, length);
-      if (strcmp(key, "name") == 0) draft->name = text;
-      else if (strcmp(key, "symbol") == 0) draft->symbol = text;
-      else if (strcmp(key, "comment") == 0) draft->commentStart = text;
-      else if (strcmp(key, "server") == 0) draft->server = text;
-      else draft->commentEnd = text;
+    case DirectiveText:
+      *(u64 *)((u8 *)draft + place) = AddText(reading, value, length);
       return true;
-    }
 
-    case DirectiveList: {
-      u64 first = AddList(reading, value, length);
-      enum ListKind list = ListInjections;
-      if (strcmp(key, "extensions") == 0) list = ListExtensions;
-      else if (strcmp(key, "files") == 0) list = ListNames;
-      else if (strcmp(key, "interpreters") == 0) list = ListInterpreters;
-      else if (strcmp(key, "server-roots") == 0) list = ListRoots;
-      draft->lists[list] = first;
+    case DirectiveList:
+      draft->lists[place] = AddList(reading, value, length);
       return true;
-    }
 
     case DirectiveFlag: {
       bool yes = length == 3 && memcmp(value, "yes", 3) == 0;
@@ -196,9 +187,7 @@ Apply(
         return false;
       }
 
-      if (strcmp(key, "prose") == 0) draft->prose = yes;
-      else if (strcmp(key, "fresh-parse") == 0) draft->freshParse = yes;
-      else draft->firstPatternWins = yes;
+      *(bool *)((u8 *)draft + place) = yes;
       return true;
     }
   }
@@ -556,7 +545,8 @@ LangOfName(const char *name)
   return nullptr;
 }
 
-const Lang *
+// the language with an extension (ignoring case), or nullptr.
+static const Lang *
 LangOfExtension(const char *extension, u64 length)
 {
   for (u32 index = 0; index < langCount; index++) {

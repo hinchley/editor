@@ -76,10 +76,6 @@ LangAt(u32 index);
 const Lang *
 LangOfPath(const char *path, const Lang *script);
 
-// the language with an extension (ignoring case), or nullptr.
-const Lang *
-LangOfExtension(const char *extension, u64 length);
-
 // the language of a script whose first line is "#!" naming one of its interpreters,
 // directly or through env, or nullptr.
 const Lang *
