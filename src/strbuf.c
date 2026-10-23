@@ -14,12 +14,13 @@ StrBufReserve(StrBuf *buffer, u64 capacity)
   if (buffer->data && capacity <= buffer->capacity) return;
 
   // the first allocation is exact, so text loaded once wastes nothing.
-  // after that, growth is geometric so repeated appends stay linear overall.
+  // after that, growth is geometric so repeated appends stay linear overall. it is by half
+  // rather than doubling, since an edit to every line of a file grows each line in place.
   u64 grown = capacity > 16 ? capacity : 16;
 
   if (buffer->capacity) {
     grown = buffer->capacity;
-    while (grown < capacity) grown *= 2;
+    while (grown < capacity) grown += grown / 2;
   }
 
   buffer->data = MemoryResize(buffer->data, grown + 1, 1);

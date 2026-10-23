@@ -62,7 +62,7 @@ How code in `src/` is written. `.clang-format` handles layout: run `clang-format
 - Cast every narrowing or sign-changing conversion explicitly (`(u64)(end - at)`), because `-Wconversion -Werror` is on.
 - Always write `sizeof` with parentheses: `sizeof(x)` and `sizeof(Type)`.
 - Use `x++` (postfix) as a statement.
-- Allocate with `MemoryResize(pointer, count, size)` and free with `free`. Grow by doubling from a small start (`capacity ? capacity * 2 : 16`). Only `memory.c` calls `malloc`/`realloc`, and allocation failure ends in `Fatal`.
+- Allocate with `MemoryResize(pointer, count, size)` and free with `free`. Grow by doubling from a small start (`capacity ? capacity * 2 : 16`); a `StrBuf` grows by half, since edits grow lines in place. Only `memory.c` calls `malloc`/`realloc`, and allocation failure ends in `Fatal`.
 - A function that can fail returns `bool` (or a status enum), and appends a reason to a `StrBuf *message`/`error` that it is given.
 - Put a forward declaration only where recursion needs one, laid out like any other declaration. Otherwise define a helper above its first use.
 - A small accessor in a header is `static inline`.
