@@ -845,23 +845,6 @@ SessionClose(void)
   StrBufFree(&question);
 }
 
-// the length of a path without its trailing slashes, so "src/" and "src" name the same
-// folder and "/" is empty.
-static u64
-FolderLength(const char *path)
-{
-  u64 length = strlen(path);
-  while (length && path[length - 1] == '/') length--;
-  return length;
-}
-
-// true when path is below the folder of length bytes (from FolderLength).
-static bool
-Below(const char *path, const char *folder, u64 length)
-{
-  return strncmp(path, folder, length) == 0 && path[length] == '/';
-}
-
 // a folder to find the entries inside: as given, and resolved when it resolves, both
 // without trailing slashes.
 typedef struct Folder {
@@ -874,10 +857,10 @@ typedef struct Folder {
 static Folder
 FolderOf(const char *path)
 {
-  Folder folder = {.given = path, .givenLength = FolderLength(path)};
+  Folder folder = {.given = path, .givenLength = FileFolderLength(path)};
   char real[PATH_MAX];
   folder.resolved = realpath(path, real) != nullptr;
-  if (folder.resolved) StrBufAppend(&folder.real, real, FolderLength(real));
+  if (folder.resolved) StrBufAppend(&folder.real, real, FileFolderLength(real));
   return folder;
 }
 
@@ -912,11 +895,11 @@ Inside(const Folder *folder, u64 index)
 {
   const StrBuf *path = WorkspacePath(workspace, index);
   if (!path->length) return false;
-  if (Below(path->data, folder->given, folder->givenLength)) return true;
+  if (FileBelow(path->data, folder->given, folder->givenLength)) return true;
   if (!folder->resolved) return false;
 
   const StrBuf *real = WorkspaceRealPath(workspace, index);
-  return real->length && Below(real->data, folder->real.data, folder->real.length);
+  return real->length && FileBelow(real->data, folder->real.data, folder->real.length);
 }
 
 // closes the folder being closed: removes its entries and forgets it.

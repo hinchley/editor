@@ -133,6 +133,15 @@ FileConfigPath(const char *name, StrBuf *path);
 bool
 FileStateFolder(const char *name, u32 mode, StrBuf *path);
 
+// the length of a path without its trailing slashes, so "src/" and "src" name the same
+// folder and "/" is empty.
+u64
+FileFolderLength(const char *path);
+
+// true when path is below the folder of length bytes (from FileFolderLength).
+bool
+FileBelow(const char *path, const char *folder, u64 length);
+
 // short name of a line ending for display, "LF" or "CRLF".
 const char *
 FileLineEndingName(enum LineEnding lineEnding);

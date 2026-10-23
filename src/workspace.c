@@ -414,22 +414,6 @@ WorkspacePath(const Workspace *workspace, u64 index)
   return EntryPath(&workspace->entries[index]);
 }
 
-// the length of a path without its trailing slashes, so "/" is empty.
-static u64
-TrimmedLength(const char *path)
-{
-  u64 length = strlen(path);
-  while (length && path[length - 1] == '/') length--;
-  return length;
-}
-
-// true when path is below the folder of length bytes (without its trailing slash).
-static bool
-Below(const char *path, const char *folder, u64 length)
-{
-  return strncmp(path, folder, length) == 0 && path[length] == '/';
-}
-
 // the folder of the last path resolved, as written and resolved (empty when it did not
 // resolve), since the files of one folder are usually named one after another.
 static StrBuf lastParent;
@@ -454,7 +438,7 @@ Resolve(const char *path, StrBuf *real)
     StrBufClear(&lastReal);
     char resolved[PATH_MAX];
     lastResolved = realpath(lastParent.data, resolved) != nullptr;
-    if (lastResolved) StrBufAppend(&lastReal, resolved, TrimmedLength(resolved));
+    if (lastResolved) StrBufAppend(&lastReal, resolved, FileFolderLength(resolved));
   }
 
   if (!lastResolved) return;
@@ -534,7 +518,7 @@ WorkspaceSetFolders(Workspace *workspace, char *const *paths, u64 count)
 
     WorkspaceFolder *folder = &workspace->folders[workspace->folderCount++];
     *folder = (WorkspaceFolder){};
-    StrBufAppend(&folder->real, real, TrimmedLength(real));
+    StrBufAppend(&folder->real, real, FileFolderLength(real));
   }
 
   NameFolders(workspace);
@@ -551,7 +535,7 @@ WorkingFolder(void)
 
   read = true;
   char real[PATH_MAX];
-  if (realpath(".", real)) StrBufAppend(&folder, real, TrimmedLength(real));
+  if (realpath(".", real)) StrBufAppend(&folder, real, FileFolderLength(real));
   return &folder;
 }
 
@@ -583,7 +567,7 @@ NameEntry(const Workspace *workspace, WorkspaceEntry *entry)
 
   for (u64 index = 0; index < workspace->folderCount; index++) {
     const WorkspaceFolder *folder = &workspace->folders[index];
-    if (!Below(real->data, folder->real.data, folder->real.length)) continue;
+    if (!FileBelow(real->data, folder->real.data, folder->real.length)) continue;
     if (!holder || folder->real.length > holder->real.length) holder = folder;
   }
 
@@ -598,16 +582,16 @@ NameEntry(const Workspace *workspace, WorkspaceEntry *entry)
   // any other file is named from the working folder, else the home folder, else the root.
   const StrBuf *working = WorkingFolder();
 
-  if (working->length && Below(real->data, working->data, working->length)) {
+  if (working->length && FileBelow(real->data, working->data, working->length)) {
     u64 inside = working->length + 1;
     StrBufAppend(&entry->name, real->data + inside, real->length - inside);
     return;
   }
 
   const char *home = getenv("HOME");
-  u64 homeLength = home ? TrimmedLength(home) : 0;
+  u64 homeLength = home ? FileFolderLength(home) : 0;
 
-  if (homeLength && Below(real->data, home, homeLength)) {
+  if (homeLength && FileBelow(real->data, home, homeLength)) {
     StrBufAppendFormat(&entry->name, "~%s", real->data + homeLength);
     return;
   }

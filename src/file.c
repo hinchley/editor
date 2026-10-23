@@ -64,6 +64,20 @@ FileLineEndingName(enum LineEnding lineEnding)
   return lineEnding == LineEndingCrlf ? "CRLF" : "LF";
 }
 
+u64
+FileFolderLength(const char *path)
+{
+  u64 length = strlen(path);
+  while (length && path[length - 1] == '/') length--;
+  return length;
+}
+
+bool
+FileBelow(const char *path, const char *folder, u64 length)
+{
+  return strncmp(path, folder, length) == 0 && path[length] == '/';
+}
+
 void
 FileFree(File *file)
 {
