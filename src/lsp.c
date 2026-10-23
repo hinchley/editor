@@ -35,6 +35,8 @@ enum ServerSync {
   ServerSyncIncremental
 };
 
+// a running server, freed once it has stopped and no document is attached to it, or when
+// servers are shut down.
 typedef struct Server {
   const Lang *lang;
   StrBuf root;
@@ -66,6 +68,8 @@ typedef struct Server {
   bool shutDown;
 } Server;
 
+// what one document's server knows of it, made by LspOpen and freed by LspClose, which
+// its document calls when it closes, changes its path or servers are turned off.
 struct LspDocument {
   Server *server;
   Buffer *buffer;

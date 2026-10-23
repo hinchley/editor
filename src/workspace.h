@@ -82,6 +82,8 @@ typedef struct Workspace {
   u64 other;
   u32 left;
 
+  // the display toggles every document is opened with, and the tick each use of an entry
+  // stamps on it, so the most recently used entry has the highest.
   const DisplayOptions *options;
   u64 clock;
   u32 unnamedCount;

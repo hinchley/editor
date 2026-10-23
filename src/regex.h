@@ -9,7 +9,7 @@
 //
 // syntax: literals, "\" before any punctuation, the escapes \t \r \n \f \v, "." (any code
 // point), [...] and [^...] with ranges and \d \w \s inside, \d \D \w \W \s \S, the anchors
-// ^ $ \b \B, the repetitions * + ? {m} {m,} {m,n} (each lazy with a "?" after it), groups
+// ^ $ \b \B, the repetitions * + ? {m} {m,} {,n} {m,n} (each lazy with a "?" after it), groups
 // ( ) and (?: ), and alternation |.
 // \w and \b use the word characters of Utf8IsWord (so every non-ascii character is one),
 // \d is ascii 0 to 9 and \s is space, tab, \r, \f and \v.

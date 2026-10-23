@@ -61,7 +61,8 @@ static constexpr u64 maxFileSize = 100ull * 1024 * 1024;
 // a nul byte within this many leading bytes marks a file as binary.
 static constexpr u64 binaryProbeSize = 4096;
 
-// images with more pixels than this are not opened (each pixel takes four bytes).
+// images with more pixels than this are not opened: the bitmap takes four bytes a pixel,
+// and decoding peaks at up to about 18 (a png that does not compress, its file included).
 static constexpr u64 maxImagePixels = 40'000'000;
 
 // project search lists at most this many matching lines.

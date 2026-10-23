@@ -122,6 +122,8 @@ struct Highlight {
   u32 layerCount;
   u32 layerCapacity;
 
+  // the coloured window of each side of a split, so two views of the buffer do not
+  // compute each other's away every frame.
   Window windows[2];
 
   // counts window computations, to tell which layers and windows were used last.

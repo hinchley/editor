@@ -1,6 +1,7 @@
 #pragma once
 
-// a filterable list that fills the window, used to pick a buffer or a shortcut.
+// a filterable list that fills the window, used for buffers, shortcuts, symbols, places,
+// project search matches and git changes.
 // typing filters the list (in a text prompt on the message bar): the filter matches any
 // part of an item, ignoring case, and "^" at its start or "$" at its end ties it to the
 // start or end.
