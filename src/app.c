@@ -289,7 +289,7 @@ DescribeCopy(const char *verb, const StrBuf *text, bool lineWise, bool system)
   u64 count = lines ? lines : characters;
   const char *unit = lines ? "line" : "character";
 
-  StrBufAppendFormat(&message, "%s %lu %s%s", verb, count, unit, count == 1 ? "" : "s");
+  StrBufAppendFormat(&message, "%s %lu %s%s", verb, count, unit, StrBufPlural(count));
   if (!system) StrBufAppendString(&message, " (the system clipboard is not available)");
 }
 
@@ -393,11 +393,11 @@ SortAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]
 
   EditContext edit = Editing();
   SortResult result = EditSortLines(&edit, options);
-  const char *plural = result.lines == 1 ? "" : "s";
+  const char *plural = StrBufPlural(result.lines);
   StrBufAppendFormat(&message, "sorted %lu line%s", result.lines, plural);
 
   if (result.removed) {
-    plural = result.removed == 1 ? "" : "s";
+    plural = StrBufPlural(result.removed);
     StrBufAppendFormat(&message, ", removed %lu duplicate%s", result.removed, plural);
   }
 }
@@ -443,8 +443,8 @@ TableWidthAnswered([[maybe_unused]] void *context, const char *answer, u64 lengt
     return;
   }
 
-  const char *columns = result.columns == 1 ? "" : "s";
-  const char *lines = result.lines == 1 ? "" : "s";
+  const char *columns = StrBufPlural(result.columns);
+  const char *lines = StrBufPlural(result.lines);
   StrBufAppendFormat(
     &message,
     "aligned %u column%s over %lu line%s",
@@ -484,7 +484,7 @@ TrimWhitespace(bool everyLine)
   EditContext edit = Editing();
   u64 count = everyLine ? EditTrimTrailingWhitespace(&edit) : EditTrimLines(&edit);
 
-  if (count) StrBufAppendFormat(&message, "trimmed %lu line%s", count, count == 1 ? "" : "s");
+  if (count) StrBufAppendFormat(&message, "trimmed %lu line%s", count, StrBufPlural(count));
   else StrBufAppendString(&message, "no trailing whitespace");
 }
 
@@ -501,7 +501,7 @@ ChangeCase(bool upper)
   u64 count = EditChangeCase(&edit, upper);
   const char *done = upper ? "uppercased" : "lowercased";
 
-  if (count) StrBufAppendFormat(&message, "%s %lu line%s", done, count, count == 1 ? "" : "s");
+  if (count) StrBufAppendFormat(&message, "%s %lu line%s", done, count, StrBufPlural(count));
   else StrBufAppendString(&message, "no change");
 }
 
@@ -523,7 +523,7 @@ AlignCursors(void)
 
   u64 count = EditAlignCursors(&edit);
 
-  if (count) StrBufAppendFormat(&message, "aligned %lu line%s", count, count == 1 ? "" : "s");
+  if (count) StrBufAppendFormat(&message, "aligned %lu line%s", count, StrBufPlural(count));
   else StrBufAppendString(&message, "already aligned");
 }
 

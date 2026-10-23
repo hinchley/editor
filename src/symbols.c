@@ -323,12 +323,6 @@ TextOf(const StrBuf *text)
 }
 
 static const char *
-Plural(u64 count)
-{
-  return count == 1 ? "" : "s";
-}
-
-static const char *
 NameOf(const IndexSymbol *symbol)
 {
   return strings.data + symbol->text;
@@ -1033,7 +1027,13 @@ PickProject(void)
 
   StrBuf title = {};
   u64 count = fileCount;
-  StrBufAppendFormat(&title, "%lu symbols in %lu file%s", symbolCount, count, Plural(count));
+  StrBufAppendFormat(
+    &title,
+    "%lu symbols in %lu file%s",
+    symbolCount,
+    count,
+    StrBufPlural(count)
+  );
   PickerOpen(title.data, "symbol: ", PickedSymbol, nullptr);
   PickerShowPreview(DrawSymbol, nullptr);
   if (first < symbolCount) PickerSelect(first);

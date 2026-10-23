@@ -284,7 +284,7 @@ ReportUnreadable(u64 count)
   if (!count) return;
 
   if (message->length) StrBufAppendString(message, "; ");
-  StrBufAppendFormat(message, "%lu folder%s could not be read", count, count == 1 ? "" : "s");
+  StrBufAppendFormat(message, "%lu folder%s could not be read", count, StrBufPlural(count));
 }
 
 // makes the first entry that opens current, or a new unnamed buffer when none does.

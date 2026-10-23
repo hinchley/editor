@@ -175,7 +175,7 @@ ReviewRevert(void)
   StrBufFree(&text);
 
   if (hunk.oldCount) {
-    const char *plural = hunk.oldCount == 1 ? "" : "s";
+    const char *plural = StrBufPlural(hunk.oldCount);
     StrBufAppendFormat(
       message,
       "restored %lu line%s of the last commit",
@@ -183,7 +183,7 @@ ReviewRevert(void)
       plural
     );
   } else {
-    const char *plural = hunk.newCount == 1 ? "" : "s";
+    const char *plural = StrBufPlural(hunk.newCount);
     StrBufAppendFormat(message, "removed %lu added line%s", hunk.newCount, plural);
   }
 }
@@ -464,7 +464,7 @@ DrawNoChange(Document *document, u64 line, i32 column)
   if (next < count) {
     StrBufAppendFormat(&note, "next change at line %lu", HunkLine(document, &hunks[next]) + 1);
   } else {
-    StrBufAppendFormat(&note, "%lu change%s above", count, count == 1 ? "" : "s");
+    StrBufAppendFormat(&note, "%lu change%s above", count, StrBufPlural(count));
   }
   ScreenPutString(2, column + 1, note.data, faint);
   StrBufFree(&note);
@@ -591,8 +591,8 @@ DescribeChanged(bool stopped, StrBuf *text)
     total.removed += changed[index].counts.removed;
   }
 
-  const char *changes = changedCount == 1 ? "" : "s";
-  const char *files = changedFiles == 1 ? "" : "s";
+  const char *changes = StrBufPlural(changedCount);
+  const char *files = StrBufPlural(changedFiles);
   const char *format = "%lu change%s in %lu file%s since the last commit: ";
   StrBufAppendFormat(text, format, changedCount, changes, changedFiles, files);
   DescribeCounts(&total, text);

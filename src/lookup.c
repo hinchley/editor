@@ -337,13 +337,13 @@ ReferencesDone(
   const StrBuf *line = BufferLine(&Current()->buffer, asked.head.line);
   u64 start;
   u64 end;
-  StrBufAppendFormat(&title, "%u reference%s", found, found == 1 ? "" : "s");
+  StrBufAppendFormat(&title, "%u reference%s", found, StrBufPlural(found));
 
   if (MoveWordAround(line, asked.head.byte, &start, &end)) {
     StrBufAppendFormat(&title, " to %.*s", (int)(end - start), line->data + start);
   }
 
-  StrBufAppendFormat(&title, " in %lu file%s", files, files == 1 ? "" : "s");
+  StrBufAppendFormat(&title, " in %lu file%s", files, StrBufPlural(files));
   PlacesOpen(title.data, selected);
 
   StrBufFree(&title);

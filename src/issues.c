@@ -370,7 +370,7 @@ IssuesPick(void)
   }
 
   StrBuf title = {};
-  const char *plural = files == 1 ? "" : "s";
+  const char *plural = StrBufPlural(files);
   StrBufAppendFormat(
     &title,
     "%lu diagnostics in %lu open buffer%s: E%u W%u",

@@ -205,7 +205,7 @@ RecoverReport(StrBuf *message)
       message,
       "%lu unsaved buffer%s recovered in %s%s",
       count,
-      count == 1 ? "" : "s",
+      StrBufPlural(count),
       below ? "~" : "",
       folder.data + (below ? homeLength : 0)
     );

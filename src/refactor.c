@@ -76,12 +76,6 @@ Answered(bool cursor)
   return same && (!cursor || PositionCompare(Head(), asked.head) == 0);
 }
 
-static const char *
-Plural(u64 count)
-{
-  return count == 1 ? "" : "s";
-}
-
 // the order changes are made in: by file, and in a file from the last up (so the ranges
 // still to come stay where the server said), with insertions at one place in reverse, so
 // they end up in the server's order.
@@ -148,7 +142,12 @@ ReportFailed(u64 failed)
 {
   if (!failed) return;
 
-  StrBufAppendFormat(message, ", %lu file%s could not be opened", failed, Plural(failed));
+  StrBufAppendFormat(
+    message,
+    ", %lu file%s could not be opened",
+    failed,
+    StrBufPlural(failed)
+  );
 }
 
 static void
@@ -167,9 +166,9 @@ Renamed([[maybe_unused]] void *context, const LspEdit *edits, u32 count, bool an
     message,
     "renamed %u place%s in %lu file%s",
     count,
-    Plural(count),
+    StrBufPlural(count),
     files,
-    Plural(files)
+    StrBufPlural(files)
   );
   StrBufAppendString(message, " (alt+shift+z reviews or undoes, ctrl+shift+s saves)");
   ReportFailed(failed);
@@ -396,7 +395,7 @@ Formatted([[maybe_unused]] void *context, const LspEdit *edits, u32 count, bool 
 
   u64 failed;
   Apply("formatting", edits, count, &failed);
-  StrBufAppendFormat(message, "formatted (%u change%s)", count, Plural(count));
+  StrBufAppendFormat(message, "formatted (%u change%s)", count, StrBufPlural(count));
   ReportFailed(failed);
 }
 

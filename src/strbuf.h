@@ -33,6 +33,13 @@ StrBufInsert(StrBuf *buffer, u64 at, const char *data, u64 length);
 void
 StrBufRemove(StrBuf *buffer, u64 at, u64 length);
 
+// "s" for a noun after count, unless count is 1 ("1 line", "2 lines").
+static inline const char *
+StrBufPlural(u64 count)
+{
+  return count == 1 ? "" : "s";
+}
+
 // shortens the string to length bytes, which must not be more than it has.
 void
 StrBufTruncate(StrBuf *buffer, u64 length);

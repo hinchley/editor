@@ -435,7 +435,7 @@ SearchSpell(void)
   if (count > maxSpellCount) {
     StrBufAppendFormat(message, "over %lu unknown words", maxSpellCount);
   } else {
-    StrBufAppendFormat(message, "%lu unknown word%s", count, count == 1 ? "" : "s");
+    StrBufAppendFormat(message, "%lu unknown word%s", count, StrBufPlural(count));
   }
 }
 

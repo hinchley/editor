@@ -191,7 +191,7 @@ Next(void)
 
   if (position == queueCount) {
     u64 count = queueCount;
-    const char *plural = count == 1 ? "" : "s";
+    const char *plural = StrBufPlural(count);
     if (saveAll && count) StrBufAppendFormat(message, "saved %lu file%s", count, plural);
     if (saveAll && !count) StrBufAppendString(message, "no unsaved changes");
     if (afterSave) afterSave();

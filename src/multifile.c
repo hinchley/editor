@@ -107,12 +107,6 @@ MultifileEditEnd(Document *document)
   parts[partCount++] = (Part){editingSerial, group};
 }
 
-static const char *
-Plural(u64 count)
-{
-  return count == 1 ? "" : "s";
-}
-
 // where part's group is in its history, and its document when it still has the group.
 static enum PartState
 StateOf(const Part *part, Document **document, u64 *group)
@@ -271,7 +265,7 @@ Step(bool redo)
       redo ? "redid" : "undid",
       what.data,
       stepped,
-      Plural(stepped)
+      StrBufPlural(stepped)
     );
   } else if (!left) {
     StrBufAppendFormat(message, "the %s is already %s", what.data, redo ? "done" : "undone");
@@ -375,9 +369,9 @@ MultifileReview(void)
     &title,
     ": %lu place%s in %lu file%s",
     count,
-    Plural(count),
+    StrBufPlural(count),
     files,
-    Plural(files)
+    StrBufPlural(files)
   );
   if (canUndo) StrBufAppendString(&title, " (ctrl+z undoes it in every file)");
   else if (canRedo) StrBufAppendString(&title, " (ctrl+y redoes it in every file)");

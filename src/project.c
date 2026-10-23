@@ -88,12 +88,6 @@ TextOf(const StrBuf *text)
   return text->data ? text->data : "";
 }
 
-static const char *
-Plural(u64 count)
-{
-  return count == 1 ? "" : "s";
-}
-
 // appends a hit whose text is already at the end of shownTexts.
 static void
 AppendHit(Hit hit)
@@ -184,7 +178,7 @@ Progress([[maybe_unused]] void *context, u64 done, u64 count, StrBuf *text)
     done,
     count,
     hitCount,
-    Plural(hitCount)
+    StrBufPlural(hitCount)
   );
 }
 
@@ -196,10 +190,10 @@ DescribeResult(StrBuf *text)
     "%s: %lu line%s in %lu of %lu file%s",
     TextOf(&pattern.source),
     hitCount,
-    Plural(hitCount),
+    StrBufPlural(hitCount),
     matchedFiles,
     fileCount,
-    Plural(fileCount)
+    StrBufPlural(fileCount)
   );
 
   if (capped) StrBufAppendFormat(text, ", stopped at %lu lines", maxProjectHits);
@@ -514,9 +508,9 @@ ReplaceChosen(void)
       matches,
       plural,
       lines,
-      Plural(lines),
+      StrBufPlural(lines),
       changedFiles,
-      Plural(changedFiles)
+      StrBufPlural(changedFiles)
     );
     StrBufAppendString(message, " (alt+shift+z reviews or undoes, ctrl+shift+s saves)");
   } else {
@@ -524,12 +518,17 @@ ReplaceChosen(void)
   }
 
   if (failed) {
-    StrBufAppendFormat(message, ", %lu file%s could not be opened", failed, Plural(failed));
+    StrBufAppendFormat(
+      message,
+      ", %lu file%s could not be opened",
+      failed,
+      StrBufPlural(failed)
+    );
   }
 
   if (moved) {
     const char *format = ", %lu file%s changed since the search (search again)";
-    StrBufAppendFormat(message, format, moved, Plural(moved));
+    StrBufAppendFormat(message, format, moved, StrBufPlural(moved));
   }
 }
 
@@ -558,9 +557,9 @@ ReplacementGiven(const StrBuf *text)
     &question,
     format,
     chosenCount,
-    Plural(chosenCount),
+    StrBufPlural(chosenCount),
     files,
-    Plural(files)
+    StrBufPlural(files)
   );
   PromptChoose(question.data, "yn", Confirmed, nullptr);
   StrBufFree(&question);
