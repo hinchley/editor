@@ -407,7 +407,10 @@ static void
 DrawItem(const Item *item, i32 row, i32 width, bool isSelected, bool notes)
 {
   Style style = isSelected ? ThemeStyle(ThemeSelection) : styleDefault;
+  // the faint gutter colour is unreadable on the selection, so the selected row takes the
+  // dim status bar's lighter grey.
   Style faint = ThemeStyle(ThemeGutter);
+  if (isSelected) faint.foreground = ThemeStyle(ThemeStatusDim).foreground;
   faint.background = style.background;
   ScreenFill(row, 0, width, style);
 
