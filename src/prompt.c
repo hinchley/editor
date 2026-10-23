@@ -31,6 +31,9 @@ static u64 scroll;
 // the last key or paste changed the text.
 static bool edited;
 
+// the text is selected, so the next edit replaces it.
+static bool selected;
+
 static void
 Open(enum PromptKind newKind, const char *newLabel, PromptDone done, void *context)
 {
@@ -40,6 +43,7 @@ Open(enum PromptKind newKind, const char *newLabel, PromptDone done, void *conte
   StrBufClear(&text);
   cursor = 0;
   scroll = 0;
+  selected = false;
   onDone = done;
   onChange = nullptr;
   onComplete = nullptr;
@@ -62,6 +66,12 @@ PromptHandle(PromptChanged changed, PromptComplete complete)
 }
 
 void
+PromptSelectText(void)
+{
+  selected = text.length > 0;
+}
+
+void
 PromptSetLabel(const char *newLabel)
 {
   StrBufClear(&label);
@@ -74,6 +84,7 @@ PromptSetText(const char *newText, u64 length)
   StrBufClear(&text);
   StrBufAppend(&text, newText, length);
   cursor = text.length;
+  selected = false;
   if (onChange) onChange(doneContext, text.data ? text.data : "", text.length);
 }
 
@@ -121,6 +132,13 @@ PromptCancel(void)
 static void
 Insert(const char *data, u64 length)
 {
+  if (selected && length) {
+    StrBufClear(&text);
+    cursor = 0;
+    selected = false;
+    edited = true;
+  }
+
   for (u64 index = 0; index < length; index++) {
     u8 byte = (u8)data[index];
     if (byte < 0x20 || byte == 0x7F) continue;
@@ -178,6 +196,18 @@ Edit(Key key)
   }
 
   if (key.modifiers & ~(KeyModifierControl | KeyModifierShift)) return;
+
+  // a delete removes selected text whole, and a movement keeps it.
+  bool deleting = key.code == KeyBackspace || key.code == KeyDelete;
+
+  if (selected && deleting) {
+    selected = false;
+    cursor = 0;
+    DeleteNext(text.length);
+    return;
+  }
+
+  if (key.code != KeyEnter && key.code != KeyEscape) selected = false;
 
   switch (key.code) {
     case KeyEnter:
@@ -285,6 +315,7 @@ PromptDraw(i32 row, i32 width)
   LayoutRow whole = {0, text.length, true};
   u64 start = LayoutByteAt(data, text.length, whole, scroll);
   u64 startColumn = LayoutColumn(data, text.length, start);
-  ScreenPutText(row, column, data + start, text.length - start, style);
+  Style textStyle = selected ? ThemeStyle(ThemeSelection) : style;
+  ScreenPutText(row, column, data + start, text.length - start, textStyle);
   ScreenSetCursor(row, column + (i32)(cursorColumn - startColumn));
 }

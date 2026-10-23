@@ -207,6 +207,7 @@ AskName(Range range)
   }
 
   PromptAsk("rename to: ", oldName.data, NameGiven, nullptr);
+  PromptSelectText();
 }
 
 // the word at the cursor, the name to start from when the server leaves it to the editor.

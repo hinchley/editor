@@ -30,6 +30,11 @@ PromptAsk(const char *label, const char *initial, PromptDone done, void *context
 void
 PromptHandle(PromptChanged changed, PromptComplete complete);
 
+// makes the first edit of the text prompt just opened replace its starting text, which is
+// shown selected until then; a movement key keeps the text for editing instead.
+void
+PromptSelectText(void);
+
 // changes the label of the open prompt.
 void
 PromptSetLabel(const char *label);

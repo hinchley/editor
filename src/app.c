@@ -260,6 +260,7 @@ AskRulerColumn(void)
   StrBuf current = {};
   StrBufAppendFormat(&current, "%d", displayOptions.rulerColumn);
   PromptAsk("ruler column (1-500): ", current.data, RulerAnswered, nullptr);
+  PromptSelectText();
   StrBufFree(&current);
 }
 
@@ -459,6 +460,7 @@ AskTableWidth(void)
   );
   StrBufAppendFormat(&current, "%lu", tableColumnWidth);
   PromptAsk(label.data, current.data, TableWidthAnswered, nullptr);
+  PromptSelectText();
   StrBufFree(&current);
   StrBufFree(&label);
 }
