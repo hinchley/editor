@@ -351,9 +351,10 @@ ColorName(enum PngColor color)
   return "";
 }
 
-// inflates the pixels of a png whose chunks were read and puts them in bitmap.
+// inflates the pixels of a png whose chunks were read and puts them in bitmap, freeing the
+// compressed data before the bitmap is made.
 static bool
-DecodePixels(const Png *png, Bitmap *bitmap, StrBuf *message)
+DecodePixels(Png *png, Bitmap *bitmap, StrBuf *message)
 {
   u32 passCount = png->interlaced ? 7 : 1;
   const Pass *passes = png->interlaced ? adam7 : &everyPixel;
@@ -364,6 +365,7 @@ DecodePixels(const Png *png, Bitmap *bitmap, StrBuf *message)
   StrBufReserve(&raw, expected);
   const u8 *compressed = (const u8 *)png->data.data;
   bool inflated = InflateZlib(compressed, png->data.length, expected, &raw);
+  StrBufFree(&png->data);
 
   if (!inflated || raw.length != expected) {
     StrBufAppendString(message, "damaged PNG");
