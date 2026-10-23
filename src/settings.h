@@ -72,6 +72,10 @@ static constexpr u64 maxProjectHits = 10'000;
 static constexpr u64 maxMatchCountSize = 4ull * 1024 * 1024;
 static constexpr u64 maxMatchCount = 10'000;
 
+// the search prompts remember this many patterns, and this many replacements, for the
+// session.
+static constexpr u32 searchHistorySize = 20;
+
 // alt+c counts unknown words up to this many.
 static constexpr u64 maxSpellCount = 10'000;
 

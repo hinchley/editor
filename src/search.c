@@ -53,6 +53,18 @@ static bool caseSensitive;
 static bool regex;
 static StrBuf lastReplacement;
 
+// patterns or replacements given to the prompts, newest first.
+typedef struct History {
+  StrBuf entries[searchHistorySize];
+  u32 count;
+} History;
+
+static History patterns;
+static History replacements;
+
+// the history entry the open prompt was last filled with (from 1), or 0.
+static u32 recalled;
+
 // the text of the open prompt, compiled to find out whether it is a valid pattern.
 static Pattern typed;
 
@@ -71,6 +83,33 @@ static Position origin;
 static bool found;
 static bool wrapped;
 static Range current;
+
+// puts text first in history, moving it there when it is already in it, and dropping the
+// oldest entry when there is no room.
+static void
+HistoryAdd(History *history, const char *text, u64 length)
+{
+  if (!length) return;
+
+  u32 index = 0;
+  while (index < history->count) {
+    const StrBuf *entry = &history->entries[index];
+    if (entry->length == length && memcmp(entry->data, text, length) == 0) break;
+    index++;
+  }
+
+  if (index == history->count) {
+    if (history->count < searchHistorySize) history->count++;
+    index = history->count - 1;
+  }
+
+  // the entry's buffer is reused for the new first one.
+  StrBuf first = history->entries[index];
+  memmove(&history->entries[1], &history->entries[0], index * sizeof(StrBuf));
+  StrBufClear(&first);
+  StrBufAppend(&first, text, length);
+  history->entries[0] = first;
+}
 
 void
 SearchInit(Workspace *newWorkspace, StrBuf *newMessage)
@@ -354,6 +393,8 @@ FindDone([[maybe_unused]] void *context, const char *answer, u64 length)
     return;
   }
 
+  HistoryAdd(&patterns, answer, length);
+
   if (!found) {
     MatchSet set = SearchMarks(Current());
     ReportNoMatch(&set);
@@ -388,6 +429,7 @@ SearchFind(void)
   SetPattern("", 0);
 
   prompt = SearchPromptFind;
+  recalled = 0;
   PromptAsk("find: ", "", FindDone, nullptr);
   PromptHandle(FindChanged, nullptr);
   if (hasSelection) PromptSetText(selected.data, selected.length);
@@ -453,6 +495,7 @@ SearchWord(void)
 
   PatternOptions options = {.caseSensitive = true, .wholeWord = true};
   PatternSet(&last, line->data + start, end - start, options);
+  HistoryAdd(&patterns, line->data + start, end - start);
   document->marks = MatchKindSearch;
 
   MatchSet set = SearchMarks(document);
@@ -690,8 +733,7 @@ ReplacementAnswered([[maybe_unused]] void *context, const char *answer, u64 leng
   prompt = SearchPromptNone;
   if (!answer) return;
 
-  StrBufClear(&lastReplacement);
-  StrBufAppend(&lastReplacement, answer, length);
+  HistoryAdd(&replacements, answer, length);
   StrBufClear(&replacing.text);
   StrBufAppend(&replacing.text, answer, length);
 
@@ -718,6 +760,7 @@ PatternAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
   if (!answer || !length) return;
 
   SetPattern(answer, length);
+  HistoryAdd(&patterns, answer, length);
   Current()->marks = MatchKindSearch;
 
   if (last.impossible) {
@@ -729,6 +772,7 @@ PatternAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
   StrBuf label = {};
   StrBufAppendFormat(&label, "replace %s with: ", TextOf(&last.source));
   prompt = SearchPromptReplacement;
+  recalled = 0;
   PromptAsk(label.data, "", ReplacementAnswered, nullptr);
   StrBufFree(&label);
 }
@@ -740,6 +784,7 @@ SearchReplace(void)
   SelectedSource(&selected);
   CursorSetCollapse(&Current()->view->cursors);
   prompt = SearchPromptPattern;
+  recalled = 0;
   PromptAsk("replace: ", TextOf(&selected), PatternAnswered, nullptr);
   PromptHandle(Relabel, nullptr);
   Label();
@@ -753,6 +798,7 @@ ProjectAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
   if (!answer || !length) return;
 
   SetPattern(answer, length);
+  HistoryAdd(&patterns, answer, length);
   projectDone(&last);
 }
 
@@ -763,6 +809,7 @@ SearchProject(SearchProjectDone done)
   SelectedSource(&selected);
   projectDone = done;
   prompt = SearchPromptProject;
+  recalled = 0;
   PromptAsk("search files: ", TextOf(&selected), ProjectAnswered, nullptr);
   PromptHandle(Relabel, nullptr);
   Label();
@@ -781,6 +828,7 @@ ProjectReplacementAnswered([[maybe_unused]] void *context, const char *answer, u
 
   StrBufClear(&lastReplacement);
   StrBufAppend(&lastReplacement, answer, length);
+  HistoryAdd(&replacements, answer, length);
   replacementDone(&lastReplacement);
 }
 
@@ -791,6 +839,7 @@ SearchReplacement(const Pattern *pattern, SearchReplacementDone done)
   StrBuf label = {};
   StrBufAppendFormat(&label, "replace %s with: ", TextOf(&pattern->source));
   prompt = SearchPromptProjectReplacement;
+  recalled = 0;
   PromptAsk(label.data, "", ProjectReplacementAnswered, nullptr);
   StrBufFree(&label);
 }
@@ -809,16 +858,32 @@ SearchActive(void)
   return prompt != SearchPromptNone && PromptActive();
 }
 
-// fills an empty prompt with the last pattern or replacement.
-static void
-Recall(void)
+// fills an empty prompt with the newest pattern or replacement, or one holding an entry it
+// was filled with, unchanged, with the one before it (older) or after it, emptying it after
+// the newest; false, leaving the prompt alone, when it holds anything else.
+static bool
+Recall(bool older)
 {
-  const StrBuf *text = &last.source;
-  if (prompt == SearchPromptFind) text = &saved.source;
   bool replacement = prompt == SearchPromptReplacement ||
     prompt == SearchPromptProjectReplacement;
-  if (replacement) text = &lastReplacement;
-  if (text->length) PromptSetText(text->data, text->length);
+  const History *history = replacement ? &replacements : &patterns;
+  const StrBuf *text = PromptText();
+
+  if (text->length) {
+    const StrBuf *entry = recalled ? &history->entries[recalled - 1] : nullptr;
+    bool same = entry && entry->length == text->length &&
+      memcmp(entry->data, text->data, text->length) == 0;
+    if (!same) return false;
+  }
+
+  u32 next = !text->length ? 1 : older ? recalled + 1 : recalled - 1;
+  if (next > history->count) return true;
+
+  recalled = next;
+  const StrBuf *entry = next ? &history->entries[next - 1] : nullptr;
+  if (entry) PromptSetText(entry->data, entry->length);
+  else PromptSetText("", 0);
+  return true;
 }
 
 // switches case matching or regular expressions, searching again in find.
@@ -845,10 +910,7 @@ SearchKey(Key key)
   bool up = (plain && key.code == KeyUp) || (control && key.code == 'p');
   bool down = (plain && key.code == KeyDown) || (control && key.code == 'n');
 
-  if ((up || down) && !PromptText()->length) {
-    Recall();
-    return;
-  }
+  if ((up || down) && Recall(up)) return;
 
   if (up || down) {
     if (prompt == SearchPromptFind) FindStep(up);
