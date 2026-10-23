@@ -255,12 +255,19 @@ AppendText(StrBuf *out, const Buffer *buffer)
   StrBufFree(&text);
 }
 
+// starts the parameters with the document named, leaving its object open for more fields.
+static void
+AppendDocument(StrBuf *params, const LspDocument *document)
+{
+  StrBufAppendString(params, "{\"textDocument\":{\"uri\":");
+  JsonAppendString(params, document->uri.data, document->uri.length);
+}
+
 static void
 SendOpen(LspDocument *document)
 {
   StrBuf params = {};
-  StrBufAppendString(&params, "{\"textDocument\":{\"uri\":");
-  JsonAppendString(&params, document->uri.data, document->uri.length);
+  AppendDocument(&params, document);
   StrBufAppendString(&params, ",\"languageId\":");
   JsonAppendString(&params, document->lang->id, strlen(document->lang->id));
   StrBufAppendFormat(&params, ",\"version\":%ld,\"text\":", document->version);
@@ -285,8 +292,7 @@ SendChanges(LspDocument *document)
 
   document->version++;
   StrBuf params = {};
-  StrBufAppendString(&params, "{\"textDocument\":{\"uri\":");
-  JsonAppendString(&params, document->uri.data, document->uri.length);
+  AppendDocument(&params, document);
   StrBufAppendFormat(&params, ",\"version\":%ld},\"contentChanges\":[", document->version);
 
   if (document->full) {
@@ -932,8 +938,7 @@ LspClose(LspDocument *document)
 
   if (document->opened && server->state == ServerReady) {
     StrBuf params = {};
-    StrBufAppendString(&params, "{\"textDocument\":{\"uri\":");
-    JsonAppendString(&params, document->uri.data, document->uri.length);
+    AppendDocument(&params, document);
     StrBufAppendString(&params, "}}");
     RpcNotify(server->rpc, "textDocument/didClose", params.data);
     StrBufFree(&params);
@@ -971,8 +976,7 @@ LspSaved(LspDocument *document)
   // the server hears about the text before it hears it was saved.
   SendChanges(document);
   StrBuf params = {};
-  StrBufAppendString(&params, "{\"textDocument\":{\"uri\":");
-  JsonAppendString(&params, document->uri.data, document->uri.length);
+  AppendDocument(&params, document);
   StrBufAppendString(&params, "}}");
   RpcNotify(document->server->rpc, "textDocument/didSave", params.data);
   StrBufFree(&params);
@@ -1614,20 +1618,16 @@ Replied(void *context, const Json *json, u32 result, u32 error)
   StrBufFree(&pending.uri);
 }
 
-// sends a request about a document, once its pending changes are sent.
+// sends a request about a document, once its pending changes are sent, and frees params.
 static LspRequest
-Ask(
-  LspDocument *document,
-  bool answers,
-  const char *method,
-  const StrBuf *params,
-  Pending pending
-)
+Ask(LspDocument *document, bool answers, const char *method, StrBuf *params, Pending pending)
 {
-  if (!document || !document->opened || !answers) return 0;
-
   Server *server = document->server;
-  if (server->state != ServerReady) return 0;
+
+  if (!document->opened || !answers || server->state != ServerReady) {
+    StrBufFree(params);
+    return 0;
+  }
 
   SendChanges(document);
   pending.request = ++lastRequest;
@@ -1637,6 +1637,7 @@ Ask(
   pending.deadline = RpcNow() + serverRequestTimeout;
   void *context = (void *)(uintptr_t)pending.request;
   pending.id = RpcRequest(server->rpc, method, params->data, Replied, context);
+  StrBufFree(params);
 
   if (pendingCount == pendingCapacity) {
     pendingCapacity = pendingCapacity ? pendingCapacity * 2 : 8;
@@ -1663,21 +1664,30 @@ AppendServerPosition(StrBuf *params, const LspDocument *document, Position posit
   AppendPosition(params, position.line, column);
 }
 
-static void
-AppendDocument(StrBuf *params, const LspDocument *document)
-{
-  StrBufAppendString(params, "{\"textDocument\":{\"uri\":");
-  JsonAppendString(params, document->uri.data, document->uri.length);
-  StrBufAppendByte(params, '}');
-}
-
 // the parameters of a question about a position in a document.
 static void
 AppendPositionParams(StrBuf *params, const LspDocument *document, Position position)
 {
   AppendDocument(params, document);
-  StrBufAppendString(params, ",\"position\":");
+  StrBufAppendString(params, "},\"position\":");
   AppendServerPosition(params, document, position);
+}
+
+// asks about a position in a document, with tail ending the parameters.
+static LspRequest
+AskAt(
+  LspDocument *document,
+  bool answers,
+  const char *method,
+  Position position,
+  const char *tail,
+  Pending pending
+)
+{
+  StrBuf params = {};
+  AppendPositionParams(&params, document, position);
+  StrBufAppendString(&params, tail);
+  return Ask(document, answers, method, &params, pending);
 }
 
 LspRequest
@@ -1685,14 +1695,9 @@ LspDefinition(LspDocument *document, Position position, LspLocationsDone done, v
 {
   if (!document) return 0;
 
-  StrBuf params = {};
-  AppendPositionParams(&params, document, position);
-  StrBufAppendByte(&params, '}');
   Pending pending = {.kind = PendingLocations, .locationsDone = done, .context = context};
   bool answers = document->server->definitions;
-  LspRequest request = Ask(document, answers, "textDocument/definition", &params, pending);
-  StrBufFree(&params);
-  return request;
+  return AskAt(document, answers, "textDocument/definition", position, "}", pending);
 }
 
 LspRequest
@@ -1700,14 +1705,10 @@ LspReferences(LspDocument *document, Position position, LspLocationsDone done, v
 {
   if (!document) return 0;
 
-  StrBuf params = {};
-  AppendPositionParams(&params, document, position);
-  StrBufAppendString(&params, ",\"context\":{\"includeDeclaration\":true}}");
   Pending pending = {.kind = PendingLocations, .locationsDone = done, .context = context};
   bool answers = document->server->references;
-  LspRequest request = Ask(document, answers, "textDocument/references", &params, pending);
-  StrBufFree(&params);
-  return request;
+  const char *tail = ",\"context\":{\"includeDeclaration\":true}}";
+  return AskAt(document, answers, "textDocument/references", position, tail, pending);
 }
 
 LspRequest
@@ -1721,15 +1722,10 @@ LspHover(
 {
   if (!document) return 0;
 
-  StrBuf params = {};
-  AppendPositionParams(&params, document, position);
-  StrBufAppendByte(&params, '}');
   Pending pending =
     {.kind = PendingText, .background = background, .textDone = done, .context = context};
   bool answers = document->server->hovers;
-  LspRequest request = Ask(document, answers, "textDocument/hover", &params, pending);
-  StrBufFree(&params);
-  return request;
+  return AskAt(document, answers, "textDocument/hover", position, "}", pending);
 }
 
 LspRequest
@@ -1743,10 +1739,7 @@ LspOtherFile(LspDocument *document, LspLocationsDone done, void *context)
   StrBufAppendByte(&params, '}');
   Pending pending = {.kind = PendingLocations, .locationsDone = done, .context = context};
   bool answers = document->server->clangd;
-  LspRequest request =
-    Ask(document, answers, "textDocument/switchSourceHeader", &params, pending);
-  StrBufFree(&params);
-  return request;
+  return Ask(document, answers, "textDocument/switchSourceHeader", &params, pending);
 }
 
 void
@@ -1792,14 +1785,9 @@ LspPrepareRename(
 {
   if (!document || !document->server->preparesRenames) return 0;
 
-  StrBuf params = {};
-  AppendPositionParams(&params, document, position);
-  StrBufAppendByte(&params, '}');
   Pending pending =
     {.kind = PendingPrepare, .position = position, .locationsDone = done, .context = context};
-  LspRequest request = Ask(document, true, "textDocument/prepareRename", &params, pending);
-  StrBufFree(&params);
-  return request;
+  return AskAt(document, true, "textDocument/prepareRename", position, "}", pending);
 }
 
 LspRequest
@@ -1821,9 +1809,7 @@ LspRename(
   StrBufAppendByte(&params, '}');
   Pending pending = {.kind = PendingEdits, .editsDone = done, .context = context};
   bool answers = document->server->renames;
-  LspRequest request = Ask(document, answers, "textDocument/rename", &params, pending);
-  StrBufFree(&params);
-  return request;
+  return Ask(document, answers, "textDocument/rename", &params, pending);
 }
 
 // appends a diagnostic as the server sent it (its range in its own counting), so it can
@@ -1868,7 +1854,7 @@ LspFixes(LspDocument *document, u64 line, LspActionsDone done, void *context)
 
   StrBuf params = {};
   AppendDocument(&params, document);
-  StrBufAppendString(&params, ",\"range\":{\"start\":");
+  StrBufAppendString(&params, "},\"range\":{\"start\":");
   AppendPosition(&params, line, 0);
   StrBufAppendString(&params, ",\"end\":");
   AppendServerPosition(&params, document, end);
@@ -1892,9 +1878,7 @@ LspFixes(LspDocument *document, u64 line, LspActionsDone done, void *context)
   StrBufAppendString(&params, "]}}");
   Pending pending = {.kind = PendingActions, .actionsDone = done, .context = context};
   bool answers = document->server->fixes;
-  LspRequest request = Ask(document, answers, "textDocument/codeAction", &params, pending);
-  StrBufFree(&params);
-  return request;
+  return Ask(document, answers, "textDocument/codeAction", &params, pending);
 }
 
 LspRequest
@@ -1906,13 +1890,11 @@ LspFormat(LspDocument *document, bool spaces, LspEditsDone done, void *context)
   AppendDocument(&params, document);
   StrBufAppendFormat(
     &params,
-    ",\"options\":{\"tabSize\":%d,\"insertSpaces\":%s}}",
+    "},\"options\":{\"tabSize\":%d,\"insertSpaces\":%s}}",
     tabWidth,
     spaces ? "true" : "false"
   );
   Pending pending = {.kind = PendingEdits, .editsDone = done, .context = context};
   bool answers = document->server->formats;
-  LspRequest request = Ask(document, answers, "textDocument/formatting", &params, pending);
-  StrBufFree(&params);
-  return request;
+  return Ask(document, answers, "textDocument/formatting", &params, pending);
 }
