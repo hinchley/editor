@@ -448,6 +448,21 @@ WorkspaceSetFolders(Workspace *workspace, char *const *paths, u64 count)
   NameFolders(workspace);
 }
 
+// the folder the editor was started in, resolved and without a trailing slash, or empty
+// when it cannot be read.
+static const StrBuf *
+WorkingFolder(void)
+{
+  static StrBuf folder;
+  static bool read;
+  if (read) return &folder;
+
+  read = true;
+  char real[PATH_MAX];
+  if (realpath(".", real)) StrBufAppend(&folder, real, TrimmedLength(real));
+  return &folder;
+}
+
 // works out an entry's name and resolved path for its path and the open folders.
 static void
 NameEntry(const Workspace *workspace, WorkspaceEntry *entry)
@@ -484,6 +499,15 @@ NameEntry(const Workspace *workspace, WorkspaceEntry *entry)
     entry->inFolder = true;
     StrBufAppend(&entry->name, holder->name.data, holder->name.length);
     u64 inside = holder->real.length;
+    StrBufAppend(&entry->name, real->data + inside, real->length - inside);
+    return;
+  }
+
+  // any other file is named from the working folder, else the home folder, else the root.
+  const StrBuf *working = WorkingFolder();
+
+  if (working->length && Below(real->data, working->data, working->length)) {
+    u64 inside = working->length + 1;
     StrBufAppend(&entry->name, real->data + inside, real->length - inside);
     return;
   }
