@@ -797,26 +797,59 @@ ShiftCursor(const Buffer *buffer, Cursor *cursor, const Cursor *original, i64 li
   cursor->head = BufferClamp(buffer, head);
 }
 
+static u64
+BlockSize(LineBlock block)
+{
+  return block.last - block.first + 1;
+}
+
 void
 EditDuplicateLines(const EditContext *edit)
 {
   View *view = edit->view;
-  CursorSetCollapse(&view->cursors);
-  Cursor *cursor = CursorSetPrimary(&view->cursors);
-  Cursor original = *cursor;
-  LineBlock block = TouchedLines(cursor);
+  CursorSet *set = &view->cursors;
+  CursorSetMerge(set);
 
-  // the copy goes above, so cursors in any view move down with the lines they were on.
-  StrBuf text = {};
-  AppendLines(view->buffer, block, &text);
-  StrBufAppendByte(&text, '\n');
-  Position start = {block.first, 0};
-
+  CursorSet before = {};
+  CursorSetCopy(&before, set);
+  u32 blockCount;
+  LineBlock *blocks = TouchedBlocks(set, &blockCount);
   Begin(edit, UndoKindOther);
-  BufferReplace(view->buffer, (Range){start, start}, text.data, text.length);
-  ShiftCursor(view->buffer, cursor, &original, (i64)(block.last - block.first + 1));
+
+  // each copy goes above its block, so cursors in any view move down with the lines they
+  // were on, and from the last block back, so the earlier blocks keep their lines.
+  StrBuf text = {};
+
+  for (u32 index = blockCount; index-- > 0;) {
+    LineBlock block = blocks[index];
+    StrBufClear(&text);
+    AppendLines(view->buffer, block, &text);
+    StrBufAppendByte(&text, '\n');
+    Position start = {block.first, 0};
+    BufferReplace(view->buffer, (Range){start, start}, text.data, text.length);
+  }
+
+  // a cursor moves down by the lines copied in its block and every block before it.
+  u32 block = 0;
+  u64 shift = 0;
+
+  for (u32 index = 0; index < set->count; index++) {
+    const Cursor *original = &before.cursors[index];
+    u64 first = TouchedLines(original).first;
+
+    while (blocks[block].last < first) {
+      shift += BlockSize(blocks[block]);
+      block++;
+    }
+
+    i64 lines = (i64)(shift + BlockSize(blocks[block]));
+    ShiftCursor(view->buffer, &set->cursors[index], original, lines);
+  }
+
   End(edit);
   StrBufFree(&text);
+  free(blocks);
+  CursorSetFree(&before);
 }
 
 // puts a cursor on a line at its desired column.
@@ -846,25 +879,15 @@ EditDeleteLines(const EditContext *edit)
   cursor->desiredColumn = desiredColumn;
 }
 
-bool
-EditMoveLines(const EditContext *edit, bool up)
+// moves a block of lines past its neighbour.
+// the neighbour line is taken out and put back on the other side, so the moved lines are
+// never replaced and cursors on them in any view go with them.
+static void
+MoveBlock(Buffer *buffer, LineBlock block, bool up)
 {
-  View *view = edit->view;
-  Buffer *buffer = view->buffer;
-  CursorSetCollapse(&view->cursors);
-  Cursor *cursor = CursorSetPrimary(&view->cursors);
-  LineBlock block = TouchedLines(cursor);
-
-  if (up && block.first == 0) return false;
-  if (!up && block.last + 1 >= BufferLineCount(buffer)) return false;
-
-  // the neighbour line is taken out and put back on the other side, so the moved lines
-  // are never replaced and cursors on them in any view go with them.
   u64 neighbour = up ? block.first - 1 : block.last + 1;
   StrBuf text = {};
   AppendLines(buffer, (LineBlock){neighbour, neighbour}, &text);
-  Cursor original = *cursor;
-  Begin(edit, UndoKindOther);
 
   if (up) {
     BufferReplace(buffer, (Range){{neighbour, 0}, {neighbour + 1, 0}}, "", 0);
@@ -880,9 +903,41 @@ EditMoveLines(const EditContext *edit, bool up)
     BufferReplace(buffer, (Range){start, start}, text.data, text.length);
   }
 
-  ShiftCursor(buffer, cursor, &original, up ? -1 : 1);
-  End(edit);
   StrBufFree(&text);
+}
+
+bool
+EditMoveLines(const EditContext *edit, bool up)
+{
+  View *view = edit->view;
+  Buffer *buffer = view->buffer;
+  CursorSet *set = &view->cursors;
+  CursorSetMerge(set);
+
+  u32 blockCount;
+  LineBlock *blocks = TouchedBlocks(set, &blockCount);
+  bool atStart = up && blocks[0].first == 0;
+  bool atEnd = !up && blocks[blockCount - 1].last + 1 >= BufferLineCount(buffer);
+
+  if (atStart || atEnd) {
+    free(blocks);
+    return false;
+  }
+
+  // blocks are at least a line apart, so each moves past a neighbour of its own and the
+  // line count never changes: every block keeps its lines while the others move.
+  CursorSet before = {};
+  CursorSetCopy(&before, set);
+  Begin(edit, UndoKindOther);
+  for (u32 index = 0; index < blockCount; index++) MoveBlock(buffer, blocks[index], up);
+
+  for (u32 index = 0; index < set->count; index++) {
+    ShiftCursor(buffer, &set->cursors[index], &before.cursors[index], up ? -1 : 1);
+  }
+
+  End(edit);
+  free(blocks);
+  CursorSetFree(&before);
   return true;
 }
 

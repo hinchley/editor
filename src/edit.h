@@ -71,18 +71,20 @@ EditDeleteWordBackward(const EditContext *edit);
 void
 EditDeleteWordForward(const EditContext *edit);
 
-// the line commands below first collapse to the primary cursor, and act on its line or
-// every line its selection touches.
+// the line commands below act on every line a cursor's selection touches, or its line,
+// taking the runs of lines of every cursor together.
 
-// copies the lines below themselves and moves the selection onto the copy.
+// copies each run of lines above itself, so the cursors keep their places on the lower
+// copy.
 void
 EditDuplicateLines(const EditContext *edit);
 
+// deletes the lines of the primary cursor, collapsing to it first.
 void
 EditDeleteLines(const EditContext *edit);
 
-// moves the lines up or down past their neighbour, keeping them selected.
-// returns false at the start or end of the buffer.
+// moves each run of lines up or down past its neighbour, keeping the cursors on them.
+// returns false, moving nothing, when a run is at the start or end of the buffer.
 bool
 EditMoveLines(const EditContext *edit, bool up);
 
