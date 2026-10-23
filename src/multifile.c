@@ -287,6 +287,41 @@ Step(bool redo)
   if (left > 1) StrBufAppendString(message, ", ...");
 }
 
+void
+MultifileNoteStep(u64 serial, u64 group, bool redo)
+{
+  bool ours = false;
+  u64 others = 0;
+
+  for (u64 at = 0; at < partCount; at++) {
+    if (parts[at].serial == serial) {
+      ours = parts[at].group == group;
+      continue;
+    }
+
+    Document *document;
+    u64 index;
+    enum PartState state = StateOf(&parts[at], &document, &index);
+    bool done = state == PartStateLast || state == PartStateDone;
+    bool undone = state == PartStateNext || state == PartStateUndone;
+    if (redo ? undone : done) others++;
+  }
+
+  if (!ours || !others) return;
+
+  StrBufAppendFormat(
+    message,
+    "%s this file's part of the %s, not the other %lu file%s (alt+shift+z, then %s, %s it in "
+    "every file)",
+    redo ? "redid" : "undid",
+    what.data,
+    others,
+    StrBufPlural(others),
+    redo ? "ctrl+y" : "ctrl+z",
+    redo ? "redoes" : "undoes"
+  );
+}
+
 static bool
 ListKey([[maybe_unused]] void *context, Key key)
 {

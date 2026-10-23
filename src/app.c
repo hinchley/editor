@@ -727,6 +727,22 @@ Report(bool done, const char *failure)
   if (!done) StrBufAppendString(&message, failure);
 }
 
+// undoes or (redo) redoes a step, warning when it was one file's part of a change made
+// across files.
+static void
+StepHistory(const EditContext *edit, bool redo)
+{
+  if (!(redo ? EditRedo(edit) : EditUndo(edit))) {
+    StrBufAppendString(&message, redo ? "nothing to redo" : "nothing to undo");
+    return;
+  }
+
+  // the group just undone is the next to redo, and the one just redone the last to undo.
+  const Undo *undo = edit->undo;
+  u64 group = redo ? UndoLastId(undo) : undo->groups[undo->current].id;
+  MultifileNoteStep(workspace.entries[workspace.current].serial, group, redo);
+}
+
 static bool
 EditCommand(enum Command command)
 {
@@ -761,10 +777,10 @@ EditCommand(enum Command command)
       EditDeleteWordForward(&edit);
       break;
     case CommandUndo:
-      Report(EditUndo(&edit), "nothing to undo");
+      StepHistory(&edit, false);
       break;
     case CommandRedo:
-      Report(EditRedo(&edit), "nothing to redo");
+      StepHistory(&edit, true);
       break;
     case CommandCopy:
       Copy(false);

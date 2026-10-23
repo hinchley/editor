@@ -28,6 +28,11 @@ MultifileEditBegin(u64 index);
 void
 MultifileEditEnd(Document *document);
 
+// after undo (or redo) of group in the entry with serial, says when that was only the
+// entry's part of the last change, and the other files still have theirs as it was.
+void
+MultifileNoteStep(u64 serial, u64 group, bool redo);
+
 // lists the places the last change made, as the files have them now, done or undone.
 void
 MultifileReview(void);
