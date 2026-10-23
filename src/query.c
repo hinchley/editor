@@ -382,12 +382,6 @@ CaptureText(
   return false;
 }
 
-static const char *
-TextOf(const StrBuf *text)
-{
-  return text->data ? text->data : "";
-}
-
 static bool
 Passes(
   const QueryPredicate *predicate,
@@ -407,20 +401,20 @@ Passes(
     case QueryTestEq:
       if (predicate->withCapture) {
         CaptureText(match, predicate->otherCapture, text, context, &other);
-        result = strcmp(TextOf(&value), TextOf(&other)) == 0;
+        result = strcmp(StrBufText(&value), StrBufText(&other)) == 0;
       } else {
-        result = strcmp(TextOf(&value), predicate->strings[0]) == 0;
+        result = strcmp(StrBufText(&value), predicate->strings[0]) == 0;
       }
 
       break;
     case QueryTestMatch:
-      result = regexec(&predicate->regex, TextOf(&value), 0, nullptr, 0) == 0;
+      result = regexec(&predicate->regex, StrBufText(&value), 0, nullptr, 0) == 0;
       break;
     case QueryTestAnyOf:
       result = false;
 
       for (u32 index = 0; index < predicate->stringCount && !result; index++) {
-        result = strcmp(TextOf(&value), predicate->strings[index]) == 0;
+        result = strcmp(StrBufText(&value), predicate->strings[index]) == 0;
       }
 
       break;

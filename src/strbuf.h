@@ -33,6 +33,13 @@ StrBufInsert(StrBuf *buffer, u64 at, const char *data, u64 length);
 void
 StrBufRemove(StrBuf *buffer, u64 at, u64 length);
 
+// text's bytes as a c string, empty when nothing was ever allocated.
+static inline const char *
+StrBufText(const StrBuf *text)
+{
+  return text->data ? text->data : "";
+}
+
 // "s" for a noun after count, unless count is 1 ("1 line", "2 lines").
 static inline const char *
 StrBufPlural(u64 count)

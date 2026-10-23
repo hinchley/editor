@@ -8,12 +8,6 @@
 // the last id given to a group, in any buffer.
 static u64 groupIds;
 
-static const char *
-TextOf(const StrBuf *text)
-{
-  return text->data ? text->data : "";
-}
-
 static void
 FreeGroup(UndoGroup *group)
 {
@@ -46,7 +40,7 @@ Extend(UndoRecord *record, const BufferChange *change)
 
   // typing straight after the text the record put in.
   if (insertion) {
-    Position end = BufferTextEnd(start, TextOf(&record->newText), record->newText.length);
+    Position end = BufferTextEnd(start, StrBufText(&record->newText), record->newText.length);
     if (PositionCompare(change->start, end) != 0) return false;
 
     StrBufAppend(&record->newText, change->newText, change->newLength);
@@ -192,10 +186,10 @@ UndoUndo(Undo *undo, CursorSet *cursors)
 
   for (u32 index = group->count; index-- > 0;) {
     UndoRecord *record = &group->records[index];
-    const char *newText = TextOf(&record->newText);
+    const char *newText = StrBufText(&record->newText);
     Position end = BufferTextEnd(record->start, newText, record->newText.length);
     Range range = {record->start, end};
-    BufferReplace(undo->buffer, range, TextOf(&record->oldText), record->oldText.length);
+    BufferReplace(undo->buffer, range, StrBufText(&record->oldText), record->oldText.length);
   }
 
   undo->replaying = false;
@@ -214,10 +208,10 @@ UndoRedo(Undo *undo, CursorSet *cursors)
 
   for (u32 index = 0; index < group->count; index++) {
     UndoRecord *record = &group->records[index];
-    const char *oldText = TextOf(&record->oldText);
+    const char *oldText = StrBufText(&record->oldText);
     Position end = BufferTextEnd(record->start, oldText, record->oldText.length);
     Range range = {record->start, end};
-    BufferReplace(undo->buffer, range, TextOf(&record->newText), record->newText.length);
+    BufferReplace(undo->buffer, range, StrBufText(&record->newText), record->newText.length);
   }
 
   undo->replaying = false;

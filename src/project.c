@@ -73,12 +73,6 @@ static u64 *chosen;
 static u64 chosenCount;
 static StrBuf replacement;
 
-static const char *
-TextOf(const StrBuf *text)
-{
-  return text->data ? text->data : "";
-}
-
 // appends a hit whose text is already at the end of shownTexts.
 static void
 AppendHit(Hit hit)
@@ -122,7 +116,7 @@ SearchBuffer(u64 entry, const Buffer *buffer)
   for (u64 line = 0; line < count && !capped; line++) {
     const StrBuf *text = BufferLine(buffer, line);
     Hit hit = {.entry = entry, .line = line, .revision = buffer->revision};
-    SearchLine(hit, TextOf(text), text->length);
+    SearchLine(hit, StrBufText(text), text->length);
   }
 }
 
@@ -180,7 +174,7 @@ DescribeResult(StrBuf *text)
   StrBufAppendFormat(
     text,
     "%s: %lu line%s in %lu of %lu file%s",
-    TextOf(&pattern.source),
+    StrBufText(&pattern.source),
     hitCount,
     StrBufPlural(hitCount),
     matchedFiles,
@@ -206,14 +200,14 @@ Finish([[maybe_unused]] void *context, ScanResult result)
   StrBufClear(message);
 
   if (!hitCount && !stopped) {
-    const char *source = TextOf(&pattern.source);
+    const char *source = StrBufText(&pattern.source);
     StrBufAppendFormat(message, "no match for %s in %lu files", source, fileCount);
     if (skipped) StrBufAppendFormat(message, " (%lu skipped)", skipped);
     return;
   }
 
   if (!hitCount) {
-    const char *source = TextOf(&pattern.source);
+    const char *source = StrBufText(&pattern.source);
     const char *format = "stopped: no match for %s in the first %lu of %lu files";
     StrBufAppendFormat(message, format, source, searched, fileCount);
     return;
@@ -263,7 +257,7 @@ ParseScope(const char *text, u64 length, Filter *include, Filter *exclude)
 static bool
 InScope(const Filter *include, const Filter *exclude, const StrBuf *path)
 {
-  const char *text = TextOf(path);
+  const char *text = StrBufText(path);
   u64 length = path->length;
   if (!length) return !include->count;
 
@@ -285,7 +279,7 @@ ScopeAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
   StrBufClear(&scope);
   StrBufAppend(&scope, answer, length);
   ProjectClear();
-  PatternSet(&pattern, TextOf(&asked.source), asked.source.length, asked.options);
+  PatternSet(&pattern, StrBufText(&asked.source), asked.source.length, asked.options);
 
   Filter include = {};
   Filter exclude = {};
@@ -331,8 +325,8 @@ ProjectAsk(const Pattern *newPattern)
   }
 
   const StrBuf *source = &newPattern->source;
-  PatternSet(&asked, TextOf(source), source->length, newPattern->options);
-  PromptAsk("in files (blank for all): ", TextOf(&scope), ScopeAnswered, nullptr);
+  PatternSet(&asked, StrBufText(source), source->length, newPattern->options);
+  PromptAsk("in files (blank for all): ", StrBufText(&scope), ScopeAnswered, nullptr);
 }
 
 // draws the lines around a hit, with every match highlighted.
@@ -357,8 +351,9 @@ SelectHit(const Hit *hit)
   const StrBuf *text = BufferLine(buffer, line);
   u64 from = hit->start <= text->length ? hit->start : 0;
   PatternMatch match = {};
-  bool found = PatternFind(&pattern, TextOf(text), text->length, from, UINT64_MAX, &match) ||
-    PatternFind(&pattern, TextOf(text), text->length, 0, UINT64_MAX, &match);
+  bool found =
+    PatternFind(&pattern, StrBufText(text), text->length, from, UINT64_MAX, &match) ||
+    PatternFind(&pattern, StrBufText(text), text->length, 0, UINT64_MAX, &match);
 
   Position start = {line, match.start};
   Position end = {line, match.end};
@@ -458,7 +453,7 @@ ReplaceInEntry(u64 first, u64 end, u64 *lines, u64 *matches, u64 *moved)
       matches
     );
     Range range = {{line, match.start}, {line, stop}};
-    BufferReplace(buffer, range, TextOf(&rebuilt), rebuilt.length);
+    BufferReplace(buffer, range, StrBufText(&rebuilt), rebuilt.length);
     (*lines)++;
   }
 
@@ -542,7 +537,7 @@ ReplacementGiven(const StrBuf *text)
   }
 
   StrBufClear(&replacement);
-  StrBufAppend(&replacement, TextOf(text), text->length);
+  StrBufAppend(&replacement, StrBufText(text), text->length);
 
   StrBuf question = {};
   u64 files = ChosenFiles();
@@ -610,7 +605,7 @@ ShowList(u64 position)
     StrBufAppendFormat(&item, ":%lu", hit->line + 1);
     StrBufClear(&note);
     StrBufAppend(&note, shownTexts.data + hit->shown, hit->shownLength);
-    PickerAdd(item.data, item.length, TextOf(&note), at);
+    PickerAdd(item.data, item.length, StrBufText(&note), at);
     shown++;
   }
 

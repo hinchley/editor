@@ -26,12 +26,6 @@ typedef struct Lines {
 
 static Lines lines = {.entry = noEntry};
 
-static const char *
-TextOf(const StrBuf *text)
-{
-  return text->data ? text->data : "";
-}
-
 void
 PreviewForget(void)
 {
@@ -48,13 +42,13 @@ ReadLines(u64 entry)
   lines.entry = entry;
   lines.count = 0;
   u64 index = WorkspaceEntryOf(workspace, entry);
-  const char *path = index == workspaceNone ? "" : TextOf(&workspace->entries[index].path);
+  const char *path = index == workspaceNone ? "" : StrBufText(&workspace->entries[index].path);
   FileStamp stamp;
   lines.readable = index != workspaceNone &&
     FileRead(path, &lines.text, &stamp, nullptr) == FileStatusOk;
   if (!lines.readable) return;
 
-  const char *text = TextOf(&lines.text);
+  const char *text = StrBufText(&lines.text);
   u64 length = lines.text.length;
 
   for (u64 at = 0;;) {
@@ -84,7 +78,7 @@ LineOf(u64 entry, u64 line, const char **text, u64 *length)
     if (line >= BufferLineCount(&document->buffer)) return false;
 
     const StrBuf *found = BufferLine(&document->buffer, line);
-    *text = TextOf(found);
+    *text = StrBufText(found);
     *length = found->length;
     return true;
   }
@@ -92,7 +86,7 @@ LineOf(u64 entry, u64 line, const char **text, u64 *length)
   ReadLines(entry);
   if (!lines.readable || line >= lines.count) return false;
 
-  const char *all = TextOf(&lines.text);
+  const char *all = StrBufText(&lines.text);
   u64 start = lines.starts[line];
   u64 end = line + 1 < lines.count ? lines.starts[line + 1] - 1 : lines.text.length;
   if (end > start && all[end - 1] == '\r' && end < lines.text.length) end--;

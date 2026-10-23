@@ -117,12 +117,6 @@ Current(void)
   return WorkspaceDocument(workspace);
 }
 
-static const char *
-TextOf(const StrBuf *text)
-{
-  return text->data ? text->data : "";
-}
-
 MatchSet
 SearchMarks(const Document *document)
 {
@@ -248,7 +242,7 @@ ReportNoMatch(const MatchSet *set)
   } else if (last.impossible && last.text.length) {
     StrBufAppendString(message, "a match cannot cross a line break");
   } else {
-    StrBufAppendFormat(message, "no match for %s", TextOf(&last.source));
+    StrBufAppendFormat(message, "no match for %s", StrBufText(&last.source));
   }
 }
 
@@ -277,7 +271,7 @@ Label(void)
   bool bad = BadPattern();
   StrBuf place = {};
   const StrBuf *text = PromptText();
-  if (MatchesCase(TextOf(text), text->length)) notes[count++] = "match case";
+  if (MatchesCase(StrBufText(text), text->length)) notes[count++] = "match case";
   if (regex) notes[count++] = bad ? "regex, bad pattern" : "regex";
   if (find && text->length && !found && !bad) notes[count++] = "no match";
   if (find && found && AppendPlace(current, &place)) notes[count++] = place.data;
@@ -382,7 +376,7 @@ FindDone([[maybe_unused]] void *context, const char *answer, u64 length)
   if (!answer || !length) {
     RestoreView();
     Current()->marks = saved.marks;
-    PatternSet(&last, TextOf(&saved.source), saved.source.length, saved.options);
+    PatternSet(&last, StrBufText(&saved.source), saved.source.length, saved.options);
     return;
   }
 
@@ -407,7 +401,7 @@ SearchFind(void)
   saved.leftColumn = view->leftColumn;
   saved.marks = document->marks;
   StrBufClear(&saved.source);
-  StrBufAppend(&saved.source, TextOf(&last.source), last.source.length);
+  StrBufAppend(&saved.source, StrBufText(&last.source), last.source.length);
   saved.options = last.options;
 
   // a selection is the first thing found, from where it starts.
@@ -560,7 +554,7 @@ SearchSpellWord(void)
   u64 start;
   u64 end;
 
-  if (!SpellWordAt(TextOf(line), line->length, head.byte, &start, &end)) {
+  if (!SpellWordAt(StrBufText(line), line->length, head.byte, &start, &end)) {
     StrBufAppendString(message, "no word to check at the cursor");
     return;
   }
@@ -686,8 +680,8 @@ Chosen([[maybe_unused]] void *context, const char *answer, [[maybe_unused]] u64 
       const StrBuf *line = BufferLine(&Current()->buffer, match.start.line);
       PatternMatch hit = {match.start.byte, match.end.byte};
       StrBuf with = {};
-      PatternExpand(&last, TextOf(line), line->length, hit, &replacing.text, &with);
-      Apply(match, TextOf(&with), with.length);
+      PatternExpand(&last, StrBufText(line), line->length, hit, &replacing.text, &with);
+      Apply(match, StrBufText(&with), with.length);
       StrBufFree(&with);
       replacing.replaced++;
       replacing.decided++;
@@ -768,7 +762,7 @@ PatternAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
   }
 
   StrBuf label = {};
-  StrBufAppendFormat(&label, "replace %s with: ", TextOf(&last.source));
+  StrBufAppendFormat(&label, "replace %s with: ", StrBufText(&last.source));
   prompt = SearchPromptReplacement;
   recalled = 0;
   PromptAsk(label.data, "", ReplacementAnswered, nullptr);
@@ -783,7 +777,7 @@ SearchReplace(void)
   CursorSetCollapse(&Current()->view->cursors);
   prompt = SearchPromptPattern;
   recalled = 0;
-  PromptAsk("replace: ", TextOf(&selected), PatternAnswered, nullptr);
+  PromptAsk("replace: ", StrBufText(&selected), PatternAnswered, nullptr);
   PromptHandle(Relabel, nullptr);
   Label();
   StrBufFree(&selected);
@@ -808,7 +802,7 @@ SearchProject(SearchProjectDone done)
   projectDone = done;
   prompt = SearchPromptProject;
   recalled = 0;
-  PromptAsk("search files: ", TextOf(&selected), ProjectAnswered, nullptr);
+  PromptAsk("search files: ", StrBufText(&selected), ProjectAnswered, nullptr);
   PromptHandle(Relabel, nullptr);
   Label();
   StrBufFree(&selected);
@@ -835,7 +829,7 @@ SearchReplacement(const Pattern *pattern, SearchReplacementDone done)
 {
   replacementDone = done;
   StrBuf label = {};
-  StrBufAppendFormat(&label, "replace %s with: ", TextOf(&pattern->source));
+  StrBufAppendFormat(&label, "replace %s with: ", StrBufText(&pattern->source));
   prompt = SearchPromptProjectReplacement;
   recalled = 0;
   PromptAsk(label.data, "", ProjectReplacementAnswered, nullptr);
@@ -846,7 +840,7 @@ void
 SearchShow(Document *document, const Pattern *pattern)
 {
   const StrBuf *source = &pattern->source;
-  PatternSet(&last, TextOf(source), source->length, pattern->options);
+  PatternSet(&last, StrBufText(source), source->length, pattern->options);
   document->marks = MatchKindSearch;
 }
 
@@ -892,7 +886,7 @@ Toggle(bool *option)
 
   if (prompt == SearchPromptFind) {
     const StrBuf *text = PromptText();
-    SetPattern(TextOf(text), text->length);
+    SetPattern(StrBufText(text), text->length);
     ShowFirst();
     return;
   }

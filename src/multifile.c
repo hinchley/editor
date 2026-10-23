@@ -114,12 +114,6 @@ StateOf(const Part *part, Document **document, u64 *group)
   return *group == undo->current ? PartStateNext : PartStateUndone;
 }
 
-static const char *
-TextOf(const StrBuf *text)
-{
-  return text->data ? text->data : "";
-}
-
 // appends a record's change, or (back) the change that undoes it.
 static void
 AddChange(u64 *count, const UndoRecord *record, bool back)
@@ -130,8 +124,8 @@ AddChange(u64 *count, const UndoRecord *record, bool back)
   }
 
   Position start = record->start;
-  Position oldEnd = BufferTextEnd(start, TextOf(&record->oldText), record->oldText.length);
-  Position newEnd = BufferTextEnd(start, TextOf(&record->newText), record->newText.length);
+  Position oldEnd = BufferTextEnd(start, StrBufText(&record->oldText), record->oldText.length);
+  Position newEnd = BufferTextEnd(start, StrBufText(&record->newText), record->newText.length);
   changes[(*count)++] = (BufferChange){
     .start = start,
     .oldEnd = back ? newEnd : oldEnd,

@@ -309,12 +309,6 @@ static i32 pendingWidth;
 static const Lang noExtension;
 
 static const char *
-TextOf(const StrBuf *text)
-{
-  return text->data ? text->data : "";
-}
-
-static const char *
 NameOf(const IndexSymbol *symbol)
 {
   return strings.data + symbol->text;
@@ -518,7 +512,7 @@ SymbolsClear(void)
 static const Lang *
 PathLang(const StrBuf *path)
 {
-  const Lang *lang = LangOfPath(TextOf(path), &noExtension);
+  const Lang *lang = LangOfPath(StrBufText(path), &noExtension);
   if (lang == &noExtension) return lang;
   return lang && HighlightHasSymbols(lang) ? lang : nullptr;
 }
@@ -828,11 +822,11 @@ PickTarget(const u64 *targets, u64 count, const char *what, const StrBuf *name)
     StrBufAppendFormat(&item, "  %s", kindNames[symbol->kind]);
     StrBufClear(&note);
     StrBufAppend(&note, SignatureOf(symbol), symbol->signatureLength);
-    PickerAdd(item.data, item.length, TextOf(&note), targets[index]);
+    PickerAdd(item.data, item.length, StrBufText(&note), targets[index]);
   }
 
   StrBuf title = {};
-  StrBufAppendFormat(&title, "%lu %s of %s", count, what, TextOf(name));
+  StrBufAppendFormat(&title, "%lu %s of %s", count, what, StrBufText(name));
   PickerOpen(title.data, "filter: ", PickedSymbol, nullptr);
   PickerShowPreview(DrawSymbol, nullptr);
   StrBufFree(&title);
@@ -859,7 +853,7 @@ Define(void)
 {
   const StrBuf *name = &pendingNames[0];
   u64 *found;
-  u64 count = Candidates(TextOf(name), name->length, &found);
+  u64 count = Candidates(StrBufText(name), name->length, &found);
 
   if (!count) {
     free(found);
@@ -892,7 +886,7 @@ Define(void)
   }
 
   if (!targetCount) {
-    StrBufAppendFormat(message, "no other definition of %s", TextOf(name));
+    StrBufAppendFormat(message, "no other definition of %s", StrBufText(name));
   } else if (targetCount == 1) {
     GoToSymbol(&symbols[targets[0]]);
   } else {
@@ -938,7 +932,7 @@ Sign(void)
     if (!name->length) continue;
 
     u64 *found;
-    u64 count = Candidates(TextOf(name), name->length, &found);
+    u64 count = Candidates(StrBufText(name), name->length, &found);
 
     if (!count) {
       free(found);
@@ -997,7 +991,7 @@ PickProject(void)
 
   if (WordAtCursor(&word)) {
     u64 last;
-    NameRange(TextOf(&word), word.length, &first, &last);
+    NameRange(StrBufText(&word), word.length, &first, &last);
     if (first == last) first = symbolCount;
   }
 
@@ -1057,12 +1051,12 @@ RunPending(bool mayScan)
     return;
   }
 
-  const char *name = TextOf(&pendingNames[0]);
+  const char *name = StrBufText(&pendingNames[0]);
   if (want == WantDefinition) StrBufAppendFormat(message, "no definition of %s found", name);
   else StrBufAppendFormat(message, "no signature found for %s", name);
 
   if (want == WantSignature && pendingNames[1].length) {
-    StrBufAppendFormat(message, " or %s", TextOf(&pendingNames[1]));
+    StrBufAppendFormat(message, " or %s", StrBufText(&pendingNames[1]));
   }
 }
 
@@ -1102,8 +1096,9 @@ SymbolsShowSignature(i32 width)
   WordBeforeCall(&pendingNames[1]);
 
   // the name at the cursor is tried first, so a call's name is only kept when it differs.
+  const char *first = StrBufText(&pendingNames[0]);
   bool same = pendingNames[0].length == pendingNames[1].length &&
-    memcmp(TextOf(&pendingNames[0]), TextOf(&pendingNames[1]), pendingNames[0].length) == 0;
+    memcmp(first, StrBufText(&pendingNames[1]), pendingNames[0].length) == 0;
   if (same) StrBufClear(&pendingNames[1]);
 
   if (!pendingNames[0].length && pendingNames[1].length) {

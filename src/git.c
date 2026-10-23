@@ -90,12 +90,6 @@ static u64 cacheClock;
 static StrBuf lastFolder;
 static GitRepo *lastRepo;
 
-static const char *
-TextOf(const StrBuf *text)
-{
-  return text->data ? text->data : "";
-}
-
 // reads a whole file as it is, binary or not, replacing what text held.
 static bool
 ReadRaw(const char *path, StrBuf *text)
@@ -379,7 +373,7 @@ PackFind(const GitRepo *repo, const Pack *pack, const GitHash *hash, u64 *offset
 static bool
 ApplyDelta(const StrBuf *base, const StrBuf *delta, StrBuf *out)
 {
-  const u8 *at = (const u8 *)TextOf(delta);
+  const u8 *at = (const u8 *)StrBufText(delta);
   const u8 *end = at + delta->length;
   u64 sizes[2] = {};
 
@@ -461,7 +455,7 @@ CacheAdd(const Pack *pack, u64 offset, enum ObjectType type, const StrBuf *data)
   oldest->type = type;
   oldest->used = ++cacheClock;
   StrBufClear(&oldest->data);
-  StrBufAppend(&oldest->data, TextOf(data), data->length);
+  StrBufAppend(&oldest->data, StrBufText(data), data->length);
 }
 
 static bool
@@ -554,7 +548,7 @@ ReadPacked(GitRepo *repo, const Pack *pack, u64 offset, enum ObjectType *type, S
   if (cached) {
     *type = cached->type;
     StrBufClear(out);
-    StrBufAppend(out, TextOf(&cached->data), cached->data.length);
+    StrBufAppend(out, StrBufText(&cached->data), cached->data.length);
     return true;
   }
 
@@ -572,7 +566,7 @@ ReadPacked(GitRepo *repo, const Pack *pack, u64 offset, enum ObjectType *type, S
 
     if (cached) {
       baseType = cached->type;
-      StrBufAppend(&base, TextOf(&cached->data), cached->data.length);
+      StrBufAppend(&base, StrBufText(&cached->data), cached->data.length);
       break;
     }
 
@@ -629,7 +623,7 @@ ReadPacked(GitRepo *repo, const Pack *pack, u64 offset, enum ObjectType *type, S
   if (ok) {
     *type = baseType;
     StrBufClear(out);
-    StrBufAppend(out, TextOf(&base), base.length);
+    StrBufAppend(out, StrBufText(&base), base.length);
     CacheAdd(pack, offset, baseType, out);
   }
 
@@ -656,12 +650,12 @@ ReadLoose(GitRepo *repo, const GitHash *hash, enum ObjectType *type, StrBuf *out
   StrBufFree(&path);
   StrBufClear(out);
   // the limit leaves room for the "<type> <size>\0" header before the content.
-  ok = ok && InflateZlib((const u8 *)TextOf(&raw), raw.length, maxObjectSize + 64, out);
+  ok = ok && InflateZlib((const u8 *)StrBufText(&raw), raw.length, maxObjectSize + 64, out);
   StrBufFree(&raw);
   if (!ok) return false;
 
   // "<type> <size>\0" comes before the content.
-  const char *text = TextOf(out);
+  const char *text = StrBufText(out);
   const char *nul = memchr(text, '\0', out->length);
   if (!nul) return false;
 
@@ -714,7 +708,7 @@ ReadRef(GitRepo *repo, const char *name, GitHash *hash, StrBuf *target, FileStam
 
   if (loose) {
     TrimEnd(&text);
-    bool symbolic = strncmp(TextOf(&text), "ref:", 4) == 0;
+    bool symbolic = strncmp(StrBufText(&text), "ref:", 4) == 0;
 
     if (symbolic) {
       const char *rest = text.data + 4;
@@ -722,7 +716,7 @@ ReadRef(GitRepo *repo, const char *name, GitHash *hash, StrBuf *target, FileStam
       StrBufAppendString(target, rest);
     }
 
-    bool ok = symbolic || ParseHex(repo, TextOf(&text), text.length, hash);
+    bool ok = symbolic || ParseHex(repo, StrBufText(&text), text.length, hash);
     StrBufFree(&text);
     return ok;
   }
@@ -732,7 +726,7 @@ ReadRef(GitRepo *repo, const char *name, GitHash *hash, StrBuf *target, FileStam
   bool ok = ReadRaw(path.data, &text);
   StrBufFree(&path);
   bool found = false;
-  const char *line = TextOf(&text);
+  const char *line = StrBufText(&text);
   u64 nameLength = strlen(name);
 
   while (ok && *line && !found) {
@@ -981,7 +975,7 @@ TreeFind(
   GitHash *hash
 )
 {
-  const char *at = TextOf(tree);
+  const char *at = StrBufText(tree);
   const char *end = at + tree->length;
 
   // each entry is "<octal mode> <name>\0<object name in binary>".
@@ -1017,7 +1011,7 @@ GitReadFile(GitRepo *repo, const GitHash *commit, const char *relative, StrBuf *
 
   // a commit starts "tree <hex>".
   GitHash hash;
-  if (strncmp(TextOf(text), "tree ", 5) != 0) return GitFileUnreadable;
+  if (strncmp(StrBufText(text), "tree ", 5) != 0) return GitFileUnreadable;
   if (!ParseHex(repo, text->data + 5, text->length - 5, &hash)) return GitFileUnreadable;
 
   const char *name = relative;
