@@ -31,13 +31,15 @@ typedef struct SearchSaved {
 
 // a replace in progress.
 // it runs from where it started to the end of the buffer, then wraps round to stop, which
-// moves with the replacements made before it.
+// moves with the replacements made before it; or within a selection of several lines, from
+// its start to stop at its end, without wrapping.
 typedef struct Replacing {
   StrBuf text;
   Range match;
   Position next;
   Position stop;
   bool wrapped;
+  bool within;
   u64 asked;
   u64 decided;
   u64 replaced;
@@ -584,7 +586,7 @@ SearchSpellWord(void)
   StrBufFree(&question);
 }
 
-// the next match of the replace, or false once it has come round to where it started.
+// the next match of the replace, or false once it has come round to its stop.
 static bool
 NextMatch(Range *match)
 {
@@ -599,8 +601,10 @@ NextMatch(Range *match)
       PatternMatch hit;
       if (!PatternFind(&last, text->data, text->length, from, UINT64_MAX, &hit)) continue;
 
-      bool pastStop = replacing.wrapped && line == replacing.stop.line;
-      if (pastStop && hit.start >= replacing.stop.byte) return false;
+      // within a selection, a match must end inside it too.
+      u64 edge = replacing.within ? hit.end : hit.start + 1;
+      bool stopLine = replacing.wrapped && line == replacing.stop.line;
+      if (stopLine && edge > replacing.stop.byte) return false;
 
       *match = (Range){{line, hit.start}, {line, hit.end}};
       return true;
@@ -674,6 +678,7 @@ FinishReplace(void)
   const char *plural = count == 1 ? "" : "es";
   u64 replaced = replacing.replaced;
   StrBufAppendFormat(message, "replaced %lu of %lu match%s", replaced, count, plural);
+  if (replacing.within) StrBufAppendString(message, " in the selection");
 }
 
 static void
@@ -743,10 +748,12 @@ ReplacementAnswered([[maybe_unused]] void *context, const char *answer, u64 leng
   UndoBreak(&document->undo);
   UndoBegin(&document->undo, UndoKindOther, &view->cursors);
 
-  Position start = CursorRange(CursorSetPrimary(&view->cursors)).start;
-  replacing.next = start;
-  replacing.stop = start;
-  replacing.wrapped = false;
+  // a selection of several lines is already the whole run, so it starts wrapped.
+  Range selected = CursorRange(CursorSetPrimary(&view->cursors));
+  replacing.within = selected.start.line != selected.end.line;
+  replacing.next = selected.start;
+  replacing.stop = replacing.within ? selected.end : selected.start;
+  replacing.wrapped = replacing.within;
   replacing.asked = 0;
   replacing.decided = 0;
   replacing.replaced = 0;

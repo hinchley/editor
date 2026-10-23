@@ -365,7 +365,7 @@ The search prompts share a history of `searchHistorySize` (20) patterns, and the
 
 ### Replace
 
-Ctrl-R runs from the start of the selection to the end of the buffer, then from the top back to where it started. That stop position moves with each replacement through `BufferAdjust`, and every search continues after the last replacement, so replacing `a` with `aa` cannot loop. The run is one undo group, opened before the first replacement and closed when the run ends (answers come one prompt at a time, but the prompt takes every key, so nothing else can edit in between). Replacing all rebuilds each line once (`PatternReplaceLine`, which project replace shares) and replaces it with a single change, so 100,000 matches take about 0.1 seconds.
+Ctrl-R runs from the start of the selection to the end of the buffer, then from the top back to where it started. A selection of more than one line is the whole run instead: it starts as if it had already wrapped, with the stop at the selection's end, and a match must end by the stop as well as start before it. That stop position moves with each replacement through `BufferAdjust`, and every search continues after the last replacement, so replacing `a` with `aa` cannot loop. The run is one undo group, opened before the first replacement and closed when the run ends (answers come one prompt at a time, but the prompt takes every key, so nothing else can edit in between). Replacing all rebuilds each line once (`PatternReplaceLine`, which project replace shares) and replaces it with a single change, so 100,000 matches take about 0.1 seconds.
 
 ### Spell check
 
