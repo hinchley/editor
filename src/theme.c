@@ -73,12 +73,6 @@ ThemeStyle(enum ThemeGroup group)
   return themeEntries[group].style;
 }
 
-const char *
-ThemeName(enum ThemeGroup group)
-{
-  return themeEntries[group].name;
-}
-
 // first components some grammars' queries use for what the theme colours as another group.
 static const struct {
   const char *name;

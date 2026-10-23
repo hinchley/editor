@@ -72,10 +72,6 @@ static_assert(ThemeGroupCount <= 64);
 Style
 ThemeStyle(enum ThemeGroup group);
 
-// the group's name, as used in capture names.
-const char *
-ThemeName(enum ThemeGroup group);
-
 // finds the syntax group a tree-sitter capture name is coloured with.
 // a capture uses the group named by its first component ("string.special" is a string),
 // except that any "*.builtin" capture is a builtin, markup captures ("text.title") use
