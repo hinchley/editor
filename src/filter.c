@@ -84,28 +84,28 @@ FilterFree(Filter *filter)
 static bool
 Glob(const char *pattern, u64 patternLength, const char *text, u64 textLength)
 {
-  u64 p = 0;
-  u64 t = 0;
-  u64 starP = UINT64_MAX;
-  u64 starT = 0;
+  u64 patternAt = 0;
+  u64 textAt = 0;
+  u64 starPattern = UINT64_MAX;
+  u64 starText = 0;
 
-  while (t < textLength) {
-    if (p < patternLength && pattern[p] == '*') {
-      starP = p++;
-      starT = t;
-    } else if (p < patternLength && pattern[p] == text[t]) {
-      p++;
-      t++;
-    } else if (starP != UINT64_MAX && text[starT] != '/') {
-      p = starP + 1;
-      t = ++starT;
+  while (textAt < textLength) {
+    if (patternAt < patternLength && pattern[patternAt] == '*') {
+      starPattern = patternAt++;
+      starText = textAt;
+    } else if (patternAt < patternLength && pattern[patternAt] == text[textAt]) {
+      patternAt++;
+      textAt++;
+    } else if (starPattern != UINT64_MAX && text[starText] != '/') {
+      patternAt = starPattern + 1;
+      textAt = ++starText;
     } else {
       return false;
     }
   }
 
-  while (p < patternLength && pattern[p] == '*') p++;
-  return p == patternLength;
+  while (patternAt < patternLength && pattern[patternAt] == '*') patternAt++;
+  return patternAt == patternLength;
 }
 
 // matches one pattern against the whole of a path (anchored) or its last name.

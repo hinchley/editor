@@ -23,20 +23,20 @@ static bool loaded;
 
 // orders two words by their bytes, a shorter word before a longer one it starts.
 static i32
-CompareWords(const char *a, u64 aLength, const char *b, u64 bLength)
+CompareWords(const char *left, u64 leftLength, const char *right, u64 rightLength)
 {
   // an empty line's data may be nullptr, which memcmp must not be given.
-  u64 shorter = aLength < bLength ? aLength : bLength;
-  i32 order = shorter ? memcmp(a, b, shorter) : 0;
+  u64 shorter = leftLength < rightLength ? leftLength : rightLength;
+  i32 order = shorter ? memcmp(left, right, shorter) : 0;
   if (order) return order;
-  return aLength < bLength ? -1 : aLength > bLength;
+  return leftLength < rightLength ? -1 : leftLength > rightLength;
 }
 
 static i32
-CompareLines(const void *a, const void *b)
+CompareLines(const void *left, const void *right)
 {
-  const StrBuf *first = a;
-  const StrBuf *second = b;
+  const StrBuf *first = left;
+  const StrBuf *second = right;
   return CompareWords(first->data, first->length, second->data, second->length);
 }
 

@@ -44,7 +44,7 @@ How code in `src/` is written. `.clang-format` handles layout: run `clang-format
 - Types and functions are `PascalCase`. Variables, fields, parameters and constants are `camelCase`. Nothing uses `snake_case` or `ALL_CAPS`, except libc and tree-sitter names.
 - A public function starts with its module's name, or with the name of the type it works on (`BufferReplace`, `StrBufAppend`, `PositionCompare`, `DiagnosticSeverityName`). A `static` function has no prefix (`FreeLines`, `ReadPosition`).
 - An enum constant starts with its enum's name (`ServerSyncFull`, `LayoutKindTab`). If an enum needs a count, end it with a `...Count` constant.
-- Use whole words, not abbreviations: `index` (never `i`), `count`, `capacity`, `length`, `position`, `buffer`, `context`. Name a boolean as a fact (`opened`, `wantsSave`, `lineWise`).
+- Use whole words, not abbreviations: `index` (never `i`), `count`, `capacity`, `length`, `position`, `buffer`, `context`. Name a boolean as a fact (`opened`, `wantsSave`, `lineWise`). Single letters are fine for `x` and `y` coordinates, and for the notation of a published algorithm whose source a comment names (Myers' `d` and `k` in `diff.c`).
 - Callbacks are named for the event: `...Done` for an answer, `...Answered` for a prompt, `...Picked`, `...Visit`. The `void *context` comes first.
 
 ## Types and declarations

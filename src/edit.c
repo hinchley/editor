@@ -980,67 +980,67 @@ typedef struct Sorting {
 } Sorting;
 
 static i32
-CompareBytes(const StrBuf *a, const StrBuf *b)
+CompareBytes(const StrBuf *left, const StrBuf *right)
 {
-  u64 length = a->length < b->length ? a->length : b->length;
-  i32 order = length ? memcmp(a->data, b->data, length) : 0;
+  u64 length = left->length < right->length ? left->length : right->length;
+  i32 order = length ? memcmp(left->data, right->data, length) : 0;
   if (order) return order < 0 ? -1 : 1;
-  return (a->length > b->length) - (a->length < b->length);
+  return (left->length > right->length) - (left->length < right->length);
 }
 
 // compares the case folded code points, with ascii taken a byte at a time.
 static i32
-CompareFolded(const StrBuf *a, const StrBuf *b)
+CompareFolded(const StrBuf *left, const StrBuf *right)
 {
   // identical bytes need no folding, so folding starts after the last ascii byte of the
   // common prefix, which always ends a code point.
-  u64 limit = a->length < b->length ? a->length : b->length;
+  u64 limit = left->length < right->length ? left->length : right->length;
   u64 boundary = 0;
 
-  for (u64 same = 0; same < limit && a->data[same] == b->data[same]; same++) {
-    if ((u8)a->data[same] < 0x80) boundary = same + 1;
+  for (u64 same = 0; same < limit && left->data[same] == right->data[same]; same++) {
+    if ((u8)left->data[same] < 0x80) boundary = same + 1;
   }
 
   u64 first = boundary;
   u64 second = boundary;
 
-  while (first < a->length && second < b->length) {
-    u32 x = (u8)a->data[first];
-    u32 y = (u8)b->data[second];
+  while (first < left->length && second < right->length) {
+    u32 leftPoint = (u8)left->data[first];
+    u32 rightPoint = (u8)right->data[second];
 
-    if (x < 0x80 && y < 0x80) {
+    if (leftPoint < 0x80 && rightPoint < 0x80) {
       first++;
       second++;
-      if (x >= 'A' && x <= 'Z') x += 32;
-      if (y >= 'A' && y <= 'Z') y += 32;
+      if (leftPoint >= 'A' && leftPoint <= 'Z') leftPoint += 32;
+      if (rightPoint >= 'A' && rightPoint <= 'Z') rightPoint += 32;
     } else {
-      first += Utf8Decode(a->data + first, a->length - first, &x);
-      second += Utf8Decode(b->data + second, b->length - second, &y);
-      x = Utf8Fold(x);
-      y = Utf8Fold(y);
+      first += Utf8Decode(left->data + first, left->length - first, &leftPoint);
+      second += Utf8Decode(right->data + second, right->length - second, &rightPoint);
+      leftPoint = Utf8Fold(leftPoint);
+      rightPoint = Utf8Fold(rightPoint);
     }
 
-    if (x != y) return x < y ? -1 : 1;
+    if (leftPoint != rightPoint) return leftPoint < rightPoint ? -1 : 1;
   }
 
-  return (first < a->length) - (second < b->length);
+  return (first < left->length) - (second < right->length);
 }
 
 // descending applies to the key: lines of equal width stay in ascending text order.
 static i32
-CompareLines(const Sorting *sorting, u64 a, u64 b)
+CompareLines(const Sorting *sorting, u64 left, u64 right)
 {
   i32 direction = sorting->descending ? -1 : 1;
 
   if (sorting->widths) {
-    u64 x = sorting->widths[a - sorting->first];
-    u64 y = sorting->widths[b - sorting->first];
-    if (x != y) return x < y ? -direction : direction;
+    u64 leftWidth = sorting->widths[left - sorting->first];
+    u64 rightWidth = sorting->widths[right - sorting->first];
+    if (leftWidth != rightWidth) return leftWidth < rightWidth ? -direction : direction;
     direction = 1;
   }
 
-  const StrBuf *first = &sorting->lines[a];
-  const StrBuf *second = &sorting->lines[b];
+  const StrBuf *first = &sorting->lines[left];
+  const StrBuf *second = &sorting->lines[right];
   i32 order = sorting->ignoreCase ? CompareFolded(first, second) : 0;
   return direction * (order ? order : CompareBytes(first, second));
 }

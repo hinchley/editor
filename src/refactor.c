@@ -69,14 +69,14 @@ static const LspEdit *sorting;
 static int
 CompareEdits(const void *first, const void *second)
 {
-  u32 a = *(const u32 *)first;
-  u32 b = *(const u32 *)second;
-  i32 order = strcmp(sorting[a].path, sorting[b].path);
+  u32 left = *(const u32 *)first;
+  u32 right = *(const u32 *)second;
+  i32 order = strcmp(sorting[left].path, sorting[right].path);
   if (order) return order;
 
-  order = PositionCompare(sorting[b].range.start, sorting[a].range.start);
+  order = PositionCompare(sorting[right].range.start, sorting[left].range.start);
   if (order) return order;
-  return a < b ? 1 : -1;
+  return left < right ? 1 : -1;
 }
 
 // makes a server's changes, named by what, each file's as one undo step (see
