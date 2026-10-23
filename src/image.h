@@ -45,10 +45,12 @@ typedef struct Image {
   u64 fileSize;
 
   // shown at its actual size, cut to the area, rather than shrunk to fit; and then the
-  // pixel at the top left of the part shown, for every view of it.
+  // pixel at the top left of the part shown, for every view of it, and whether the part
+  // shown is still to be put in the middle of the image, once its area is known.
   bool actualSize;
   u32 left;
   u32 top;
+  bool centre;
 
   // the last two renderings, so both sides of a split can show the image at their own
   // sizes; next is the one made over next.
@@ -74,7 +76,7 @@ const ImageRendering *
 ImageRender(Image *image, i32 columns, i32 rows, i32 cellWidth, i32 cellHeight);
 
 // switches between fitting the image to its area and showing it at its actual size, from
-// its top left corner, and returns whether it is now at its actual size.
+// its middle, and returns whether it is now at its actual size.
 bool
 ImageToggleSize(Image *image);
 

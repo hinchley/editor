@@ -137,6 +137,14 @@ ImageRender(Image *image, i32 columns, i32 rows, i32 cellWidth, i32 cellHeight)
   u32 shownWidth = (u32)(bitmap->width < areaWidth ? bitmap->width : areaWidth);
   u32 shownHeight = (u32)(bitmap->height < areaHeight ? bitmap->height : areaHeight);
 
+  // the first drawing at the actual size shows the middle of the image.
+  if (cut && image->centre) {
+    image->left = (bitmap->width - shownWidth) / 2;
+    image->top = (bitmap->height - shownHeight) / 2;
+  }
+
+  if (image->actualSize) image->centre = false;
+
   if (cut) {
     if (image->left > bitmap->width - shownWidth) image->left = bitmap->width - shownWidth;
     if (image->top > bitmap->height - shownHeight) image->top = bitmap->height - shownHeight;
@@ -208,6 +216,7 @@ ImageToggleSize(Image *image)
   image->actualSize = !image->actualSize;
   image->left = 0;
   image->top = 0;
+  image->centre = image->actualSize;
   return image->actualSize;
 }
 
