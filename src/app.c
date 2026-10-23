@@ -1705,6 +1705,13 @@ Draw(void)
   RenderFrame(&frame);
   drawnFocus = frame.focused;
 
+  // the window title names the current buffer, so the window switcher tells them apart.
+  StrBuf title = {};
+  bool modified = panes[0].status.modified;
+  StrBufAppendFormat(&title, "editor: %s%s", panes[0].name.data, modified ? " [+]" : "");
+  TermSetTitle(title.data, title.length);
+  StrBufFree(&title);
+
   for (u32 index = 0; index < 2; index++) {
     StrBufFree(&panes[index].name);
     StrBufFree(&panes[index].type);

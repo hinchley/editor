@@ -14,6 +14,7 @@
 #include "fatal.h"
 #include "input.h"
 #include "settings.h"
+#include "strbuf.h"
 
 // cursor shapes understood by the DECSCUSR sequence.
 enum CursorShape {
@@ -45,7 +46,8 @@ static constexpr char leaveSequence[] =
   "\x1b[0 q"     // default cursor shape
   "\x1b[0m"      // default colours
   "\x1b[?25h"    // show the cursor
-  "\x1b[?1049l"; // leave the alternate screen
+  "\x1b[?1049l"  // leave the alternate screen
+  "\x1b[23;0t";  // give back the window title
 // clang-format on
 
 static struct termios savedMode;
@@ -54,6 +56,9 @@ static i32 wakePipe[2] = {-1, -1};
 // what needs undoing, read by signal handlers.
 static volatile sig_atomic_t rawModeActive;
 static volatile sig_atomic_t screenActive;
+
+// the window title last set.
+static StrBuf title;
 
 // set when the terminal has gone (a hang up or termination signal, the end of input, or a
 // failed write), so the main loop keeps copies of the work and exits.
@@ -189,13 +194,14 @@ EnterEditorMode(void)
     shape = cursorBlink ? CursorShapeBlinkingBlock : CursorShapeSteadyBlock;
   }
 
+  // the window title is kept on the terminal's stack, to be given back on leaving.
   // mouse reports cover presses, releases and motion while a button is held (1002), in the
   // sgr form, which has no limit on the coordinates (1006).
   char sequence[64];
   i32 length = snprintf(
     sequence,
     sizeof(sequence),
-    "\x1b[?1049h\x1b[>%du\x1b[?2004h\x1b[%d q\x1b[?1002h\x1b[?1006h",
+    "\x1b[22;0t\x1b[?1049h\x1b[>%du\x1b[?2004h\x1b[%d q\x1b[?1002h\x1b[?1006h",
     KeyboardFlagDisambiguate,
     shape
   );
@@ -311,6 +317,34 @@ void
 TermWrite(const char *data, u64 length)
 {
   if (!WriteAll(data, length)) hungUp = 1;
+}
+
+void
+TermSetTitle(const char *text, u64 length)
+{
+  if (length == title.length && (!length || memcmp(text, title.data, length) == 0)) return;
+
+  StrBufClear(&title);
+  StrBufAppend(&title, text, length);
+  StrBuf sequence = {};
+  StrBufAppendString(&sequence, "\x1b]2;");
+
+  // a control character, c0 or c1 (as utf-8), would end or garble the sequence.
+  for (u64 index = 0; index < length; index++) {
+    u8 byte = (u8)text[index];
+    bool c1 = byte == 0xC2 && index + 1 < length && (u8)text[index + 1] < 0xA0;
+
+    if (byte < 0x20 || byte == 0x7F || c1) {
+      StrBufAppendByte(&sequence, '?');
+      if (c1) index++;
+    } else {
+      StrBufAppendByte(&sequence, (char)byte);
+    }
+  }
+
+  StrBufAppendString(&sequence, "\x1b\\");
+  TermWrite(sequence.data, sequence.length);
+  StrBufFree(&sequence);
 }
 
 bool

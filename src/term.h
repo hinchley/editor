@@ -1,8 +1,8 @@
 #pragma once
 
 // the terminal session in foot: raw mode, the alternate screen, the kitty keyboard
-// protocol, bracketed paste, mouse reporting, the cursor shape, window size and resize
-// notification.
+// protocol, bracketed paste, mouse reporting, the cursor shape, the window title, window
+// size and resize notification.
 // every way out of the program goes through TermStop, so the terminal is always restored.
 // a hang up or termination signal (sighup, sigterm) only sets a flag, so the main loop can
 // keep copies of unsaved work (see recover.h) before it exits.
@@ -55,6 +55,11 @@ TermReadInput(void);
 // writes all bytes to the terminal; a failure counts as a hang up.
 void
 TermWrite(const char *data, u64 length);
+
+// sets the window title, when it differs from the one last set.
+// control characters in it are shown as "?".
+void
+TermSetTitle(const char *text, u64 length);
 
 // milliseconds on a clock that only moves forward, for timeouts and delays.
 i64

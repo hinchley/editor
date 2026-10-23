@@ -311,6 +311,8 @@ The editor is written for foot alone. It relies on foot's kitty keyboard protoco
 
 Foot's default key bindings keep these keys for foot, so the editor never binds them: Ctrl-Shift-C and Ctrl-Shift-V (clipboard), Ctrl-Shift-R (search), Ctrl-Shift-N (new window), Ctrl-Shift-O (URLs), Ctrl-Shift-U (Unicode input), Ctrl-Shift-Z and Ctrl-Shift-X (prompt jumps), Ctrl-=, Ctrl-+, Ctrl-- and Ctrl-0 (font size), and Shift-Insert (primary paste). That is why renaming a symbol is Alt-Shift-N rather than Ctrl-Shift-R, and aligning cursors is Alt-= rather than Ctrl-=. Shift-PgUp and Shift-PgDn scroll foot's history only on the normal screen, so they reach the editor.
 
+The window title names the current buffer, `editor: src/app.c`, with ` [+]` while it has unsaved changes. Foot keeps the title it had before on its title stack, and gets it back when the editor quits.
+
 Images are drawn with foot's sixel graphics, sized from the cell size foot reports with the window size.
 
 The editor turns on mouse reporting, so foot sends it clicks and the wheel instead of selecting text itself. Holding Shift still makes foot's own selection. A desktop that moves windows with Alt-drag keeps Alt-drag from reaching the editor.
