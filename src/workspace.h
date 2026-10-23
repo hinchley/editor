@@ -47,11 +47,10 @@ typedef struct WorkspaceEntry {
   u64 serial;
 
   // the name shown for the entry and its path with its folder resolved (empty when that
-  // does not resolve), worked out for the path in namedPath when the open folders were
-  // those of generation, and again once either changes (a rename or save as).
+  // does not resolve), worked out when the open folders were those of generation, and
+  // again once they change or WorkspaceRenamed clears it (a rename or save as).
   StrBuf name;
   StrBuf real;
-  StrBuf namedPath;
   u64 generation;
 } WorkspaceEntry;
 
@@ -149,7 +148,8 @@ WorkspaceRemove(Workspace *workspace, u64 index, StrBuf *message);
 void
 WorkspaceRemoveSome(Workspace *workspace, const u64 *serials, u64 count, StrBuf *message);
 
-// records that an open entry's document now names another file, as after a rename.
+// records that an open entry's document now names another file, as after a rename or a
+// save as, or none again.
 void
 WorkspaceRenamed(Workspace *workspace, u64 index);
 

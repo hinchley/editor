@@ -71,7 +71,11 @@ Queue(u64 index)
 static void
 ForgetNewName(void)
 {
-  if (namedForSave) StrBufClear(&Saving()->file.path);
+  if (namedForSave) {
+    StrBufClear(&Saving()->file.path);
+    WorkspaceRenamed(workspace, SavingIndex());
+  }
+
   namedForSave = false;
 }
 
@@ -138,6 +142,7 @@ SaveAsAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
   }
 
   CompleteExpandHome(answer, length, &Saving()->file.path);
+  WorkspaceRenamed(workspace, SavingIndex());
   namedForSave = true;
 
   // an existing file is only replaced once confirmed.

@@ -20,7 +20,6 @@ FreeEntry(WorkspaceEntry *entry)
   StrBufFree(&entry->path);
   StrBufFree(&entry->name);
   StrBufFree(&entry->real);
-  StrBufFree(&entry->namedPath);
   if (!entry->document) return false;
 
   DocumentFree(entry->document);
@@ -78,6 +77,14 @@ AppendFile(Workspace *workspace, LoaderFile *file)
 void
 WorkspaceAddList(Workspace *workspace, LoaderList *list)
 {
+  // a folder may hold many files, and doubling would leave up to half the array unused.
+  u64 needed = workspace->count + list->count;
+
+  if (needed > workspace->capacity) {
+    workspace->capacity = needed;
+    workspace->entries = MemoryResize(workspace->entries, needed, sizeof(WorkspaceEntry));
+  }
+
   for (u64 index = 0; index < list->count; index++) AppendFile(workspace, &list->files[index]);
   LoaderFree(list);
 }
@@ -195,6 +202,9 @@ WorkspaceRenamed(Workspace *workspace, u64 index)
   WorkspaceEntry *entry = &workspace->entries[index];
   entry->id = (FileId){};
   entry->id = EntryId(entry);
+
+  // generations start at 1, so the name is worked out again.
+  entry->generation = 0;
 }
 
 static void
@@ -444,8 +454,6 @@ NameEntry(const Workspace *workspace, WorkspaceEntry *entry)
 {
   const StrBuf *path = EntryPath(entry);
   StrBufClear(&entry->name);
-  StrBufClear(&entry->namedPath);
-  StrBufAppend(&entry->namedPath, path->data, path->length);
   entry->generation = workspace->generation;
 
   if (!path->length) {
@@ -495,13 +503,7 @@ static const WorkspaceEntry *
 Named(const Workspace *workspace, u64 index)
 {
   WorkspaceEntry *entry = &workspace->entries[index];
-  const StrBuf *path = EntryPath(entry);
-
-  bool stale = entry->generation != workspace->generation ||
-    entry->namedPath.length != path->length ||
-    (path->length && memcmp(entry->namedPath.data, path->data, path->length) != 0);
-
-  if (stale) NameEntry(workspace, entry);
+  if (entry->generation != workspace->generation) NameEntry(workspace, entry);
   return entry;
 }
 
