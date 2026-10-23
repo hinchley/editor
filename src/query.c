@@ -1,10 +1,11 @@
 #include "query.h"
 
-#include <regex.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "memory.h"
+#include "regex.h"
 
 enum QueryTest {
   QueryTestEq,
@@ -24,7 +25,7 @@ struct QueryPredicate {
   u32 stringCount;
 
   // #match? only.
-  regex_t regex;
+  Regex regex;
 };
 
 // the steps of one predicate: an operator name followed by its arguments.
@@ -50,88 +51,45 @@ StepIsCapture(const Steps *steps, u32 index)
   return steps->steps[index].type == TSQueryPredicateStepTypeCapture;
 }
 
-// rewrites the classes \d, \w and \s, which posix regular expressions lack, as brackets.
-static void
-ConvertRegex(const char *source, StrBuf *output)
-{
-  bool inBracket = false;
-
-  for (const char *at = source; *at; at++) {
-    if (*at == '\\' && at[1]) {
-      at++;
-      const char *class = nullptr;
-      if (*at == 'd') class = "0-9";
-      else if (*at == 'w') class = "A-Za-z0-9_";
-      else if (*at == 's') class = "[:space:]";
-
-      if (!class) {
-        StrBufAppendByte(output, '\\');
-        StrBufAppendByte(output, *at);
-      } else if (inBracket) {
-        StrBufAppendString(output, class);
-      } else {
-        StrBufAppendFormat(output, "[%s]", class);
-      }
-
-      continue;
-    }
-
-    // a "]" straight after "[" or "[^" is part of the bracket.
-    if (*at == '[' && !inBracket) {
-      inBracket = true;
-      StrBufAppendByte(output, *at);
-      if (at[1] == '^') StrBufAppendByte(output, *++at);
-      if (at[1] == ']') StrBufAppendByte(output, *++at);
-      continue;
-    }
-
-    if (*at == ']') inBracket = false;
-    StrBufAppendByte(output, *at);
-  }
-}
-
-// the posix class of a lua class letter (%a, %d), or nullptr.
+// the members of a lua class letter (%a, %d) inside brackets, as the regex engine reads
+// them, or nullptr. classes are ascii, as lua's are in the c locale.
 static const char *
 LuaClass(char letter)
 {
   switch (letter | 0x20) {
     case 'a':
-      return "[:alpha:]";
+      return "A-Za-z";
     case 'c':
-      return "[:cntrl:]";
+      return "\x01-\x1f\x7f";
     case 'd':
-      return "[:digit:]";
+      return "0-9";
     case 'l':
-      return "[:lower:]";
+      return "a-z";
     case 'p':
-      return "[:punct:]";
+      return "!-/:-@\\[-`{-~";
     case 's':
-      return "[:space:]";
+      return " \\t\\n\\r\\f\\v";
     case 'u':
-      return "[:upper:]";
+      return "A-Z";
     case 'w':
-      return "[:alnum:]";
+      return "A-Za-z0-9";
     case 'x':
-      return "[:xdigit:]";
+      return "0-9A-Fa-f";
     default:
       return nullptr;
   }
 }
 
-// rewrites a lua pattern (for #lua-match?) as a posix regular expression: %a style classes
+// rewrites a lua pattern (for #lua-match?) in the regex engine's syntax: %a style classes
 // (a capital letter is the complement, outside brackets), %x escapes, and the lazy
 // repetition "-", which is "*" for a test that only asks whether it matches.
-// characters special to posix but not to lua ({, }, | and \, and ^ and $ away from the
-// ends) are escaped.
-// %] in brackets moves to their start, the only place posix takes it literally.
+// characters special to the engine but not to lua ({, }, | and \, ] outside brackets,
+// and ^ and $ away from the ends) are escaped.
 // %b and %f have no equivalent and match their letter.
 static void
 ConvertLuaPattern(const char *source, StrBuf *output)
 {
   bool inBracket = false;
-
-  // where the members of the open bracket start in output.
-  u64 members = 0;
 
   for (const char *at = source; *at; at++) {
     if (*at == '%' && at[1]) {
@@ -139,10 +97,8 @@ ConvertLuaPattern(const char *source, StrBuf *output)
       const char *class = LuaClass(*at);
       bool complement = *at >= 'A' && *at <= 'Z';
 
-      if (inBracket && *at == ']') {
-        if (output->data[members] != ']') StrBufInsert(output, members, "]", 1);
-      } else if (!class) {
-        if (!inBracket) StrBufAppendByte(output, '\\');
+      if (!class) {
+        if (ispunct((u8)*at)) StrBufAppendByte(output, '\\');
         StrBufAppendByte(output, *at);
       } else if (inBracket) {
         StrBufAppendString(output, class);
@@ -155,6 +111,7 @@ ConvertLuaPattern(const char *source, StrBuf *output)
 
     if (inBracket) {
       if (*at == ']') inBracket = false;
+      if (*at == '\\') StrBufAppendByte(output, '\\');
       StrBufAppendByte(output, *at);
       continue;
     }
@@ -163,8 +120,11 @@ ConvertLuaPattern(const char *source, StrBuf *output)
       inBracket = true;
       StrBufAppendByte(output, *at);
       if (at[1] == '^') StrBufAppendByte(output, *++at);
-      members = output->length;
-      if (at[1] == ']') StrBufAppendByte(output, *++at);
+      if (at[1] == ']') {
+        StrBufAppendString(output, "\\]");
+        at++;
+      }
+
       continue;
     }
 
@@ -174,25 +134,27 @@ ConvertLuaPattern(const char *source, StrBuf *output)
     }
 
     bool anchor = (*at == '^' && at == source) || (*at == '$' && !at[1]);
-    bool special = *at == '{' || *at == '}' || *at == '|' || *at == '\\';
+    bool special = *at == '{' || *at == '}' || *at == '|' || *at == '\\' || *at == ']';
     if (special || ((*at == '^' || *at == '$') && !anchor)) StrBufAppendByte(output, '\\');
     StrBufAppendByte(output, *at);
   }
 }
 
+// compiles #match?'s pattern, written for rust's regular expressions, which the engine's
+// syntax follows, or #lua-match?'s, rewritten.
 static bool
 CompileRegex(QueryPredicate *predicate, const char *source, bool lua, StrBuf *error)
 {
   StrBuf converted = {};
   if (lua) ConvertLuaPattern(source, &converted);
-  else ConvertRegex(source, &converted);
-  const char *text = converted.data ? converted.data : "";
-  i32 status = regcomp(&predicate->regex, text, REG_EXTENDED | REG_NOSUB);
+  else StrBufAppendString(&converted, source);
+  StrBuf reason = {};
+  const char *text = StrBufText(&converted);
+  bool valid = RegexCompile(&predicate->regex, text, converted.length, false, &reason);
+  if (!valid) StrBufAppendFormat(error, "bad regular expression %s: %s", source, reason.data);
   StrBufFree(&converted);
-  if (status == 0) return true;
-
-  StrBufAppendFormat(error, "bad regular expression: %s", source);
-  return false;
+  StrBufFree(&reason);
+  return valid;
 }
 
 static bool
@@ -349,7 +311,7 @@ QueryFree(Query *query)
 
     for (u32 at = 0; at < pattern->predicateCount; at++) {
       QueryPredicate *predicate = &pattern->predicates[at];
-      if (predicate->test == QueryTestMatch) regfree(&predicate->regex);
+      if (predicate->test == QueryTestMatch) RegexFree(&predicate->regex);
       free(predicate->strings);
     }
 
@@ -382,6 +344,14 @@ CaptureText(
   return false;
 }
 
+// true when regex matches somewhere in text.
+static bool
+Matches(const Regex *regex, const StrBuf *text)
+{
+  RegexSpan span;
+  return RegexFind(regex, StrBufText(text), text->length, 0, text->length, false, &span, 1);
+}
+
 static bool
 Passes(
   const QueryPredicate *predicate,
@@ -408,7 +378,7 @@ Passes(
 
       break;
     case QueryTestMatch:
-      result = regexec(&predicate->regex, StrBufText(&value), 0, nullptr, 0) == 0;
+      result = Matches(&predicate->regex, &value);
       break;
     case QueryTestAnyOf:
       result = false;

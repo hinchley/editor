@@ -1,6 +1,7 @@
 #pragma once
 
-// regular expressions for search, matched one line at a time over code points.
+// regular expressions for search and the #match? predicates of queries, matched one line
+// at a time over code points.
 // a pike vm (a thompson nfa simulation whose threads keep their priority) finds the
 // leftmost match, preferring alternatives and repetitions as perl does, in time
 // proportional to the line's length times the program's size, so no pattern can make a
