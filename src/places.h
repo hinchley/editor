@@ -28,7 +28,3 @@ PlacesAdd(
 // selected.
 void
 PlacesOpen(const char *title, u64 selected);
-
-// goes to position in the entry with serial, recording a jump first.
-void
-PlacesGo(u64 serial, Position position);

@@ -60,28 +60,10 @@ DrawPlace([[maybe_unused]] void *context, u64 id, i32 column, i32 width, i32 hei
   );
 }
 
-void
-PlacesGo(u64 serial, Position position)
-{
-  u64 index = WorkspaceEntryOf(workspace, serial);
-
-  if (index == workspaceNone) {
-    StrBufAppendString(message, "that buffer has been closed");
-    return;
-  }
-
-  JumpRecord();
-  if (index != workspace->current && !WorkspaceSwitch(workspace, index, message)) return;
-
-  View *view = WorkspaceDocument(workspace)->view;
-  Position at = BufferClamp(view->buffer, position);
-  MoveSelect(view, at, at);
-}
-
 static void
 Picked([[maybe_unused]] void *context, bool picked, u64 id)
 {
-  if (picked) PlacesGo(places[id].serial, places[id].range.start);
+  if (picked) JumpTo(places[id].serial, places[id].range.start);
 }
 
 void

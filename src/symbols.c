@@ -768,25 +768,6 @@ WordBeforeCall(StrBuf *word)
   return false;
 }
 
-// goes to a symbol's name, switching to its entry.
-static void
-GoToSymbol(const IndexSymbol *symbol)
-{
-  u64 index = WorkspaceEntryOf(workspace, symbol->serial);
-
-  if (index == workspaceNone) {
-    StrBufAppendString(message, "that buffer has been closed");
-    return;
-  }
-
-  JumpRecord();
-  if (index != workspace->current && !WorkspaceSwitch(workspace, index, message)) return;
-
-  View *view = WorkspaceDocument(workspace)->view;
-  Position at = BufferClamp(view->buffer, symbol->name.start);
-  MoveSelect(view, at, at);
-}
-
 static void
 DrawSymbol([[maybe_unused]] void *context, u64 id, i32 column, i32 width, i32 height)
 {
@@ -796,7 +777,7 @@ DrawSymbol([[maybe_unused]] void *context, u64 id, i32 column, i32 width, i32 he
 static void
 PickedSymbol([[maybe_unused]] void *context, bool picked, u64 id)
 {
-  if (picked) GoToSymbol(&symbols[id]);
+  if (picked) JumpTo(symbols[id].serial, symbols[id].name.start);
 }
 
 // appends "path:line" for a symbol.
@@ -888,7 +869,7 @@ Define(void)
   if (!targetCount) {
     StrBufAppendFormat(message, "no other definition of %s", StrBufText(name));
   } else if (targetCount == 1) {
-    GoToSymbol(&symbols[targets[0]]);
+    JumpTo(symbols[targets[0]].serial, symbols[targets[0]].name.start);
   } else {
     PickTarget(targets, targetCount, wantPrototypes ? "prototypes" : "definitions", name);
   }

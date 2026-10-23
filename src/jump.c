@@ -95,6 +95,18 @@ Go(Place place)
   return true;
 }
 
+void
+JumpTo(u64 serial, Position position)
+{
+  if (WorkspaceEntryOf(workspace, serial) == workspaceNone) {
+    StrBufAppendString(message, "that buffer has been closed");
+    return;
+  }
+
+  JumpRecord();
+  Go((Place){serial, position});
+}
+
 bool
 JumpBack(void)
 {

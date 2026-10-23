@@ -64,7 +64,7 @@ static void
 GoToLocation(const LspLocation *location)
 {
   u64 serial = SerialOf(location->path);
-  if (serial != workspaceNone) PlacesGo(serial, location->range.start);
+  if (serial != workspaceNone) JumpTo(serial, location->range.start);
 }
 
 // appends "file:line" for a place.
