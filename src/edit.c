@@ -126,14 +126,64 @@ ReplaceEach(const EditContext *edit, enum UndoKind kind, RangeOf rangeOf)
   End(edit);
 }
 
+static char
+CloserOf(char opener)
+{
+  switch (opener) {
+    case '(':
+      return ')';
+    case '[':
+      return ']';
+    case '{':
+      return '}';
+    default:
+      return '\0';
+  }
+}
+
+// the closer that typed text wraps a selection with, when the text is an opening bracket
+// or a quote, or 0.
+static char
+SurroundCloser(const char *text, u64 length)
+{
+  if (length != 1 || !text[0]) return '\0';
+  if (strchr("\"'`", text[0])) return text[0];
+  return CloserOf(text[0]);
+}
+
+// puts opener and closer around the selection of cursor index, which stays on the text
+// inside, facing the same way.
+static void
+SurroundAt(const EditContext *edit, u32 index, char opener, char closer)
+{
+  Buffer *buffer = edit->view->buffer;
+  Cursor *cursor = &edit->view->cursors.cursors[index];
+  Range range = CursorRange(cursor);
+  bool forward = PositionCompare(cursor->anchor, cursor->head) <= 0;
+
+  BufferReplace(buffer, (Range){range.end, range.end}, &closer, 1);
+  Position start = BufferReplace(buffer, (Range){range.start, range.start}, &opener, 1);
+  Position end = range.end;
+  if (end.line == range.start.line) end.byte++;
+
+  cursor->anchor = forward ? start : end;
+  cursor->head = forward ? end : start;
+}
+
 void
 EditInsert(const EditContext *edit, const char *text, u64 length)
 {
   CursorSet *set = &edit->view->cursors;
-  Begin(edit, UndoKindTyping);
+  char closer = SurroundCloser(text, length);
+  bool surround = closer && CursorSetHasSelection(set);
+
+  // a bracket or quote typed over a selection wraps it, as a step of its own.
+  Begin(edit, surround ? UndoKindOther : UndoKindTyping);
 
   for (u32 index = 0; index < set->count; index++) {
-    ReplaceAt(edit, index, CursorRange(&set->cursors[index]), text, length);
+    Cursor *cursor = &set->cursors[index];
+    if (surround && CursorHasSelection(cursor)) SurroundAt(edit, index, text[0], closer);
+    else ReplaceAt(edit, index, CursorRange(cursor), text, length);
   }
 
   End(edit);
@@ -219,21 +269,6 @@ LastBefore(const StrBuf *line, u64 byte)
 {
   while (byte > 0 && IsBlank(line->data[byte - 1])) byte--;
   return byte > 0 ? line->data[byte - 1] : '\0';
-}
-
-static char
-CloserOf(char opener)
-{
-  switch (opener) {
-    case '(':
-      return ')';
-    case '[':
-      return ']';
-    case '{':
-      return '}';
-    default:
-      return '\0';
-  }
 }
 
 static void
