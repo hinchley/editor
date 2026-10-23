@@ -154,15 +154,11 @@ SelectFirst(View *view, StrBuf *message)
   return false;
 }
 
-void
-MultiCursorAddNext(View *view, MatchSet marks, StrBuf *message)
+// adds a cursor at the occurrence after the newest cursor, or (replace) moves the primary
+// cursor there, where it stays primary.
+static void
+Advance(View *view, MatchSet marks, StrBuf *message, bool replace)
 {
-  // the first press only selects the word.
-  if (!CursorHasSelection(CursorSetPrimary(&view->cursors))) {
-    SelectFirst(view, message);
-    return;
-  }
-
   Occurrences occurrences = {};
   if (!FindOccurrences(view, marks, &occurrences, message)) return;
 
@@ -171,7 +167,8 @@ MultiCursorAddNext(View *view, MatchSet marks, StrBuf *message)
 
   if (NextOccurrence(view, &occurrences.set, &match, &wrapped)) {
     Cursor cursor = {match.start, match.end, ViewRowColumn(view, match.end)};
-    CursorSetAdd(&view->cursors, cursor);
+    if (replace) *CursorSetPrimary(&view->cursors) = cursor;
+    else CursorSetAdd(&view->cursors, cursor);
     CursorSetMerge(&view->cursors);
     ViewScrollToCursor(view);
     if (wrapped) StrBufAppendString(message, "wrapped to the start");
@@ -183,28 +180,17 @@ MultiCursorAddNext(View *view, MatchSet marks, StrBuf *message)
 }
 
 void
+MultiCursorAddNext(View *view, MatchSet marks, StrBuf *message)
+{
+  // the first press only selects the word.
+  if (!CursorHasSelection(CursorSetPrimary(&view->cursors))) SelectFirst(view, message);
+  else Advance(view, marks, message, false);
+}
+
+void
 MultiCursorSkip(View *view, MatchSet marks, StrBuf *message)
 {
-  if (!SelectFirst(view, message)) return;
-
-  Occurrences occurrences = {};
-  if (!FindOccurrences(view, marks, &occurrences, message)) return;
-
-  Range match;
-  bool wrapped;
-
-  if (NextOccurrence(view, &occurrences.set, &match, &wrapped)) {
-    // the primary cursor moves to the occurrence, and stays primary.
-    Cursor *primary = CursorSetPrimary(&view->cursors);
-    *primary = (Cursor){match.start, match.end, ViewRowColumn(view, match.end)};
-    CursorSetMerge(&view->cursors);
-    ViewScrollToCursor(view);
-    if (wrapped) StrBufAppendString(message, "wrapped to the start");
-  } else {
-    StrBufAppendString(message, "no other occurrence");
-  }
-
-  PatternFree(&occurrences.pattern);
+  if (SelectFirst(view, message)) Advance(view, marks, message, true);
 }
 
 void
