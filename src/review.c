@@ -36,12 +36,14 @@ typedef struct Changed {
   ChangeCounts counts;
 } Changed;
 
-// the changes found, grouped by file in scan order, and how many files they are in.
+// the changes found, grouped by file in scan order, and how many files they are in, of
+// those scanned and of those in a repository.
 static Changed *changed;
 static u64 changedCount;
 static u64 changedCapacity;
 static u64 changedFiles;
 static u64 scannedCount;
+static u64 trackedCount;
 
 void
 ReviewInit(Workspace *newWorkspace, StrBuf *newMessage)
@@ -558,6 +560,7 @@ VisitEntry([[maybe_unused]] void *context, const ScanItem *item)
 
   if (item->document) {
     Changes *changes = item->document->changes;
+    trackedCount += changes != nullptr;
     ChangesRefresh(changes);
     u64 count;
     const DiffHunk *hunks = ChangesHunks(changes, &count);
@@ -567,7 +570,7 @@ VisitEntry([[maybe_unused]] void *context, const ScanItem *item)
 
   DiffHunks hunks = {};
   const char *path = WorkspacePath(workspace, item->index)->data;
-  ChangesOfText(path, item->text, item->length, &hunks);
+  trackedCount += ChangesOfText(path, item->text, item->length, &hunks);
   AddChanged(serial, nullptr, hunks.hunks, hunks.count);
   DiffFree(&hunks);
   return true;
@@ -576,7 +579,8 @@ VisitEntry([[maybe_unused]] void *context, const ScanItem *item)
 static void
 Progress([[maybe_unused]] void *context, u64 done, u64 count, StrBuf *text)
 {
-  StrBufAppendFormat(text, "comparing %lu of %lu files with the last commit", done, count);
+  const char *format = "comparing %lu of %lu file%s with the last commit";
+  StrBufAppendFormat(text, format, done, count, StrBufPlural(count));
   StrBufAppendFormat(text, ": %lu changed (escape stops)", changedFiles);
 }
 
@@ -596,7 +600,8 @@ DescribeChanged(bool stopped, StrBuf *text)
   const char *format = "%lu change%s in %lu file%s since the last commit: ";
   StrBufAppendFormat(text, format, changedCount, changes, changedFiles, files);
   DescribeCounts(&total, text);
-  if (stopped) StrBufAppendFormat(text, " (stopped after %lu files)", scannedCount);
+  const char *plural = StrBufPlural(scannedCount);
+  if (stopped) StrBufAppendFormat(text, " (stopped after %lu file%s)", scannedCount, plural);
 }
 
 // the picker's preview: the whole of the selected change's file, with the base's lines of
@@ -867,8 +872,16 @@ Finish([[maybe_unused]] void *context, ScanResult result)
 {
   StrBufClear(message);
 
+  // the same as the commands about the current buffer say outside a repository.
+  if (!changedCount && !trackedCount) {
+    StrBufAppendString(message, "not in a git repository");
+    if (result.stopped) StrBufAppendString(message, " (stopped)");
+    return;
+  }
+
   if (!changedCount) {
-    StrBufAppendFormat(message, "no changes since the last commit in %lu files", scannedCount);
+    const char *format = "no changes since the last commit in %lu file%s";
+    StrBufAppendFormat(message, format, scannedCount, StrBufPlural(scannedCount));
     if (result.stopped) StrBufAppendString(message, " (stopped)");
     return;
   }
@@ -914,6 +927,7 @@ ReviewPickChanged(void)
   changedCount = 0;
   changedFiles = 0;
   scannedCount = 0;
+  trackedCount = 0;
   u64 *queue = MemoryAllocate((workspace->count ? workspace->count : 1) * sizeof(u64));
   u64 queueCount = 0;
 
@@ -928,5 +942,6 @@ ReviewPickChanged(void)
     {.visit = VisitEntry, .progress = Progress, .finish = Finish};
   ScanStart(queue, queueCount, &client, nullptr);
   free(queue);
-  StrBufAppendFormat(message, "comparing %lu files with the last commit", queueCount);
+  const char *format = "comparing %lu file%s with the last commit";
+  StrBufAppendFormat(message, format, queueCount, StrBufPlural(queueCount));
 }

@@ -1390,8 +1390,13 @@ HandleKey(Key key)
     return;
   }
 
+  // escape on a question always says it was left, unless its answer says more ("not
+  // saved") or asks another.
   if (PromptActive()) {
     PromptKey(key);
+    bool escape = key.code == KeyEscape && !key.modifiers;
+    if (escape && !PromptActive() && !message.length)
+      StrBufAppendString(&message, "cancelled");
     return;
   }
 

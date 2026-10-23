@@ -684,7 +684,8 @@ void
 SessionCycle(i32 step)
 {
   u64 index = WorkspaceNext(workspace, step);
-  if (index == workspaceNone) StrBufAppendString(message, "no other open buffer (ctrl+p picks any)");
+  if (index == workspaceNone)
+    StrBufAppendString(message, "no other open buffer (ctrl+p picks any)");
   else Switch(index);
 }
 
@@ -717,7 +718,7 @@ CloseAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused
 {
   if (!answer || *answer == 'c') return;
 
-  if (*answer == 'y') SaveCurrent(workspace, message, Close);
+  if (*answer == 's') SaveCurrent(workspace, message, Close);
   else Close();
 }
 
@@ -732,10 +733,9 @@ SessionClose(void)
   }
 
   StrBuf question = {};
-  StrBufAppendString(&question, "save changes to ");
   WorkspaceName(workspace, workspace->current, &question);
-  StrBufAppendString(&question, "? (y/n/c)");
-  PromptChoose(question.data, "ync", CloseAnswered, nullptr);
+  StrBufAppendString(&question, " is unsaved: (s)ave, (d)iscard, (c)ancel");
+  PromptChoose(question.data, "sdc", CloseAnswered, nullptr);
   StrBufFree(&question);
 }
 

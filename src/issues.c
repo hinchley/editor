@@ -373,8 +373,9 @@ IssuesPick(void)
   const char *plural = StrBufPlural(files);
   StrBufAppendFormat(
     &title,
-    "%lu diagnostics in %lu open buffer%s: E%u W%u",
+    "%lu diagnostic%s in %lu open buffer%s: E%u W%u",
     count,
+    StrBufPlural(count),
     files,
     plural,
     total.errors,

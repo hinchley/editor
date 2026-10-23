@@ -194,7 +194,8 @@ SymbolsPickFile(void)
   StrBuf title = {};
   StrBuf name = {};
   WorkspaceName(workspace, workspace->current, &name);
-  StrBufAppendFormat(&title, "%lu symbols in %s", listed.count, name.data);
+  const char *plural = StrBufPlural(listed.count);
+  StrBufAppendFormat(&title, "%lu symbol%s in %s", listed.count, plural, name.data);
   listedSerial = workspace->entries[workspace->current].serial;
   PickerOpen(title.data, "symbol: ", Picked, nullptr);
   PickerShowPreview(DrawListed, nullptr);
@@ -615,8 +616,8 @@ Visit([[maybe_unused]] void *context, const ScanItem *item)
 static void
 Progress([[maybe_unused]] void *context, u64 done, u64 count, StrBuf *text)
 {
-  const char *format = "indexing symbols: %lu of %lu files (escape stops)";
-  StrBufAppendFormat(text, format, done, count);
+  const char *format = "indexing symbols: %lu of %lu file%s (escape stops)";
+  StrBufAppendFormat(text, format, done, count, StrBufPlural(count));
 }
 
 static void
@@ -628,8 +629,8 @@ Finished([[maybe_unused]] void *context, ScanResult result)
   StrBufClear(message);
 
   if (result.stopped) {
-    const char *format = "stopped indexing symbols after %lu files (they are kept)";
-    StrBufAppendFormat(message, format, result.done);
+    const char *format = "stopped indexing symbols after %lu file%s (they are kept)";
+    StrBufAppendFormat(message, format, result.done, StrBufPlural(result.done));
     pending = WantNone;
     return;
   }
@@ -659,7 +660,8 @@ StartScan(enum Want want)
 
   ScanStart(queue, count, &client, nullptr);
   free(queue);
-  StrBufAppendFormat(message, "indexing symbols in %lu files (escape stops)", count);
+  const char *format = "indexing symbols in %lu file%s (escape stops)";
+  StrBufAppendFormat(message, format, count, StrBufPlural(count));
 }
 
 // the range of symbols named name.
@@ -1029,8 +1031,9 @@ PickProject(void)
   u64 count = fileCount;
   StrBufAppendFormat(
     &title,
-    "%lu symbols in %lu file%s",
+    "%lu symbol%s in %lu file%s",
     symbolCount,
+    StrBufPlural(symbolCount),
     count,
     StrBufPlural(count)
   );

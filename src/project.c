@@ -174,9 +174,10 @@ Progress([[maybe_unused]] void *context, u64 done, u64 count, StrBuf *text)
 {
   StrBufAppendFormat(
     text,
-    "searching %lu of %lu files: %lu line%s found (escape stops)",
+    "searching %lu of %lu file%s: %lu line%s found (escape stops)",
     done,
     count,
+    StrBufPlural(count),
     hitCount,
     StrBufPlural(hitCount)
   );
@@ -197,7 +198,8 @@ DescribeResult(StrBuf *text)
   );
 
   if (capped) StrBufAppendFormat(text, ", stopped at %lu lines", maxProjectHits);
-  if (stopped) StrBufAppendFormat(text, ", stopped after %lu files", searched);
+  const char *plural = StrBufPlural(searched);
+  if (stopped) StrBufAppendFormat(text, ", stopped after %lu file%s", searched, plural);
   if (skipped) StrBufAppendFormat(text, ", %lu skipped", skipped);
 }
 
@@ -320,7 +322,8 @@ ScopeAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
     {.visit = SearchEntry, .progress = Progress, .finish = Finish};
   ScanStart(queue, queueCount, &client, nullptr);
   free(queue);
-  StrBufAppendFormat(message, "searching %lu files (escape stops)", queueCount);
+  const char *plural = StrBufPlural(queueCount);
+  StrBufAppendFormat(message, "searching %lu file%s (escape stops)", queueCount, plural);
 }
 
 void

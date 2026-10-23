@@ -719,6 +719,17 @@ SendInitialize(Server *server)
   StrBufFree(&uri);
 }
 
+// appends the name of the program a server line runs: its first word, without its folder.
+static void
+AppendProgram(const char *line, StrBuf *name)
+{
+  line += strspn(line, " \t");
+  u64 length = strcspn(line, " \t");
+  u64 start = length;
+  while (start && line[start - 1] != '/') start--;
+  StrBufAppend(name, line + start, length - start);
+}
+
 // starts the language's server in root, or records that it could not be started.
 static Server *
 StartServer(const Lang *lang, const char *root)
@@ -741,8 +752,7 @@ StartServer(const Lang *lang, const char *root)
     while (*at && *at != ' ' && *at != '\t') at++;
   }
 
-  const char *slash = strrchr(arguments[0], '/');
-  StrBufAppendString(&server->name, slash ? slash + 1 : arguments[0]);
+  AppendProgram(lang->server, &server->name);
 
   StrBuf log = {};
   bool logged = LogPath(lang, &log);
@@ -882,7 +892,9 @@ LspOpen(Buffer *buffer, const Lang *lang, const char *path)
   }
 
   if (!server && serverCount == maxServers) {
-    StrBufAppendFormat(Report(), "%s: too many language servers", lang->server);
+    StrBuf *report = Report();
+    AppendProgram(lang->server, report);
+    StrBufAppendString(report, ": too many language servers");
     StrBufFree(&root);
     StrBufFree(&absolute);
     return nullptr;
