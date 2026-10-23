@@ -53,7 +53,7 @@ How code in `src/` is written. `.clang-format` handles layout: run `clang-format
 - **Structs:** `typedef struct Name { ... } Name;`, always with the tag. A one-off table may use an anonymous `static const struct { ... } name[] = {...};`.
 - **Enums are not typedef'd.** Write `enum ServerState state;` wherever one is used.
 - **Constants:** `static constexpr` with a type, never `#define`. The code has no macros. Settings live in `settings.h`.
-- Mark unused parameters `[[maybe_unused]]`. Don't cast them to `(void)`.
+- Mark unused parameters, and a local kept only to take a `warn_unused_result` value, `[[maybe_unused]]`. Never cast to `(void)`.
 - **Literals:** `nullptr` (never `NULL` or `0`), `{}` to zero (`StrBuf text = {};`, `*buffer = (Buffer){};`), digit separators in large values (`10'000`), uppercase hex (`0x7F`), and lowercase suffixes (`100ull * 1024`).
 
 ## Idioms

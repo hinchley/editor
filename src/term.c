@@ -100,8 +100,7 @@ ResizeHandler([[maybe_unused]] int signal)
   // a full pipe already holds a wake up, so a failed write is fine.
   i32 savedError = errno;
   char byte = 0;
-  i64 ignored = write(wakePipe[1], &byte, 1);
-  (void)ignored;
+  [[maybe_unused]] i64 written = write(wakePipe[1], &byte, 1);
   errno = savedError;
 }
 
