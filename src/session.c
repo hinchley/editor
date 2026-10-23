@@ -1,5 +1,6 @@
 #include "session.h"
 
+#include <ctype.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,7 @@
 #include "loader.h"
 #include "lsp.h"
 #include "memory.h"
+#include "move.h"
 #include "picker.h"
 #include "project.h"
 #include "prompt.h"
@@ -316,12 +318,95 @@ SwitchToFirst(bool explain)
   Switch(WorkspaceAddUnnamed(workspace));
 }
 
-void
-SessionStart(Workspace *newWorkspace, StrBuf *newMessage, char *const *paths, u64 pathCount)
-{
-  workspace = newWorkspace;
-  message = newMessage;
+// a path from the command line that named a place in its file, as "path:line[:column]",
+// counted from 1.
+typedef struct Place {
+  StrBuf path;
+  u64 line;
+  u64 column;
+} Place;
 
+// the length of text without a trailing ":number", which is put in number (never 0), or 0
+// when it has none.
+static u64
+CutNumber(const char *text, u64 length, u64 *number)
+{
+  u64 digits = 0;
+  while (digits < length && digits < 10 && isdigit((u8)text[length - 1 - digits])) digits++;
+  if (!digits || digits == 10 || digits == length || text[length - 1 - digits] != ':') {
+    return 0;
+  }
+
+  *number = strtoull(text + length - digits, nullptr, 10);
+  return *number ? length - digits - 1 : 0;
+}
+
+// true, with path set to the first length bytes of text, when they name something that
+// exists.
+static bool
+Exists(const char *text, u64 length, StrBuf *path)
+{
+  StrBufClear(path);
+  StrBufAppend(path, text, length);
+  struct stat status;
+  return stat(path->data, &status) == 0;
+}
+
+// true, filling place, when argument is "path:line" or "path:line:column" (with a trailing
+// ":", as compilers and grep print it, or without), and the whole does not exist but the
+// path does, so names with colons in them still work.
+static bool
+SplitPlace(const char *argument, Place *place)
+{
+  struct stat status;
+  if (stat(argument, &status) == 0) return false;
+
+  u64 length = strlen(argument);
+  if (length && argument[length - 1] == ':') length--;
+
+  u64 last;
+  u64 cut = CutNumber(argument, length, &last);
+  if (!cut) return false;
+
+  u64 first;
+  u64 shorter = CutNumber(argument, cut, &first);
+
+  if (Exists(argument, cut, &place->path)) {
+    place->line = last;
+    place->column = 1;
+  } else if (shorter && Exists(argument, shorter, &place->path)) {
+    place->line = first;
+    place->column = last;
+  } else {
+    StrBufFree(&place->path);
+    return false;
+  }
+
+  return true;
+}
+
+// opens the entry loaded for place's path, if there is one, and moves its cursor there.
+// one that cannot be opened is left, as the reason shows once it is picked.
+static void
+GoToPlace(const Place *place)
+{
+  for (u64 index = 0; index < workspace->count; index++) {
+    if (strcmp(WorkspacePath(workspace, index)->data, place->path.data) != 0) continue;
+
+    StrBuf ignored = {};
+    bool opened = WorkspaceOpen(workspace, index, &ignored);
+    StrBufFree(&ignored);
+    if (!opened) return;
+
+    Document *document = workspace->entries[index].document;
+    if (!document->image) MoveGoTo(document->view, place->line - 1, place->column - 1);
+    return;
+  }
+}
+
+static void
+Start(char *const *paths, u64 pathCount)
+{
   if (!pathCount) {
     Switch(WorkspaceAddUnnamed(workspace));
     return;
@@ -355,6 +440,32 @@ SessionStart(Workspace *newWorkspace, StrBuf *newMessage, char *const *paths, u6
 
   if (empty) StrBufAppendString(message, "no files to load");
   if (pick && !empty) SessionPick(false);
+}
+
+void
+SessionStart(Workspace *newWorkspace, StrBuf *newMessage, char *const *paths, u64 pathCount)
+{
+  workspace = newWorkspace;
+  message = newMessage;
+
+  // the paths with their places cut off, which the files are loaded by.
+  Place *places = MemoryAllocateZeroed(pathCount, sizeof(Place));
+  char **named = MemoryResize(nullptr, pathCount, sizeof(char *));
+
+  for (u64 index = 0; index < pathCount; index++) {
+    bool split = SplitPlace(paths[index], &places[index]);
+    named[index] = split ? places[index].path.data : paths[index];
+  }
+
+  Start(named, pathCount);
+
+  for (u64 index = 0; index < pathCount; index++) {
+    if (places[index].line) GoToPlace(&places[index]);
+    StrBufFree(&places[index].path);
+  }
+
+  free(places);
+  free(named);
 }
 
 // true, with a message, when there is no room for another buffer.

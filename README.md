@@ -25,10 +25,13 @@ The spell check word list is not built in either: it is `~/.config/editor/words.
 ```sh
 editor                       # new empty buffer
 editor file                  # open file (created on first save if it does not exist)
+editor file:120[:8]          # open file at line 120 (and column 8), as compilers print it
 editor file1 path/to/file2   # load both and pick one
 editor folder                # load every file under folder and pick one (Escape: empty buffer)
 editor file1 folder1 ...     # any mix of files and folders
 ```
+
+A `path:line` or `path:line:column` (a trailing `:` is allowed) is split only when the whole name does not exist but the path does, so a file whose name has colons in it still opens as itself. Each file named with a line is opened at once, with its cursor there.
 
 Folders are walked at any depth. `.git` folders, links to folders and the temporary files a save cut short leaves behind (`.<name>.editor-XXXXXX`) are skipped, and links to files are followed. A file reached twice (named again, inside a named folder, or through a link) is loaded once. Loaded files are only read when first used. More than 100,000 files is refused before the editor starts.
 
