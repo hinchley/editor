@@ -115,5 +115,5 @@ LearnKey(Key key)
     else StrBufAppendString(message, " is not a shortcut, try again");
   }
 
-  StrBufAppendFormat(message, " · shortcut for: %s", asked->help);
+  StrBufAppendFormat(message, " · shortcut for: %s (esc to stop)", asked->help);
 }

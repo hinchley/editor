@@ -292,6 +292,20 @@ PromptPaste(const char *data, u64 length)
   if (edited && onChange) onChange(doneContext, text.data, text.length);
 }
 
+// draws a faint note of the keys that leave the prompt at the right end of the row, when
+// it fits after used columns.
+static void
+DrawHint(i32 row, i32 width, i32 used)
+{
+  const char *hint = kind == PromptKindChoice ? "esc cancel" : "enter ok · esc cancel";
+  i32 hintWidth = (i32)LayoutColumn(hint, strlen(hint), strlen(hint));
+  if (used + hintWidth + 3 > width) return;
+
+  Style style = ThemeStyle(ThemeMessage);
+  style.foreground = ThemeStyle(ThemeStatusDim).foreground;
+  ScreenPutText(row, width - hintWidth - 1, hint, strlen(hint), style);
+}
+
 void
 PromptDraw(i32 row, i32 width)
 {
@@ -300,6 +314,7 @@ PromptDraw(i32 row, i32 width)
   i32 column = ScreenPutText(row, 0, label.data, label.length, style);
 
   if (kind == PromptKindChoice) {
+    DrawHint(row, width, column);
     ScreenSetCursor(row, column);
     return;
   }
@@ -316,6 +331,7 @@ PromptDraw(i32 row, i32 width)
   u64 start = LayoutByteAt(data, text.length, whole, scroll);
   u64 startColumn = LayoutColumn(data, text.length, start);
   Style textStyle = selected ? ThemeStyle(ThemeSelection) : style;
-  ScreenPutText(row, column, data + start, text.length - start, textStyle);
+  i32 end = ScreenPutText(row, column, data + start, text.length - start, textStyle);
+  DrawHint(row, width, end);
   ScreenSetCursor(row, column + (i32)(cursorColumn - startColumn));
 }
