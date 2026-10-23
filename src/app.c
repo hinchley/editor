@@ -145,12 +145,6 @@ ToggleServers(void)
 }
 
 static void
-Scroll(i64 count)
-{
-  if (!ViewScroll(CurrentView(), count)) StrBufAppendString(&message, "cannot scroll further");
-}
-
-static void
 Quit(void)
 {
   running = false;
@@ -1263,10 +1257,10 @@ RunCommand(const Binding *binding)
 
   switch (command) {
     case CommandScrollUp:
-      Scroll(-1);
+      MoveScroll(view, -1);
       break;
     case CommandScrollDown:
-      Scroll(1);
+      MoveScroll(view, 1);
       break;
     case CommandSelectAll:
       MoveSelectAll(view);

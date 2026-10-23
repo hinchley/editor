@@ -184,7 +184,7 @@ Each cursor keeps a desired column: its column within its visual row. Up, Down, 
 
 The view keeps its first visible row (`top`) and, without soft wrap, its first visible column (`leftColumn`). `ViewScrollToCursor` runs before every frame, so movement, resizing and toggles all end with the cursors in sight. It keeps `scrollOffset` rows between the cursor and the top and bottom edges (capped at just under half the height). With several cursors whose heads span fewer rows than the view, it keeps the whole span in sight instead, with the margins when they fit and without them when they do not, so adding cursors does not scroll the first ones away. A span taller than the view falls back to the primary cursor. The margin shrinks to the rows that exist before or after the cursor, which is how it yields at the start and end of the buffer. The view never scrolls so far that empty rows show below the end of the buffer. Columns get the same margin, and it yields at the start of the line.
 
-Alt-Up and Alt-Down move `top` by one row and leave the cursor alone. They refuse (with a message) when a cursor being kept in sight would end up inside the margin, or the view would pass either end. PageUp and PageDown move both the cursor and `top` by the height less one row, so the cursor keeps its screen row.
+Alt-Up and Alt-Down scroll one row with `MoveScroll`, as a notch of the wheel does (see Mouse): the cursors stay put until they would end up inside the margin, and are then carried along, and the view stops at either end. PageUp and PageDown move both the cursor and `top` by the height less one row, so the cursor keeps its screen row.
 
 ### Rendering
 

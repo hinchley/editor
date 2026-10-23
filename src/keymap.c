@@ -18,8 +18,8 @@ const Binding keymapBindings[] = {
   {{KeyRight, control}, CommandMoveWordRight, "move to the next word"},
   {{KeyHome, control}, CommandMoveFileStart, "move to the start of the buffer"},
   {{KeyEnd, control}, CommandMoveFileEnd, "move to the end of the buffer"},
-  {{KeyUp, alt}, CommandScrollUp, "scroll up a line (the cursor stays put)"},
-  {{KeyDown, alt}, CommandScrollDown, "scroll down a line (the cursor stays put)"},
+  {{KeyUp, alt}, CommandScrollUp, "scroll up a line, as the wheel does"},
+  {{KeyDown, alt}, CommandScrollDown, "scroll down a line, as the wheel does"},
 
   // selection.
   {{KeyUp, shift}, CommandSelectUp, "extend the selection up"},
