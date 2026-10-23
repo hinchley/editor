@@ -1,8 +1,8 @@
 #pragma once
 
 // the terminal session in foot: raw mode, the alternate screen, the kitty keyboard
-// protocol, bracketed paste, mouse reporting, the cursor shape, the window title, window
-// size and resize notification.
+// protocol, bracketed paste, mouse reporting, the cursor shape, the window title, the folder
+// for foot's new windows, window size and resize notification.
 // every way out of the program goes through TermStop, so the terminal is always restored.
 // a hang up or termination signal (sighup, sigterm) only sets a flag, so the main loop can
 // keep copies of unsaved work (see recover.h) before it exits.
@@ -60,6 +60,12 @@ TermWrite(const char *data, u64 length);
 // control characters in it are shown as "?".
 void
 TermSetTitle(const char *text, u64 length);
+
+// tells foot the folder its new windows (ctrl+shift+n) open in, an absolute path, when it
+// differs from the one last given; on leaving, foot is given back the folder the editor
+// started in.
+void
+TermSetFolder(const char *path, u64 length);
 
 // milliseconds on a clock that only moves forward, for timeouts and delays.
 i64

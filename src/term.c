@@ -1,7 +1,9 @@
 #include "term.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
@@ -59,6 +61,13 @@ static volatile sig_atomic_t screenActive;
 
 // the window title last set.
 static StrBuf title;
+
+// the folder last given to foot for its new windows, the sequence that gives back the one
+// the editor started in, written on leaving, and the host's name, which the folder's
+// address starts with.
+static StrBuf folder;
+static StrBuf leaveFolder;
+static char host[256];
 
 // set when the terminal has gone (a hang up or termination signal, the end of input, or a
 // failed write), so the main loop keeps copies of the work and exits.
@@ -185,6 +194,23 @@ Handshake(void)
   }
 }
 
+// appends the sequence (OSC 7) that tells foot new windows open in path, an absolute
+// folder, as a file address with every byte but unreserved ones and "/" percent-encoded.
+static void
+AppendFolder(StrBuf *sequence, const char *path, u64 length)
+{
+  StrBufAppendFormat(sequence, "\x1b]7;file://%s", host);
+
+  for (u64 index = 0; index < length; index++) {
+    u8 byte = (u8)path[index];
+    bool plain = isalnum(byte) || strchr("-._~/", byte);
+    if (plain && byte) StrBufAppendByte(sequence, (char)byte);
+    else StrBufAppendFormat(sequence, "%%%02X", byte);
+  }
+
+  StrBufAppendString(sequence, "\x1b\\");
+}
+
 static void
 EnterEditorMode(void)
 {
@@ -233,6 +259,12 @@ TermStart(void)
   }
 
   Handshake();
+
+  // foot's new windows go back to opening where the editor started.
+  if (gethostname(host, sizeof(host) - 1) != 0) host[0] = 0;
+  char started[PATH_MAX];
+  if (getcwd(started, sizeof(started))) AppendFolder(&leaveFolder, started, strlen(started));
+
   EnterEditorMode();
 }
 
@@ -242,6 +274,7 @@ TermStop(void)
   if (screenActive) {
     screenActive = 0;
     WriteAll(leaveSequence, sizeof(leaveSequence) - 1);
+    if (leaveFolder.length) WriteAll(leaveFolder.data, leaveFolder.length);
   }
 
   // discard unread input so leftover key sequences do not reach the shell.
@@ -343,6 +376,19 @@ TermSetTitle(const char *text, u64 length)
   }
 
   StrBufAppendString(&sequence, "\x1b\\");
+  TermWrite(sequence.data, sequence.length);
+  StrBufFree(&sequence);
+}
+
+void
+TermSetFolder(const char *path, u64 length)
+{
+  if (length == folder.length && (!length || memcmp(path, folder.data, length) == 0)) return;
+
+  StrBufClear(&folder);
+  StrBufAppend(&folder, path, length);
+  StrBuf sequence = {};
+  AppendFolder(&sequence, path, length);
   TermWrite(sequence.data, sequence.length);
   StrBufFree(&sequence);
 }

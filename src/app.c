@@ -12,7 +12,6 @@
 #include "jump.h"
 #include "keymap.h"
 #include "lang.h"
-#include "launch.h"
 #include "learn.h"
 #include "lookup.h"
 #include "lsp.h"
@@ -542,30 +541,26 @@ CopyPath(void)
   if (!system) StrBufAppendString(&message, " (the system clipboard is not available)");
 }
 
-// opens a terminal in the folder of the buffer's file, or for an unnamed buffer in the
-// folder the buffers were loaded from, or else the one the editor was started in.
+// tells foot its new windows open in the folder of the buffer's file, or for an unnamed
+// buffer in the folder the buffers were loaded from, or else the one the editor was started
+// in.
+// a file whose folder does not exist yet leaves the folder as it was.
 static void
-OpenTerminal(void)
+ShowFolder(void)
 {
-  const StrBuf *path = &Current()->file.path;
-  StrBuf folder = {};
+  const StrBuf *path = WorkspaceRealPath(&workspace, workspace.current);
 
   if (path->length) {
-    const char *slash = strrchr(path->data, '/');
-    if (!slash) StrBufAppendString(&folder, ".");
-    else if (slash == path->data) StrBufAppendString(&folder, "/");
-    else StrBufAppend(&folder, path->data, (u64)(slash - path->data));
-  } else {
-    const char *opened = SessionFolder();
-    StrBufAppendString(&folder, opened ? opened : ".");
+    u64 length = (u64)(strrchr(path->data, '/') - path->data);
+    TermSetFolder(length ? path->data : "/", length ? length : 1);
+    return;
   }
 
+  if (Current()->file.path.length) return;
+
+  const char *opened = SessionFolder();
   char real[PATH_MAX];
-
-  if (realpath(folder.data, real)) LaunchTerminal(real, &message);
-  else StrBufAppendFormat(&message, "the folder %s does not exist (save first)", folder.data);
-
-  StrBufFree(&folder);
+  if (realpath(opened ? opened : ".", real)) TermSetFolder(real, strlen(real));
 }
 
 // what statistics counts.
@@ -1187,7 +1182,6 @@ ViewOnly(enum Command command)
     case CommandReload:
     case CommandLoadNewFiles:
     case CommandCopyPath:
-    case CommandOpenTerminal:
     case CommandStatistics:
     case CommandImageSize:
     case CommandNextBuffer:
@@ -1297,9 +1291,6 @@ RunCommand(const Binding *binding)
       break;
     case CommandCopyPath:
       CopyPath();
-      break;
-    case CommandOpenTerminal:
-      OpenTerminal();
       break;
     case CommandStatistics:
       ShowStatistics();
@@ -1711,6 +1702,7 @@ Draw(void)
   StrBufAppendFormat(&title, "editor: %s%s", panes[0].name.data, modified ? " [+]" : "");
   TermSetTitle(title.data, title.length);
   StrBufFree(&title);
+  ShowFolder();
 
   for (u32 index = 0; index < 2; index++) {
     StrBufFree(&panes[index].name);
