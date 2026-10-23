@@ -16,7 +16,7 @@ How code in `src/` is written. `.clang-format` handles layout: run `clang-format
     *worst = index;
   }
   ```
-- **Case labels** are indented inside their switch, and a body always goes on the lines under its label, however short it is. clang-format does this.
+- **Case labels** are indented inside their switch, and a body always goes on the lines under its label, however short it is. clang-format does this. Declare a variable a case needs before the `switch` (`-Wjump-misses-init` is on).
 - **Long signatures and calls:** when they don't fit, put one parameter or argument per line, indented two spaces, with the `)` on a line of its own. A function's `{` still goes on the next line:
   ```c
   static bool

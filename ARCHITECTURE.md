@@ -606,7 +606,7 @@ Ctrl-/ uses the comment markers from `lang`. It first decides for all the lines 
 - Functions are `PascalCase` and prefixed with their module name (`StrBufAppend`, `MemoryResize`). Variables and constants are `camelCase`.
 - Headers use `#pragma once`.
 - C23 features in use: `bool`, `nullptr`, `constexpr`, `[[attributes]]`, `<stdckdint.h>`, digit separators.
-- Vendored code is compiled with `-w` and not edited, apart from the patches in `vendor/patches/` (see The default packages). Queries the editor needs that upstream does not provide in the right form (the tags queries) and the `language` files live in `languages/`, outside `vendor/`. Strict warnings (`-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wformat-nonliteral -Werror`) apply to `src/` only.
+- Vendored code is compiled with `-w` and not edited, apart from the patches in `vendor/patches/` (see The default packages). Queries the editor needs that upstream does not provide in the right form (the tags queries) and the `language` files live in `languages/`, outside `vendor/`. Strict warnings (`-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wformat-nonliteral -Wjump-misses-init -Werror`) apply to `src/` only.
 
 ## The default packages
 

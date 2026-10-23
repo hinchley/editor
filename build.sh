@@ -36,7 +36,8 @@ done
 
 common=(-std=c23 -D_DEFAULT_SOURCE)
 warnings=(-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wformat-nonliteral)
-strict=("${warnings[@]}" -Werror)
+# -Wjump-misses-init is gcc's alone, so it stays out of compile_commands.json.
+strict=("${warnings[@]}" -Wjump-misses-init -Werror)
 if [[ $mode == debug ]]; then
   optimise=(-O0 -g3 -fno-omit-frame-pointer -fsanitize=address,undefined)
 else
