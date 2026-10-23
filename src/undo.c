@@ -83,8 +83,10 @@ AddRecord(UndoGroup *group, const BufferChange *change)
 
   UndoRecord *record = &group->records[group->count++];
   *record = (UndoRecord){.start = change->start};
-  StrBufAppend(&record->oldText, change->oldText, change->oldLength);
-  StrBufAppend(&record->newText, change->newText, change->newLength);
+
+  // most records only insert or only delete, so the other text is left unallocated.
+  if (change->oldLength) StrBufAppend(&record->oldText, change->oldText, change->oldLength);
+  if (change->newLength) StrBufAppend(&record->newText, change->newText, change->newLength);
 }
 
 // finds the group the first change of an edit goes into: the last group when the edit

@@ -264,7 +264,7 @@ Enter copies the indentation before the cursor and adds one level after `{`, `[`
 
 ### Undo
 
-`undo` listens to the buffer too, and records each change as `{start, oldText, newText}`. Everything between `UndoBegin` and `UndoEnd` (which nest) is one group, which also keeps copies of the cursor set from before and after. Undo replays a group's records backwards as inverse replaces and restores the "before" cursors; redo replays them forwards and restores the "after" cursors. A change outside a group is a programming error and ends the editor through `Fatal`, so nothing can slip past the history.
+`undo` listens to the buffer too, and records each change as `{start, oldText, newText}`, allocating only the texts that are not empty (most changes only insert or only delete). Everything between `UndoBegin` and `UndoEnd` (which nest) is one group, which also keeps copies of the cursor set from before and after. Undo replays a group's records backwards as inverse replaces and restores the "before" cursors; redo replays them forwards and restores the "after" cursors. A change outside a group is a programming error and ends the editor through `Fatal`, so nothing can slip past the history.
 
 A typing, backspace or delete edit joins the last group when it is of the same kind, nothing has been undone, and nothing broke the run. `app` calls `UndoBreak` before every command except backspace and delete, and before a paste. Within a group, a change that simply continues the last record (typing after it, backspacing before it, deleting at the same place) extends that record, so typing a line costs one record.
 
