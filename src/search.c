@@ -155,6 +155,51 @@ SelectedSource(StrBuf *source)
   return true;
 }
 
+// appends which of the search's matches in the buffer match is, of how many ("3/17"), and
+// returns false, counting nothing, when the buffer or the count is too large to count
+// quickly.
+static bool
+AppendPlace(Range match, StrBuf *text)
+{
+  const Buffer *buffer = &Current()->buffer;
+  u64 lineCount = BufferLineCount(buffer);
+  u64 size = 0;
+
+  for (u64 line = 0; line < lineCount; line++) {
+    size += BufferLine(buffer, line)->length + 1;
+    if (size > maxMatchCountSize) return false;
+  }
+
+  MatchSet set = {.kind = MatchKindSearch, .pattern = &last};
+  u64 count = 0;
+  u64 place = 0;
+
+  for (u64 line = 0; line < lineCount; line++) {
+    PatternMatch hit = {};
+
+    while (MatchInLine(&set, buffer, line, hit.end, UINT64_MAX, &hit)) {
+      if (++count > maxMatchCount) return false;
+      if (PositionCompare((Position){line, hit.start}, match.start) <= 0) place = count;
+    }
+  }
+
+  if (!place) return false;
+
+  StrBufAppendFormat(text, "%lu/%lu", place, count);
+  return true;
+}
+
+// says in the message which match match is, when they can be counted.
+static bool
+ReportPlace(Range match)
+{
+  StrBufAppendString(message, "match ");
+  if (AppendPlace(match, message)) return true;
+
+  StrBufTruncate(message, message->length - strlen("match "));
+  return false;
+}
+
 static void
 Select(Range range)
 {
@@ -198,10 +243,12 @@ Label(void)
   u32 count = 0;
   bool find = prompt == SearchPromptFind;
   bool bad = BadPattern();
+  StrBuf place = {};
   const StrBuf *text = PromptText();
   if (MatchesCase(TextOf(text), text->length)) notes[count++] = "match case";
   if (regex) notes[count++] = bad ? "regex, bad pattern" : "regex";
   if (find && text->length && !found && !bad) notes[count++] = "no match";
+  if (find && found && AppendPlace(current, &place)) notes[count++] = place.data;
   if (find && found && wrapped) notes[count++] = "wrapped";
 
   StrBuf label = {};
@@ -217,6 +264,7 @@ Label(void)
   StrBufAppendString(&label, count ? "]: " : ": ");
   PromptSetLabel(label.data);
   StrBufFree(&label);
+  StrBufFree(&place);
 }
 
 static void
@@ -306,8 +354,13 @@ FindDone([[maybe_unused]] void *context, const char *answer, u64 length)
     return;
   }
 
-  MatchSet set = SearchMarks(Current());
-  if (!found) ReportNoMatch(&set);
+  if (!found) {
+    MatchSet set = SearchMarks(Current());
+    ReportNoMatch(&set);
+    return;
+  }
+
+  if (ReportPlace(current)) StrBufAppendString(message, " (alt+n and alt+p step)");
 }
 
 void
@@ -372,8 +425,14 @@ SearchStep(bool backward)
 
   const char *wrappedTo = backward ? "wrapped to the end" : "wrapped to the start";
   Select(match);
-  if (around && same) StrBufAppendString(message, "this is the only match");
-  else if (around) StrBufAppendString(message, wrappedTo);
+
+  if (around && same) {
+    StrBufAppendString(message, "this is the only match");
+    return;
+  }
+
+  bool placed = set.kind == MatchKindSearch && ReportPlace(match);
+  if (around) StrBufAppendFormat(message, "%s%s", placed ? ", " : "", wrappedTo);
 }
 
 void

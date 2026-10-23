@@ -67,6 +67,11 @@ static constexpr u64 maxImagePixels = 40'000'000;
 // project search lists at most this many matching lines.
 static constexpr u64 maxProjectHits = 10'000;
 
+// search shows which match is selected of how many ("3/17") only in buffers of up to this
+// many bytes with up to this many matches, as find counts them again on every key.
+static constexpr u64 maxMatchCountSize = 4ull * 1024 * 1024;
+static constexpr u64 maxMatchCount = 10'000;
+
 // alt+c counts unknown words up to this many.
 static constexpr u64 maxSpellCount = 10'000;
 
