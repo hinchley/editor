@@ -1,5 +1,6 @@
 #include "render.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -428,14 +429,13 @@ DrawGutter(const Canvas *canvas, i32 row, u64 line, bool first)
   DrawChange(canvas, row, first);
   if (!first) return;
 
-  StrBuf number = {};
-  StrBufAppendFormat(&number, "%*lu ", width - 1, line + 1);
+  char number[32];
+  i32 length = snprintf(number, sizeof(number), "%*lu ", width - 1, line + 1);
   // the first cell is the change mark's, already blank or drawn.
   // a line with a diagnostic starting on it is numbered in the worst one's colour.
   bool diagnosed = canvas->lineGroup != ThemeNone;
   Style style = ThemeStyle(diagnosed ? canvas->lineGroup : ThemeGutter);
-  ScreenPutText(row, canvas->view->column + 1, number.data + 1, number.length - 1, style);
-  StrBufFree(&number);
+  ScreenPutText(row, canvas->view->column + 1, number + 1, (u64)length - 1, style);
 }
 
 // draws the first line of the line's worst diagnostic, after a symbol for its severity

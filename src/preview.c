@@ -1,5 +1,6 @@
 #include "preview.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -266,11 +267,10 @@ PreviewDraw(
 
     // only a line's first row is numbered.
     if (!firstRow) {
-      StrBuf number = {};
-      StrBufAppendFormat(&number, "%*lu", digits, shown + 1);
+      char number[32];
+      i32 size = snprintf(number, sizeof(number), "%*lu", digits, shown + 1);
       Style gutter = shown == line ? styleDefault : ThemeStyle(ThemeGutter);
-      ScreenPutText(place.row, column + 1, number.data, number.length, gutter);
-      StrBufFree(&number);
+      ScreenPutText(place.row, column + 1, number, (u64)size, gutter);
     }
 
     WrapLine(text, length, place.width, &rows);
