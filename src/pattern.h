@@ -56,6 +56,11 @@ PatternSet(Pattern *pattern, const char *source, u64 length, PatternOptions opti
 void
 PatternFree(Pattern *pattern);
 
+// appends why pattern never matches and returns true, when that is because it would not
+// compile or holds a line break.
+bool
+PatternReportUnusable(const Pattern *pattern, StrBuf *message);
+
 // finds the first match in a line that starts at or after from and before limit (a match
 // may end after it).
 // matches start and end on grapheme cluster boundaries and are never empty.

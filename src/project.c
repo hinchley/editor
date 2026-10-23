@@ -314,15 +314,7 @@ ScopeAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
 void
 ProjectAsk(const Pattern *newPattern)
 {
-  if (newPattern->error.length) {
-    StrBufAppendFormat(message, "bad pattern: %s", newPattern->error.data);
-    return;
-  }
-
-  if (newPattern->impossible) {
-    StrBufAppendString(message, "a match cannot cross a line break");
-    return;
-  }
+  if (PatternReportUnusable(newPattern, message)) return;
 
   const StrBuf *source = &newPattern->source;
   PatternSet(&asked, StrBufText(source), source->length, newPattern->options);

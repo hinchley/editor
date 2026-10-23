@@ -115,6 +115,20 @@ PatternFree(Pattern *pattern)
   *pattern = (Pattern){};
 }
 
+bool
+PatternReportUnusable(const Pattern *pattern, StrBuf *message)
+{
+  if (pattern->error.length) {
+    StrBufAppendFormat(message, "bad pattern: %s", pattern->error.data);
+  } else if (pattern->impossible && pattern->text.length) {
+    StrBufAppendString(message, "a match cannot cross a line break");
+  } else {
+    return false;
+  }
+
+  return true;
+}
+
 // true when a grapheme cluster starts at offset at.
 static bool
 IsBoundary(const char *text, u64 length, u64 at)

@@ -237,11 +237,7 @@ ReportNoMatch(const MatchSet *set)
 {
   if (set->kind == MatchKindSpell) {
     StrBufAppendString(message, "no unknown words");
-  } else if (last.error.length) {
-    StrBufAppendFormat(message, "bad pattern: %s", last.error.data);
-  } else if (last.impossible && last.text.length) {
-    StrBufAppendString(message, "a match cannot cross a line break");
-  } else {
+  } else if (!PatternReportUnusable(&last, message)) {
     StrBufAppendFormat(message, "no match for %s", StrBufText(&last.source));
   }
 }
