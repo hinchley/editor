@@ -5,6 +5,9 @@
 
 #include "memory.h"
 
+// the most the replaced text keeps allocated between replacements.
+static constexpr u64 maxKeptRemoved = 1024 * 1024;
+
 static void
 FreeLines(Buffer *buffer, u64 first, u64 count)
 {
@@ -294,5 +297,7 @@ BufferReplace(Buffer *buffer, Range range, const char *text, u64 length)
     entry->listener(entry->context, &change);
   }
 
+  // a huge deletion would otherwise stay allocated for the life of the buffer.
+  if (buffer->removed.capacity > maxKeptRemoved) StrBufFree(&buffer->removed);
   return newEnd;
 }
