@@ -1290,8 +1290,7 @@ EditTrimTrailingWhitespace(const EditContext *edit)
 
   for (u64 line = 0; line < BufferLineCount(buffer); line++) {
     const StrBuf *text = BufferLine(buffer, line);
-    u64 end = text->length;
-    while (end > 0 && IsBlank(text->data[end - 1])) end--;
+    u64 end = TrimmedLength(text);
     if (end == text->length) continue;
 
     BufferReplace(buffer, (Range){{line, end}, {line, text->length}}, "", 0);
@@ -1306,8 +1305,7 @@ EditTrimTrailingWhitespace(const EditContext *edit)
 static LineEdit
 TrimLine(const LineTask *task, const StrBuf *line)
 {
-  u64 end = line->length;
-  while (end > 0 && IsBlank(line->data[end - 1])) end--;
+  u64 end = TrimmedLength(line);
   if (end == line->length) return (LineEdit){};
 
   (*(u64 *)task->context)++;
