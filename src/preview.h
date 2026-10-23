@@ -6,10 +6,6 @@
 // disk (keeping the last one read).
 #include "pattern.h"
 #include "types.h"
-#include "workspace.h"
-
-void
-PreviewInit(Workspace *workspace);
 
 // draws the lines around line of the entry with serial in the area from row 0 and column,
 // of width and height cells: a header naming the entry and the line, then the lines with

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app.h"
 #include "highlight.h"
 #include "jump.h"
 #include "memory.h"
@@ -28,19 +29,9 @@ typedef struct SymbolList {
   StrBuf names;
 } SymbolList;
 
-static Workspace *workspace;
-static StrBuf *message;
-
 // the symbols the open picker lists, and the serial of the entry they are in.
 static SymbolList listed;
 static u64 listedSerial;
-
-void
-SymbolsInit(Workspace *newWorkspace, StrBuf *newMessage)
-{
-  workspace = newWorkspace;
-  message = newMessage;
-}
 
 static void
 FreeList(SymbolList *list)

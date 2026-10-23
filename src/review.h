@@ -5,13 +5,7 @@
 // it showing the change at the cursor (alt+g), restoring that change (alt+z),
 // and a picker of every change in the loaded files, with the lines each one changes
 // (ctrl+g).
-#include "strbuf.h"
 #include "types.h"
-#include "workspace.h"
-
-// the commands act on workspace and report to message.
-void
-ReviewInit(Workspace *workspace, StrBuf *message);
 
 // goes to the start of the next change below the cursor's line, or (backward) the closest
 // one above it, wrapping around the buffer.

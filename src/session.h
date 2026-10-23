@@ -5,9 +5,7 @@
 // closing a buffer, the split view, and quitting.
 // every command reports in the message bar, and the ones that need an answer ask in a
 // prompt or picker.
-#include "strbuf.h"
 #include "types.h"
-#include "workspace.h"
 
 typedef void (*SessionQuitter)(void);
 
@@ -20,7 +18,7 @@ typedef void (*SessionQuitter)(void);
 // unnamed buffer, which cancelling the picker leaves and picking a buffer removes; with
 // only files, the first that could be opened does.
 void
-SessionStart(Workspace *workspace, StrBuf *message, char *const *paths, u64 pathCount);
+SessionStart(char *const *paths, u64 pathCount);
 
 // adds an unnamed buffer and makes it current.
 void

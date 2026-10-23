@@ -2,13 +2,13 @@
 
 #include <stdlib.h>
 
+#include "app.h"
 #include "keymap.h"
 #include "memory.h"
 
 // wrong answers to a question before its answer is shown.
 static constexpr u32 missesBeforeAnswer = 3;
 
-static StrBuf *message;
 static bool active;
 
 // the bindings asked about, in the order they are asked; all are asked before any again.
@@ -23,12 +23,6 @@ static u32 misses;
 // questions answered, and those answered right before the answer was shown.
 static u32 answered;
 static u32 right;
-
-void
-LearnInit(StrBuf *newMessage)
-{
-  message = newMessage;
-}
 
 bool
 LearnActive(void)

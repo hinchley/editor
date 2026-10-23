@@ -5,31 +5,24 @@
 // the file menu also lives here: renaming, copying and deleting the current file.
 // any failure or refusal stops the run, so whatever waits for it (quitting, replacing
 // the buffer list) never happens after a failed save.
-#include "strbuf.h"
-#include "workspace.h"
+#include "types.h"
 
 // runs once every document of the run was saved.
 typedef void (*SaveFinished)(void);
 
 // saves the current document, then runs finished (which may be nullptr).
 void
-SaveCurrent(Workspace *workspace, StrBuf *message, SaveFinished finished);
+SaveCurrent(SaveFinished finished);
 
 // saves every modified document in list order, then runs finished.
 // an unnamed one is made current before asking for its name.
 void
-SaveAll(Workspace *workspace, StrBuf *message, SaveFinished finished);
+SaveAll(SaveFinished finished);
 
 // saves the modified documents among count entries, by index in list order, as SaveAll
 // does, then runs finished.
 void
-SaveSome(
-  Workspace *workspace,
-  StrBuf *message,
-  const u64 *entries,
-  u64 count,
-  SaveFinished finished
-);
+SaveSome(const u64 *entries, u64 count, SaveFinished finished);
 
 // asks whether to rename the current document's file, save a copy of it or delete it,
 // then asks for the new path (with tab completion) or for confirmation.
@@ -38,4 +31,4 @@ SaveSome(
 // the file and its buffer.
 // replacing an existing file is only done once confirmed.
 void
-SaveFileMenu(Workspace *workspace, StrBuf *message);
+SaveFileMenu(void);

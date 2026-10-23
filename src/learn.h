@@ -5,11 +5,6 @@
 // only bindings held with ctrl or alt are asked.
 // while it runs it takes every key, so no command runs, and escape ends it.
 #include "key.h"
-#include "strbuf.h"
-
-// reports the questions and answers to message.
-void
-LearnInit(StrBuf *message);
 
 void
 LearnStart(void);

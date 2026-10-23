@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "app.h"
 #include "complete.h"
 #include "edit.h"
 #include "memory.h"
@@ -13,8 +14,6 @@
 
 // one run of saves: the serials of the entries still to save and what to do once they
 // are.
-static Workspace *workspace;
-static StrBuf *message;
 static SaveFinished afterSave;
 static u64 *queue;
 static u64 queueCount;
@@ -45,10 +44,8 @@ Saving(void)
 }
 
 static void
-Begin(Workspace *newWorkspace, StrBuf *newMessage, SaveFinished finished, bool all)
+Begin(SaveFinished finished, bool all)
 {
-  workspace = newWorkspace;
-  message = newMessage;
   afterSave = finished;
   saveAll = all;
   queueCount = 0;
@@ -211,38 +208,32 @@ Next(void)
 }
 
 void
-SaveCurrent(Workspace *newWorkspace, StrBuf *newMessage, SaveFinished finished)
+SaveCurrent(SaveFinished finished)
 {
-  Begin(newWorkspace, newMessage, finished, false);
-  Queue(newWorkspace->current);
+  Begin(finished, false);
+  Queue(workspace->current);
   Next();
 }
 
 void
-SaveAll(Workspace *newWorkspace, StrBuf *newMessage, SaveFinished finished)
+SaveAll(SaveFinished finished)
 {
-  Begin(newWorkspace, newMessage, finished, true);
+  Begin(finished, true);
 
-  for (u64 index = 0; index < newWorkspace->count; index++) {
-    if (WorkspaceModified(newWorkspace, index)) Queue(index);
+  for (u64 index = 0; index < workspace->count; index++) {
+    if (WorkspaceModified(workspace, index)) Queue(index);
   }
 
   Next();
 }
 
 void
-SaveSome(
-  Workspace *newWorkspace,
-  StrBuf *newMessage,
-  const u64 *entries,
-  u64 count,
-  SaveFinished finished
-)
+SaveSome(const u64 *entries, u64 count, SaveFinished finished)
 {
-  Begin(newWorkspace, newMessage, finished, true);
+  Begin(finished, true);
 
   for (u64 index = 0; index < count; index++) {
-    if (WorkspaceModified(newWorkspace, entries[index])) Queue(entries[index]);
+    if (WorkspaceModified(workspace, entries[index])) Queue(entries[index]);
   }
 
   Next();
@@ -406,10 +397,8 @@ MenuAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]
 }
 
 void
-SaveFileMenu(Workspace *newWorkspace, StrBuf *newMessage)
+SaveFileMenu(void)
 {
-  workspace = newWorkspace;
-  message = newMessage;
   menuSerial = workspace->entries[workspace->current].serial;
   PromptChoose("file: (r)ename (c)opy (d)elete", "rcd", MenuAnswered, nullptr);
 }

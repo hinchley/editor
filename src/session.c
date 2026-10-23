@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "app.h"
 #include "complete.h"
 #include "fatal.h"
 #include "loader.h"
@@ -18,9 +19,6 @@
 #include "save.h"
 #include "settings.h"
 #include "symbols.h"
-
-static Workspace *workspace;
-static StrBuf *message;
 
 // a folder opened with Ctrl-O, waiting for the answer about unsaved changes, and its path.
 static LoaderList pending;
@@ -443,11 +441,8 @@ Start(char *const *paths, u64 pathCount)
 }
 
 void
-SessionStart(Workspace *newWorkspace, StrBuf *newMessage, char *const *paths, u64 pathCount)
+SessionStart(char *const *paths, u64 pathCount)
 {
-  workspace = newWorkspace;
-  message = newMessage;
-
   // the paths with their places cut off, which the files are loaded by.
   Place *places = MemoryAllocateZeroed(pathCount, sizeof(Place));
   char **named = MemoryResize(nullptr, pathCount, sizeof(char *));
@@ -497,7 +492,7 @@ UnsavedAnswered(
   [[maybe_unused]] u64 length
 )
 {
-  if (answer && *answer == 's') SaveAll(workspace, message, afterUnsaved);
+  if (answer && *answer == 's') SaveAll(afterUnsaved);
   else if (answer && *answer == 'd') Discarded();
 }
 
@@ -829,7 +824,7 @@ CloseAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused
 {
   if (!answer || *answer == 'c') return;
 
-  if (*answer == 's') SaveCurrent(workspace, message, Close);
+  if (*answer == 's') SaveCurrent(Close);
   else Close();
 }
 
@@ -980,7 +975,7 @@ FolderUnsavedAnswered(
 
   u64 *entries = MemoryAllocate((closingCount + 1) * sizeof(u64));
   u64 count = ClosingEntries(entries);
-  SaveSome(workspace, message, entries, count, CloseFolderNow);
+  SaveSome(entries, count, CloseFolderNow);
   free(entries);
 }
 

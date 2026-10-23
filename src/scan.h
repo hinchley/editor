@@ -12,7 +12,6 @@
 #include "key.h"
 #include "strbuf.h"
 #include "types.h"
-#include "workspace.h"
 
 // one entry of a scan: its index, and either its document or the text of its file.
 typedef struct ScanItem {
@@ -50,10 +49,6 @@ typedef struct ScanClient {
   // the scan is over, from the end of the list, a visit or escape.
   void (*finish)(void *context, ScanResult result);
 } ScanClient;
-
-// the scans run on workspace, and report their progress to message.
-void
-ScanInit(Workspace *workspace, StrBuf *message);
 
 // starts a scan of the entries at indexes (copied), which goes through them in order once
 // ScanContinue is called.

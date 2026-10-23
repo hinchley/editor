@@ -47,7 +47,8 @@ static constexpr i32 escapeTimeout = 50;
 
 static TermSize windowSize;
 
-static Workspace workspace;
+static Workspace workspaceState;
+Workspace *const workspace = &workspaceState;
 
 static DisplayOptions displayOptions = {
   .softWrap = softWrapDefault,
@@ -63,7 +64,8 @@ static bool expandTab = expandTabDefault;
 static u64 tableColumnWidth = tableColumnWidthDefault;
 
 // the message bar text, cleared by the next key.
-static StrBuf message;
+static StrBuf messageState;
+StrBuf *const message = &messageState;
 
 // the index, among the last frame's panes, of the focused one.
 static u32 drawnFocus;
@@ -78,7 +80,7 @@ static bool focusReturned;
 static Document *
 Current(void)
 {
-  return WorkspaceDocument(&workspace);
+  return WorkspaceDocument(workspace);
 }
 
 static View *
@@ -110,15 +112,15 @@ static void
 Toggle(bool *setting, const char *name)
 {
   *setting = !*setting;
-  StrBufAppendFormat(&message, "%s %s", name, *setting ? "on" : "off");
+  StrBufAppendFormat(message, "%s %s", name, *setting ? "on" : "off");
 }
 
 // starts or stops following every open document with its language server.
 static void
 RefreshServers(void)
 {
-  for (u64 index = 0; index < workspace.count; index++) {
-    Document *document = workspace.entries[index].document;
+  for (u64 index = 0; index < workspace->count; index++) {
+    Document *document = workspace->entries[index].document;
     if (document) DocumentRefreshServer(document);
   }
 }
@@ -139,7 +141,7 @@ ToggleServers(void)
   }
 
   StrBufAppendString(
-    &message,
+    message,
     restart ? "language servers restarted"
       : on  ? "language servers on"
             : "language servers off"
@@ -156,15 +158,15 @@ static void
 Reload(void)
 {
   Document *document = Current();
-  if (!DocumentReload(document, &message)) return;
+  if (!DocumentReload(document, message)) return;
 
   if (document->image) {
-    StrBufAppendString(&message, "reloaded the image");
+    StrBufAppendString(message, "reloaded the image");
     return;
   }
 
   u64 lines = BufferTextLineCount(&document->buffer);
-  StrBufAppendFormat(&message, "reloaded %lu line%s", lines, StrBufPlural(lines));
+  StrBufAppendFormat(message, "reloaded %lu line%s", lines, StrBufPlural(lines));
 }
 
 static void
@@ -179,7 +181,7 @@ AskToReload(void)
   Document *document = Current();
 
   if (!document->file.path.length) {
-    StrBufAppendString(&message, "the buffer has no file to reload");
+    StrBufAppendString(message, "the buffer has no file to reload");
     return;
   }
 
@@ -228,7 +230,7 @@ GoToAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
   }
 
   if (!valid) {
-    StrBufAppendFormat(&message, "not a line or line:column: %s", answer);
+    StrBufAppendFormat(message, "not a line or line:column: %s", answer);
     return;
   }
 
@@ -246,13 +248,13 @@ RulerAnswered([[maybe_unused]] void *context, const char *answer, u64 length)
   u64 maximum = rulerColumnMaximum;
 
   if (!ParseNumber(answer, length, minimum, maximum, &column)) {
-    StrBufAppendFormat(&message, "the ruler column must be from %lu to %lu", minimum, maximum);
+    StrBufAppendFormat(message, "the ruler column must be from %lu to %lu", minimum, maximum);
     return;
   }
 
   displayOptions.rulerColumn = (i32)column;
   displayOptions.ruler = true;
-  StrBufAppendFormat(&message, "ruler at column %lu", column);
+  StrBufAppendFormat(message, "ruler at column %lu", column);
 }
 
 static void
@@ -270,7 +272,7 @@ ToggleLineEndings(void)
 {
   File *file = &Current()->file;
   file->lineEnding = file->lineEnding == LineEndingLf ? LineEndingCrlf : LineEndingLf;
-  StrBufAppendFormat(&message, "line endings %s", FileLineEndingName(file->lineEnding));
+  StrBufAppendFormat(message, "line endings %s", FileLineEndingName(file->lineEnding));
 }
 
 // tells how much was copied or cut: whole lines, or characters within one line.
@@ -290,8 +292,8 @@ DescribeCopy(const char *verb, const StrBuf *text, bool lineWise, bool system)
   u64 count = lines ? lines : characters;
   const char *unit = lines ? "line" : "character";
 
-  StrBufAppendFormat(&message, "%s %lu %s%s", verb, count, unit, StrBufPlural(count));
-  if (!system) StrBufAppendString(&message, " (the system clipboard is not available)");
+  StrBufAppendFormat(message, "%s %lu %s%s", verb, count, unit, StrBufPlural(count));
+  if (!system) StrBufAppendString(message, " (the system clipboard is not available)");
 }
 
 static void
@@ -318,7 +320,7 @@ Paste(void)
     EditPaste(&edit, text.data, text.length, lineWise);
     if (!system) DescribeCopy("pasted", &text, lineWise, system);
   } else {
-    StrBufAppendString(&message, "the clipboard is empty");
+    StrBufAppendString(message, "the clipboard is empty");
   }
 
   StrBufFree(&text);
@@ -364,12 +366,12 @@ ToggleComment(void)
   const Lang *lang = Current()->lang;
 
   if (!lang) {
-    StrBufAppendString(&message, "no comments for this file type");
+    StrBufAppendString(message, "no comments for this file type");
     return;
   }
 
   if (!lang->commentStart) {
-    StrBufAppendFormat(&message, "%s has no comments", lang->name);
+    StrBufAppendFormat(message, "%s has no comments", lang->name);
     return;
   }
 
@@ -395,11 +397,11 @@ SortAnswered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]
   EditContext edit = Editing();
   SortResult result = EditSortLines(&edit, options);
   const char *plural = StrBufPlural(result.lines);
-  StrBufAppendFormat(&message, "sorted %lu line%s", result.lines, plural);
+  StrBufAppendFormat(message, "sorted %lu line%s", result.lines, plural);
 
   if (result.removed) {
     plural = StrBufPlural(result.removed);
-    StrBufAppendFormat(&message, ", removed %lu duplicate%s", result.removed, plural);
+    StrBufAppendFormat(message, ", removed %lu duplicate%s", result.removed, plural);
   }
 }
 
@@ -408,7 +410,7 @@ AskSortOrder(void)
 {
   // the sort works on the newest cursor's selection, as it collapses to that cursor.
   if (!CursorHasSelection(CursorSetPrimary(&Current()->view->cursors))) {
-    StrBufAppendString(&message, "no selection");
+    StrBufAppendString(message, "no selection");
     return;
   }
 
@@ -427,7 +429,7 @@ TableWidthAnswered([[maybe_unused]] void *context, const char *answer, u64 lengt
   u64 maximum = tableColumnWidthMaximum;
 
   if (!ParseNumber(answer, length, minimum, maximum, &width)) {
-    StrBufAppendFormat(&message, "the column width must be from %lu to %lu", minimum, maximum);
+    StrBufAppendFormat(message, "the column width must be from %lu to %lu", minimum, maximum);
     return;
   }
 
@@ -435,19 +437,19 @@ TableWidthAnswered([[maybe_unused]] void *context, const char *answer, u64 lengt
   MarkdownTableResult result;
 
   if (!MarkdownAlignTable(Current(), width, &result)) {
-    StrBufAppendString(&message, "not in a markdown table");
+    StrBufAppendString(message, "not in a markdown table");
     return;
   }
 
   if (!result.changed) {
-    StrBufAppendString(&message, "the table is aligned already");
+    StrBufAppendString(message, "the table is aligned already");
     return;
   }
 
   const char *columns = StrBufPlural(result.columns);
   const char *lines = StrBufPlural(result.lines);
   StrBufAppendFormat(
-    &message,
+    message,
     "aligned %u column%s over %lu line%s",
     result.columns,
     columns,
@@ -460,7 +462,7 @@ static void
 AskTableWidth(void)
 {
   if (!MarkdownInTable(Current())) {
-    StrBufAppendString(&message, "not in a markdown table");
+    StrBufAppendString(message, "not in a markdown table");
     return;
   }
 
@@ -485,8 +487,8 @@ TrimWhitespace(bool everyLine)
   EditContext edit = Editing();
   u64 count = everyLine ? EditTrimTrailingWhitespace(&edit) : EditTrimLines(&edit);
 
-  if (count) StrBufAppendFormat(&message, "trimmed %lu line%s", count, StrBufPlural(count));
-  else StrBufAppendString(&message, "no trailing whitespace");
+  if (count) StrBufAppendFormat(message, "trimmed %lu line%s", count, StrBufPlural(count));
+  else StrBufAppendString(message, "no trailing whitespace");
 }
 
 static void
@@ -495,15 +497,15 @@ ChangeCase(bool upper)
   EditContext edit = Editing();
 
   if (!CursorSetHasSelection(&edit.view->cursors)) {
-    StrBufAppendString(&message, "no selection");
+    StrBufAppendString(message, "no selection");
     return;
   }
 
   u64 count = EditChangeCase(&edit, upper);
   const char *done = upper ? "uppercased" : "lowercased";
 
-  if (count) StrBufAppendFormat(&message, "%s %lu line%s", done, count, StrBufPlural(count));
-  else StrBufAppendString(&message, "no change");
+  if (count) StrBufAppendFormat(message, "%s %lu line%s", done, count, StrBufPlural(count));
+  else StrBufAppendString(message, "no change");
 }
 
 static void
@@ -518,14 +520,14 @@ AlignCursors(void)
   u64 last = CursorRange(&set->cursors[set->count - 1]).start.line;
 
   if (first == last) {
-    StrBufAppendString(&message, "align needs cursors on two or more lines");
+    StrBufAppendString(message, "align needs cursors on two or more lines");
     return;
   }
 
   u64 count = EditAlignCursors(&edit);
 
-  if (count) StrBufAppendFormat(&message, "aligned %lu line%s", count, StrBufPlural(count));
-  else StrBufAppendString(&message, "already aligned");
+  if (count) StrBufAppendFormat(message, "aligned %lu line%s", count, StrBufPlural(count));
+  else StrBufAppendString(message, "already aligned");
 }
 
 static void
@@ -534,14 +536,14 @@ CopyPath(void)
   const StrBuf *path = &Current()->file.path;
 
   if (!path->length) {
-    StrBufAppendString(&message, "the buffer has no file name");
+    StrBufAppendString(message, "the buffer has no file name");
     return;
   }
 
   bool system = ClipboardSet(path->data, path->length, false);
-  StrBufAppendString(&message, "copied ");
-  StrBufAppend(&message, path->data, path->length);
-  if (!system) StrBufAppendString(&message, " (the system clipboard is not available)");
+  StrBufAppendString(message, "copied ");
+  StrBufAppend(message, path->data, path->length);
+  if (!system) StrBufAppendString(message, " (the system clipboard is not available)");
 }
 
 // tells foot its new windows open in the folder of the buffer's file, or for an unnamed
@@ -551,7 +553,7 @@ CopyPath(void)
 static void
 ShowFolder(void)
 {
-  const StrBuf *path = WorkspaceRealPath(&workspace, workspace.current);
+  const StrBuf *path = WorkspaceRealPath(workspace, workspace->current);
 
   if (path->length) {
     u64 length = (u64)(strrchr(path->data, '/') - path->data);
@@ -623,10 +625,10 @@ AppendCounts(const Counts *part, const Counts *whole)
   u64 partCounts[] = {part->lines, part->words, part->characters, part->bytes};
 
   for (u32 index = 0; index < 4; index++) {
-    if (index) StrBufAppendString(&message, ", ");
-    if (part != whole) StrBufAppendFormat(&message, "%lu of ", partCounts[index]);
+    if (index) StrBufAppendString(message, ", ");
+    if (part != whole) StrBufAppendFormat(message, "%lu of ", partCounts[index]);
     u64 count = wholeCounts[index];
-    StrBufAppendFormat(&message, "%lu %s%s", count, names[index], StrBufPlural(count));
+    StrBufAppendFormat(message, "%lu %s%s", count, names[index], StrBufPlural(count));
   }
 }
 
@@ -638,7 +640,7 @@ ShowStatistics(void)
   const Buffer *buffer = &document->buffer;
 
   if (document->image) {
-    ImageStatistics(document->image, &message);
+    ImageStatistics(document->image, message);
     return;
   }
 
@@ -675,7 +677,7 @@ ShowStatistics(void)
     anySelection = true;
   }
 
-  if (anySelection) StrBufAppendString(&message, "selection: ");
+  if (anySelection) StrBufAppendString(message, "selection: ");
   AppendCounts(anySelection ? &selected : &whole, &whole);
 }
 
@@ -716,7 +718,7 @@ MoveCommand(enum Command command)
 static void
 Report(bool done, const char *failure)
 {
-  if (!done) StrBufAppendString(&message, failure);
+  if (!done) StrBufAppendString(message, failure);
 }
 
 // undoes or (redo) redoes a step, warning when it was one file's part of a change made
@@ -725,14 +727,14 @@ static void
 StepHistory(const EditContext *edit, bool redo)
 {
   if (!(redo ? EditRedo(edit) : EditUndo(edit))) {
-    StrBufAppendString(&message, redo ? "nothing to redo" : "nothing to undo");
+    StrBufAppendString(message, redo ? "nothing to redo" : "nothing to undo");
     return;
   }
 
   // the group just undone is the next to redo, and the one just redone the last to undo.
   const Undo *undo = edit->undo;
   u64 group = redo ? UndoLastId(undo) : undo->groups[undo->current].id;
-  MultifileNoteStep(workspace.entries[workspace.current].serial, group, redo);
+  MultifileNoteStep(workspace->entries[workspace->current].serial, group, redo);
 }
 
 static bool
@@ -836,7 +838,7 @@ ExpandSelection(void)
   if (MoveExpandSelection(document->view, document->highlight)) return;
 
   bool syntax = document->highlight && !HighlightDisabled(document->highlight);
-  StrBufAppendString(&message, syntax ? "no larger syntax node" : "no brackets around");
+  StrBufAppendString(message, syntax ? "no larger syntax node" : "no brackets around");
 }
 
 // shows or hides the change panel or the diagnostics panel, which take the same place, so
@@ -1036,13 +1038,13 @@ BufferCommand(enum Command command)
       SessionCloseFolder();
       break;
     case CommandFileMenu:
-      SaveFileMenu(&workspace, &message);
+      SaveFileMenu();
       break;
     case CommandSave:
-      SaveCurrent(&workspace, &message, nullptr);
+      SaveCurrent(nullptr);
       break;
     case CommandSaveAll:
-      SaveAll(&workspace, &message, nullptr);
+      SaveAll(nullptr);
       break;
     case CommandQuit:
       SessionQuit(Quit);
@@ -1113,13 +1115,13 @@ ToggleImageSize(void)
   Image *image = Current()->image;
 
   if (!image) {
-    StrBufAppendString(&message, "the buffer is not an image");
+    StrBufAppendString(message, "the buffer is not an image");
     return;
   }
 
   bool actual = ImageToggleSize(image);
   StrBufAppendString(
-    &message,
+    message,
     actual ? "actual size (the arrows move)" : "fitted to the window"
   );
 }
@@ -1137,7 +1139,7 @@ PanImage(Image *image, enum Command command)
 
   // each step encodes the part shown again, so a step of a quarter of the view crosses a
   // large image in a few presses rather than hundreds.
-  i32 columns = workspace.split ? windowSize.width / 2 : windowSize.width;
+  i32 columns = workspace->split ? windowSize.width / 2 : windowSize.width;
   i64 across = (i64)columns * cellWidth / 4;
   i64 down = page / 4;
 
@@ -1237,7 +1239,7 @@ RefuseImage(void)
 {
   if (!Current()->image) return false;
 
-  StrBufAppendString(&message, "images are view only");
+  StrBufAppendString(message, "images are view only");
   return true;
 }
 
@@ -1278,13 +1280,13 @@ RunCommand(const Binding *binding)
       Cancel();
       break;
     case CommandAddCursorWord:
-      MultiCursorAddNext(view, SearchMarks(Current()), &message);
+      MultiCursorAddNext(view, SearchMarks(Current()), message);
       break;
     case CommandSkipCursorWord:
-      MultiCursorSkip(view, SearchMarks(Current()), &message);
+      MultiCursorSkip(view, SearchMarks(Current()), message);
       break;
     case CommandAddCursorAll:
-      MultiCursorAddAll(view, SearchMarks(Current()), &message);
+      MultiCursorAddAll(view, SearchMarks(Current()), message);
       break;
     case CommandAddCursorAbove:
       Report(MultiCursorAddRow(view, true), "no line above");
@@ -1354,7 +1356,7 @@ HandleKey(Key key)
     return;
   }
 
-  StrBufClear(&message);
+  StrBufClear(message);
 
   // learning mode answers with keys, so none of them runs a command.
   if (LearnActive()) {
@@ -1389,8 +1391,8 @@ HandleKey(Key key)
   if (PromptActive()) {
     PromptKey(key);
     bool escape = key.code == KeyEscape && !key.modifiers;
-    if (escape && !PromptActive() && !message.length)
-      StrBufAppendString(&message, "cancelled");
+    if (escape && !PromptActive() && !message->length)
+      StrBufAppendString(message, "cancelled");
     return;
   }
 
@@ -1418,7 +1420,7 @@ HandlePaste(const char *text, u64 length)
   }
 
   // a terminal paste is one undo step and is never indented.
-  StrBufClear(&message);
+  StrBufClear(message);
   if (RefuseImage()) return;
 
   UndoBreak(&Current()->undo);
@@ -1439,10 +1441,10 @@ ViewAt(i32 row, i32 column, Document **document)
     return CurrentView();
   }
 
-  if (!workspace.split) return nullptr;
+  if (!workspace->split) return nullptr;
 
-  *document = workspace.entries[workspace.other].document;
-  return WorkspaceOtherView(&workspace);
+  *document = workspace->entries[workspace->other].document;
+  return WorkspaceOtherView(workspace);
 }
 
 static void
@@ -1457,7 +1459,7 @@ HandleMouse(const MouseEvent *mouse)
   // a scan, learning mode and the prompts take the keys and leave the mouse alone, but a
   // picker takes clicks and the wheel on its list.
   if (ScanBusy() || LearnActive()) return;
-  if (press) StrBufClear(&message);
+  if (press) StrBufClear(message);
 
   if (PickerActive()) {
     if (press) PickerClick(row, column);
@@ -1483,7 +1485,7 @@ HandleMouse(const MouseEvent *mouse)
   u32 status = RenderStatusAt(row, column);
 
   if (status != renderNoPane) {
-    if (press && status != drawnFocus && workspace.split) SessionFocusOther();
+    if (press && status != drawnFocus && workspace->split) SessionFocusOther();
     return;
   }
 
@@ -1548,11 +1550,11 @@ CheckFiles(void)
 
   focusReturned = false;
   StrBuf found = {};
-  WorkspaceReloadChanged(&workspace, &found);
+  WorkspaceReloadChanged(workspace, &found);
 
   if (found.length) {
-    StrBufClear(&message);
-    StrBufAppend(&message, found.data, found.length);
+    StrBufClear(message);
+    StrBufAppend(message, found.data, found.length);
   }
 
   StrBufFree(&found);
@@ -1577,7 +1579,7 @@ WaitForInput(void)
   // panel to ask what is under it, input resting long enough for recovery copies, or the
   // buffer resting long enough for its change marks to be worked out again, wakes the loop
   // too.
-  i32 waits[] = {LspTimeout(), IssuesTimeout(), RecoverTimeout(&workspace), ChangesTimeout()};
+  i32 waits[] = {LspTimeout(), IssuesTimeout(), RecoverTimeout(workspace), ChangesTimeout()};
 
   for (u32 index = 0; index < 4; index++) {
     if (waits[index] >= 0 && (timeout < 0 || waits[index] < timeout)) timeout = waits[index];
@@ -1604,7 +1606,7 @@ WaitForInput(void)
   }
 
   // checked whatever woke the loop, so busy language servers cannot hold the copies back.
-  if (RecoverTimeout(&workspace) == 0) RecoverWrite(&workspace);
+  if (RecoverTimeout(workspace) == 0) RecoverWrite(workspace);
 }
 
 // what one side of the window shows.
@@ -1620,8 +1622,8 @@ typedef struct Pane {
 static void
 DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
 {
-  const Document *document = workspace.entries[index].document;
-  WorkspaceName(&workspace, index, &pane->name);
+  const Document *document = workspace->entries[index].document;
+  WorkspaceName(workspace, index, &pane->name);
 
   if (document->image) {
     ImageDescribe(document->image, &pane->type);
@@ -1630,8 +1632,8 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
       .name = &pane->name,
       .readOnly = true,
       .image = pane->type.data,
-      .openCount = workspace.openCount,
-      .loadedCount = workspace.count
+      .openCount = workspace->openCount,
+      .loadedCount = workspace->count
     };
 
     *framePane = (FramePane){.view = view, .status = &pane->status, .image = document->image};
@@ -1672,8 +1674,8 @@ DescribePane(Pane *pane, u64 index, View *view, FramePane *framePane)
     .lineEnding = crlf ? FileLineEndingName(LineEndingCrlf) : nullptr,
     .changes = changes->length ? changes->data : nullptr,
     .diagnostics = pane->diagnostics.length ? pane->diagnostics.data : nullptr,
-    .openCount = workspace.openCount,
-    .loadedCount = workspace.count
+    .openCount = workspace->openCount,
+    .loadedCount = workspace->count
   };
 
   pane->marks = SearchMarks(document);
@@ -1702,20 +1704,20 @@ Draw(void)
     .width = windowSize.width,
     .height = windowSize.height,
     .paneCount = 1,
-    .message = &message
+    .message = message
   };
 
   CellSize(&frame.cellWidth, &frame.cellHeight);
 
   Pane panes[2] = {};
-  DescribePane(&panes[0], workspace.current, CurrentView(), &frame.panes[0]);
+  DescribePane(&panes[0], workspace->current, CurrentView(), &frame.panes[0]);
 
-  if (workspace.split) {
-    DescribePane(&panes[1], workspace.other, WorkspaceOtherView(&workspace), &frame.panes[1]);
+  if (workspace->split) {
+    DescribePane(&panes[1], workspace->other, WorkspaceOtherView(workspace), &frame.panes[1]);
     frame.paneCount = 2;
 
     // panes are given left to right.
-    if (workspace.slot != workspace.left) {
+    if (workspace->slot != workspace->left) {
       FramePane focused = frame.panes[0];
       frame.panes[0] = frame.panes[1];
       frame.panes[1] = focused;
@@ -1755,24 +1757,11 @@ i32
 AppRun(i32 argc, char **argv)
 {
   // files are loaded before the terminal changes, so argument errors leave it untouched.
-  LangLoadAll(&message);
-  LspInit(&message);
-  WorkspaceInit(&workspace, &displayOptions);
-  SearchInit(&workspace, &message);
-  ScanInit(&workspace, &message);
-  PreviewInit(&workspace);
-  ProjectInit(&workspace, &message);
-  JumpInit(&workspace, &message);
-  SymbolsInit(&workspace, &message);
-  ReviewInit(&workspace, &message);
-  IssuesInit(&workspace, &message);
-  LookupInit(&workspace, &message);
-  PlacesInit(&workspace, &message);
-  RefactorInit(&workspace, &message);
-  MultifileInit(&workspace, &message);
-  LearnInit(&message);
-  SessionStart(&workspace, &message, argv + 1, (u64)argc - 1);
-  RecoverReport(&message);
+  LangLoadAll(message);
+  LspInit();
+  WorkspaceInit(workspace, &displayOptions);
+  SessionStart(argv + 1, (u64)argc - 1);
+  RecoverReport(message);
 
   TermStart();
   Resize();
@@ -1794,7 +1783,7 @@ AppRun(i32 argc, char **argv)
   }
 
   // a hang up keeps copies of the work; a normal exit removes them.
-  if (TermHungUp()) RecoverHangUp(&workspace);
+  if (TermHungUp()) RecoverHangUp(workspace);
   else RecoverForget();
 
   // the servers are given time to exit once the terminal is back to normal.

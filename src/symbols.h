@@ -10,12 +10,7 @@
 // scan (see scan.h) the first time one is used.
 // open documents are indexed again from their buffer whenever they changed, and a name
 // that is not found first indexes again the files that changed on disk.
-#include "strbuf.h"
-#include "workspace.h"
-
-// the commands act on workspace and report to message.
-void
-SymbolsInit(Workspace *workspace, StrBuf *message);
+#include "types.h"
 
 // opens a picker of the current buffer's symbols in the order they are defined, and goes
 // to the name picked.

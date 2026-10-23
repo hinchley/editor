@@ -5,13 +5,7 @@
 // diagnostic on the cursor's line (alt+y), and formatting the buffer (ctrl+shift+i).
 // the changes go into each file's buffer as one undo step, opening the files that are not
 // open, and nothing is saved.
-#include "strbuf.h"
 #include "types.h"
-#include "workspace.h"
-
-// the commands act on workspace and report to message.
-void
-RefactorInit(Workspace *workspace, StrBuf *message);
 
 // asks for a new name for the symbol at the cursor, starting from its name, and renames it.
 void

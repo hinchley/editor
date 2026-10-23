@@ -5,13 +5,7 @@
 // the language server commands (definitions, references) and the list of diagnostics
 // use it.
 #include "buffer.h"
-#include "strbuf.h"
 #include "types.h"
-#include "workspace.h"
-
-// the places go to entries of workspace, and report to message.
-void
-PlacesInit(Workspace *workspace, StrBuf *message);
 
 // starts a new list, dropping the last one.
 void

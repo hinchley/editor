@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app.h"
 #include "filter.h"
 #include "jump.h"
 #include "memory.h"
@@ -40,9 +41,6 @@ typedef struct Hit {
   u64 shownLength;
 } Hit;
 
-static Workspace *workspace;
-static StrBuf *message;
-
 // the pattern waiting for its scope, and the pattern and scope of the last search.
 static Pattern asked;
 static Pattern pattern;
@@ -74,13 +72,6 @@ static u64 openedLine;
 static u64 *chosen;
 static u64 chosenCount;
 static StrBuf replacement;
-
-void
-ProjectInit(Workspace *newWorkspace, StrBuf *newMessage)
-{
-  workspace = newWorkspace;
-  message = newMessage;
-}
 
 static const char *
 TextOf(const StrBuf *text)

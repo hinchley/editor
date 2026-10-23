@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app.h"
 #include "changes.h"
 #include "file.h"
 #include "jump.h"
@@ -23,8 +24,6 @@ static constexpr char invalidSymbol[] = "�";
 // marks a changed row, as the gutter does.
 static constexpr char markSymbol[] = "▎";
 
-static Workspace *workspace;
-static StrBuf *message;
 static bool panelOpen;
 
 // a change in a file that differs from the last commit: its entry, the line it is marked
@@ -44,13 +43,6 @@ static u64 changedCapacity;
 static u64 changedFiles;
 static u64 scannedCount;
 static u64 trackedCount;
-
-void
-ReviewInit(Workspace *newWorkspace, StrBuf *newMessage)
-{
-  workspace = newWorkspace;
-  message = newMessage;
-}
 
 static void
 DescribeCounts(const ChangeCounts *counts, StrBuf *text)

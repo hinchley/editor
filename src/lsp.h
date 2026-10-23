@@ -76,9 +76,10 @@ typedef void (*LspActionsDone)(
 // the most descriptors LspPollFds fills.
 static constexpr u32 lspMaxPollFds = 16;
 
-// reports what the servers have to say (failures, error messages) to message.
+// notes the folder the editor started in.
+// what the servers have to say (failures, error messages) goes to the message bar.
 void
-LspInit(StrBuf *message);
+LspInit(void);
 
 // whether servers are on, which LspOpen needs.
 bool

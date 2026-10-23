@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 
+#include "app.h"
 #include "edit.h"
 #include "memory.h"
 #include "picker.h"
@@ -31,9 +32,6 @@ enum PartState {
   PartStateUndone
 };
 
-static Workspace *workspace;
-static StrBuf *message;
-
 // the last change: what it was, and its parts.
 static StrBuf what;
 static Part *parts;
@@ -51,13 +49,6 @@ static u64 editingBefore;
 // records in it.
 static BufferChange *changes;
 static u64 changeCapacity;
-
-void
-MultifileInit(Workspace *newWorkspace, StrBuf *newMessage)
-{
-  workspace = newWorkspace;
-  message = newMessage;
-}
 
 void
 MultifileBegin(const char *newWhat)

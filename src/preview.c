@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app.h"
 #include "file.h"
 #include "layout.h"
 #include "memory.h"
@@ -23,14 +24,7 @@ typedef struct Lines {
   u64 capacity;
 } Lines;
 
-static Workspace *workspace;
 static Lines lines = {.entry = noEntry};
-
-void
-PreviewInit(Workspace *newWorkspace)
-{
-  workspace = newWorkspace;
-}
 
 static const char *
 TextOf(const StrBuf *text)

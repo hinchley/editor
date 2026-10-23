@@ -1,5 +1,6 @@
 #include "places.h"
 
+#include "app.h"
 #include "jump.h"
 #include "memory.h"
 #include "move.h"
@@ -11,19 +12,9 @@ typedef struct Place {
   Range range;
 } Place;
 
-static Workspace *workspace;
-static StrBuf *message;
-
 static Place *places;
 static u64 placeCount;
 static u64 placeCapacity;
-
-void
-PlacesInit(Workspace *newWorkspace, StrBuf *newMessage)
-{
-  workspace = newWorkspace;
-  message = newMessage;
-}
 
 void
 PlacesBegin(void)

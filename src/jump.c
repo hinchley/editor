@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "app.h"
 #include "move.h"
 #include "settings.h"
 
@@ -10,22 +11,12 @@ typedef struct Place {
   Position position;
 } Place;
 
-static Workspace *workspace;
-static StrBuf *message;
-
 // the places, oldest first, and where in them the cursor is: at count when it is past
 // the newest (nothing was gone back over), or at the place it went back or forward to.
 // going back from past the newest adds the cursor's place, which may take one more slot.
 static Place places[jumpHistorySize + 1];
 static u32 count;
 static u32 at;
-
-void
-JumpInit(Workspace *newWorkspace, StrBuf *newMessage)
-{
-  workspace = newWorkspace;
-  message = newMessage;
-}
 
 static Place
 Here(void)

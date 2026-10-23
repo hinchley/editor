@@ -4,13 +4,7 @@
 // stepping through those of the current buffer (ctrl+shift+] and ctrl+shift+[), a panel
 // beside it showing in full the ones on the cursor's line (alt+k), and a picker of every
 // one in the open buffers (alt+shift+k).
-#include "strbuf.h"
 #include "types.h"
-#include "workspace.h"
-
-// the commands act on workspace and report to message.
-void
-IssuesInit(Workspace *workspace, StrBuf *message);
 
 // goes to the start of the next diagnostic after the cursor, or (backward) the closest one
 // before it, wrapping around the buffer, and says what it is.

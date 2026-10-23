@@ -10,13 +10,7 @@
 // the list is kept until escape in the list or a replace clears it, a new search replaces
 // it or a folder replaces every buffer.
 #include "pattern.h"
-#include "strbuf.h"
 #include "types.h"
-#include "workspace.h"
-
-// the commands act on workspace and report to message.
-void
-ProjectInit(Workspace *workspace, StrBuf *message);
 
 // asks which files to search for pattern, starting with the last scope, then starts the
 // search.

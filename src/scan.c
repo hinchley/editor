@@ -3,14 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app.h"
 #include "memory.h"
 #include "term.h"
 
 // how long a scan runs before the window is drawn again, in milliseconds.
 static constexpr i64 sliceTime = 20;
-
-static Workspace *workspace;
-static StrBuf *message;
 
 // the scan in progress: the entries to go through and the next one.
 static bool busy;
@@ -23,13 +21,6 @@ static void *clientContext;
 
 // a file read from disk, reused from one entry to the next.
 static StrBuf readText;
-
-void
-ScanInit(Workspace *newWorkspace, StrBuf *newMessage)
-{
-  workspace = newWorkspace;
-  message = newMessage;
-}
 
 void
 ScanStart(const u64 *indexes, u64 count, const ScanClient *newClient, void *context)

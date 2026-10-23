@@ -3,15 +3,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app.h"
 #include "lsp.h"
 #include "memory.h"
 #include "move.h"
 #include "multifile.h"
 #include "picker.h"
 #include "prompt.h"
-
-static Workspace *workspace;
-static StrBuf *message;
 
 // the question waiting for an answer, and where the cursor was when it was asked.
 static struct {
@@ -34,13 +32,6 @@ static u32 fixCount;
 static LspEdit *fixEdits;
 static u32 fixEditCount;
 static StrBuf fixStrings;
-
-void
-RefactorInit(Workspace *newWorkspace, StrBuf *newMessage)
-{
-  workspace = newWorkspace;
-  message = newMessage;
-}
 
 static Document *
 Current(void)

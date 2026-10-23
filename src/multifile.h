@@ -6,13 +6,7 @@
 // remembered: alt+shift+z lists the places it changed, with a preview, and in that list
 // ctrl+z undoes it in every file at once and ctrl+y redoes it.
 #include "document.h"
-#include "strbuf.h"
 #include "types.h"
-#include "workspace.h"
-
-// the changes go to entries of workspace, and the commands report to message.
-void
-MultifileInit(Workspace *workspace, StrBuf *message);
 
 // starts a change across files, named by what ("rename", "replace"), which takes the
 // place of the last one once it changes a file.

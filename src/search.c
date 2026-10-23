@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <string.h>
 
+#include "app.h"
 #include "move.h"
 #include "prompt.h"
 #include "settings.h"
@@ -44,9 +45,6 @@ typedef struct Replacing {
   u64 decided;
   u64 replaced;
 } Replacing;
-
-static Workspace *workspace;
-static StrBuf *message;
 
 // the last search, and whether a new one always matches case (ctrl+t) and is a regular
 // expression (ctrl+r), for the whole session.
@@ -111,13 +109,6 @@ HistoryAdd(History *history, const char *text, u64 length)
   StrBufClear(&first);
   StrBufAppend(&first, text, length);
   history->entries[0] = first;
-}
-
-void
-SearchInit(Workspace *newWorkspace, StrBuf *newMessage)
-{
-  workspace = newWorkspace;
-  message = newMessage;
 }
 
 static Document *

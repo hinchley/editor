@@ -8,13 +8,7 @@
 // text changed or another buffer was made current is dropped.
 // without a server to answer, or when it knows no definition or signature, the first two
 // fall back on the symbol index (see symbols.h).
-#include "strbuf.h"
 #include "types.h"
-#include "workspace.h"
-
-// the commands act on workspace and report to message.
-void
-LookupInit(Workspace *workspace, StrBuf *message);
 
 // goes to the definition of the symbol at the cursor: straight there when there is one,
 // or through a picker of places.

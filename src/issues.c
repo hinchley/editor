@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app.h"
 #include "diagnostics.h"
 #include "jump.h"
 #include "layout.h"
@@ -14,8 +15,6 @@
 #include "term.h"
 #include "theme.h"
 
-static Workspace *workspace;
-static StrBuf *message;
 static bool panelOpen;
 
 // what the panel shows of the symbol at the cursor: where the cursor was when it last
@@ -30,13 +29,6 @@ static struct {
   LspRequest request;
   StrBuf text;
 } hover;
-
-void
-IssuesInit(Workspace *newWorkspace, StrBuf *newMessage)
-{
-  workspace = newWorkspace;
-  message = newMessage;
-}
 
 // the length of the first line of text.
 static u64

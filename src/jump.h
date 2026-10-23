@@ -6,12 +6,7 @@
 // places are kept by entry serial and position, and do not follow edits: a position is
 // moved inside the text when it is used, and a place in a closed buffer is skipped.
 // recording a jump after going back drops the places ahead, as undo drops redo.
-#include "strbuf.h"
-#include "workspace.h"
-
-// the commands act on workspace and report to message.
-void
-JumpInit(Workspace *workspace, StrBuf *message);
+#include "types.h"
 
 // records the current place, as a command is about to jump away from it.
 void

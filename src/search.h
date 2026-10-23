@@ -9,11 +9,6 @@
 #include "key.h"
 #include "match.h"
 #include "strbuf.h"
-#include "workspace.h"
-
-// the commands act on the workspace's current document and report to message.
-void
-SearchInit(Workspace *workspace, StrBuf *message);
 
 // incremental find: each change to the typed text shows the first match from the cursor.
 // up and down (or ctrl+p and ctrl+n) step between matches, ctrl+t toggles matching case

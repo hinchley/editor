@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app.h"
 #include "file.h"
 #include "jump.h"
 #include "layout.h"
@@ -13,9 +14,6 @@
 #include "places.h"
 #include "symbols.h"
 
-static Workspace *workspace;
-static StrBuf *message;
-
 // the question waiting for an answer, and where the cursor was when it was asked, so an
 // answer that comes after the cursor moved or the text changed is dropped.
 static struct {
@@ -25,13 +23,6 @@ static struct {
   Position head;
   i32 width;
 } asked;
-
-void
-LookupInit(Workspace *newWorkspace, StrBuf *newMessage)
-{
-  workspace = newWorkspace;
-  message = newMessage;
-}
 
 static Document *
 Current(void)

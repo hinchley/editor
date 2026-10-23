@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "app.h"
 #include "file.h"
 #include "json.h"
 #include "memory.h"
@@ -85,7 +86,6 @@ struct LspDocument {
   Diagnostics diagnostics;
 };
 
-static StrBuf *message;
 static bool enabled = languageServersDefault;
 
 // the folder the editor started in, the root of a file with no root marker above it.
@@ -133,9 +133,8 @@ static u32 documentCount;
 static u32 documentCapacity;
 
 void
-LspInit(StrBuf *messageBar)
+LspInit(void)
 {
-  message = messageBar;
   char *folder = getcwd(nullptr, 0);
   StrBufAppendString(&startFolder, folder ? folder : "/");
   free(folder);
