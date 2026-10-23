@@ -782,6 +782,10 @@ TransformComponent(const Jpeg *jpeg, Component *component)
       TransformBlock(component->coefficients + index * 64, quant, out, stride);
     }
   }
+
+  // the image is held as coefficients, samples and pixels at once otherwise.
+  free(component->coefficients);
+  component->coefficients = nullptr;
 }
 
 // a component's samples for row y of the image: its own row at full resolution, or else

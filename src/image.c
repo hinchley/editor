@@ -1,5 +1,6 @@
 #include "image.h"
 
+#include <malloc.h>
 #include <stdlib.h>
 
 #include "bmp.h"
@@ -72,6 +73,10 @@ ImageOpen(const char *path, FileStamp *stamp, StrBuf *message)
   }
 
   StrBufFree(&bytes);
+
+  // a decoder frees large buffers as it goes, which makes glibc keep later ones in the heap
+  // rather than hand them back when freed.
+  malloc_trim(0);
   return image;
 }
 
