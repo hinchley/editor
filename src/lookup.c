@@ -18,9 +18,7 @@
 // answer that comes after the cursor moved or the text changed is dropped.
 static struct {
   LspRequest request;
-  u64 serial;
-  u64 revision;
-  Position head;
+  WorkspaceSpot at;
   i32 width;
 } asked;
 
@@ -42,9 +40,7 @@ Asking(LspRequest request)
 {
   LspCancel(asked.request);
   asked.request = request;
-  asked.serial = workspace->entries[workspace->current].serial;
-  asked.revision = Current()->buffer.revision;
-  asked.head = Head();
+  asked.at = WorkspaceSpotNow(workspace);
 }
 
 // true when the answer to the question still applies, which ends the wait for it.
@@ -52,9 +48,7 @@ static bool
 Answered(void)
 {
   asked.request = 0;
-  bool same = workspace->entries[workspace->current].serial == asked.serial;
-  return same && Current()->buffer.revision == asked.revision &&
-    PositionCompare(Head(), asked.head) == 0;
+  return WorkspaceSpotSame(workspace, asked.at, true);
 }
 
 // the serial of the entry of a server's path, loading it when it is not loaded, or
@@ -296,7 +290,7 @@ ReferencesDone(
     references[found++] = (Reference){serial, locations[index].range, path};
   }
 
-  currentSerial = asked.serial;
+  currentSerial = asked.at.serial;
   qsort(references, found, sizeof(Reference), CompareReferences);
 
   // the picker starts on the reference at the cursor.
@@ -311,9 +305,9 @@ ReferencesDone(
     const Reference *reference = &references[index];
     if (!index || reference->serial != references[index - 1].serial) files++;
 
-    bool atCursor = reference->serial == asked.serial &&
-      PositionCompare(reference->range.start, asked.head) <= 0 &&
-      PositionCompare(asked.head, reference->range.end) <= 0;
+    bool atCursor = reference->serial == asked.at.serial &&
+      PositionCompare(reference->range.start, asked.at.head) <= 0 &&
+      PositionCompare(asked.at.head, reference->range.end) <= 0;
     if (atCursor) selected = index;
 
     StrBufClear(&item);
@@ -325,12 +319,12 @@ ReferencesDone(
 
   // the name the references are to, as the cursor's line has it.
   StrBuf title = {};
-  const StrBuf *line = BufferLine(&Current()->buffer, asked.head.line);
+  const StrBuf *line = BufferLine(&Current()->buffer, asked.at.head.line);
   u64 start;
   u64 end;
   StrBufAppendFormat(&title, "%u reference%s", found, StrBufPlural(found));
 
-  if (MoveWordAround(line, asked.head.byte, &start, &end)) {
+  if (MoveWordAround(line, asked.at.head.byte, &start, &end)) {
     StrBufAppendFormat(&title, " to %.*s", (int)(end - start), line->data + start);
   }
 

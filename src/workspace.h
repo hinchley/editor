@@ -195,6 +195,23 @@ WorkspaceOtherView(const Workspace *workspace);
 Document *
 WorkspaceDocument(const Workspace *workspace);
 
+// where a question about the current entry was asked: its serial, its text's revision and
+// its primary cursor's head, so an answer that comes later can tell whether it still
+// applies.
+typedef struct WorkspaceSpot {
+  u64 serial;
+  u64 revision;
+  Position head;
+} WorkspaceSpot;
+
+WorkspaceSpot
+WorkspaceSpotNow(const Workspace *workspace);
+
+// true when the current entry is still spot's and its text unchanged, and, when cursor
+// is set, its primary cursor's head has not moved.
+bool
+WorkspaceSpotSame(const Workspace *workspace, WorkspaceSpot spot, bool cursor);
+
 // an entry's path, empty for an unnamed buffer.
 const StrBuf *
 WorkspacePath(const Workspace *workspace, u64 index);

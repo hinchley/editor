@@ -389,6 +389,25 @@ WorkspaceDocument(const Workspace *workspace)
   return workspace->entries[workspace->current].document;
 }
 
+WorkspaceSpot
+WorkspaceSpotNow(const Workspace *workspace)
+{
+  const Document *document = WorkspaceDocument(workspace);
+  return (WorkspaceSpot){
+    .serial = workspace->entries[workspace->current].serial,
+    .revision = document->buffer.revision,
+    .head = CursorSetPrimary(&document->view->cursors)->head
+  };
+}
+
+bool
+WorkspaceSpotSame(const Workspace *workspace, WorkspaceSpot spot, bool cursor)
+{
+  WorkspaceSpot now = WorkspaceSpotNow(workspace);
+  if (now.serial != spot.serial || now.revision != spot.revision) return false;
+  return !cursor || PositionCompare(now.head, spot.head) == 0;
+}
+
 const StrBuf *
 WorkspacePath(const Workspace *workspace, u64 index)
 {

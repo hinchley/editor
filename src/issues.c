@@ -21,9 +21,7 @@ static bool panelOpen;
 // moved (or the text changed), when that was, whether the server was asked, and its
 // answer.
 static struct {
-  u64 serial;
-  u64 revision;
-  Position head;
+  WorkspaceSpot at;
   i64 since;
   bool asked;
   LspRequest request;
@@ -140,23 +138,16 @@ IssuesTick(void)
     return;
   }
 
-  Document *document = WorkspaceDocument(workspace);
-  Position head = CursorSetPrimary(&document->view->cursors)->head;
-  u64 serial = workspace->entries[workspace->current].serial;
-  bool moved = serial != hover.serial || document->buffer.revision != hover.revision ||
-    PositionCompare(head, hover.head) != 0;
-
-  if (moved) {
-    hover.serial = serial;
-    hover.revision = document->buffer.revision;
-    hover.head = head;
+  if (!WorkspaceSpotSame(workspace, hover.at, true)) {
+    hover.at = WorkspaceSpotNow(workspace);
     ForgetHover();
   }
 
   if (hover.asked || TermNow() - hover.since < hoverDelay) return;
 
   hover.asked = true;
-  hover.request = LspHover(document->lsp, head, true, HoverDone, nullptr);
+  LspDocument *lsp = WorkspaceDocument(workspace)->lsp;
+  hover.request = LspHover(lsp, hover.at.head, true, HoverDone, nullptr);
 }
 
 i32

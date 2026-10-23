@@ -14,9 +14,7 @@
 // the question waiting for an answer, and where the cursor was when it was asked.
 static struct {
   LspRequest request;
-  u64 serial;
-  u64 revision;
-  Position head;
+  WorkspaceSpot at;
 } asked;
 
 // the fixes offered, kept while the picker of them shows: their titles and changes, with
@@ -51,9 +49,7 @@ Asking(LspRequest request)
 {
   LspCancel(asked.request);
   asked.request = request;
-  asked.serial = workspace->entries[workspace->current].serial;
-  asked.revision = Current()->buffer.revision;
-  asked.head = Head();
+  asked.at = WorkspaceSpotNow(workspace);
 }
 
 // true when the buffer asked about is still current and unchanged (and, when cursor
@@ -62,9 +58,7 @@ static bool
 Answered(bool cursor)
 {
   asked.request = 0;
-  bool same = workspace->entries[workspace->current].serial == asked.serial &&
-    Current()->buffer.revision == asked.revision;
-  return same && (!cursor || PositionCompare(Head(), asked.head) == 0);
+  return WorkspaceSpotSame(workspace, asked.at, cursor);
 }
 
 // the order changes are made in: by file, and in a file from the last up (so the ranges
@@ -351,7 +345,7 @@ Fixed([[maybe_unused]] void *context, const LspAction *actions, u32 count, bool 
   if (first == count) first = 0;
 
   StrBuf title = {};
-  StrBufAppendFormat(&title, "%u fixes for line %lu", count, asked.head.line + 1);
+  StrBufAppendFormat(&title, "%u fixes for line %lu", count, asked.at.head.line + 1);
   PickerOpen(title.data, "fix: ", FixPicked, nullptr);
   PickerSelect(first);
   StrBufFree(&title);
