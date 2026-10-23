@@ -1,6 +1,7 @@
 #include "highlight.h"
 
 #include <dlfcn.h>
+#include <malloc.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -407,6 +408,10 @@ ForgetTrees(Highlight *highlight)
 
   highlight->layerCount = 0;
   InvalidateWindows(highlight);
+
+  // glibc keeps freed memory for the process, and a large tree or abandoned parse leaves
+  // tens of megabytes of it.
+  malloc_trim(0);
 }
 
 // where a byte and its point end up after an edit, as BufferAdjust moves positions.
