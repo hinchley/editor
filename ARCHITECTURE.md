@@ -610,25 +610,25 @@ A fix that is only a command for the server to run is not offered, since `worksp
 
 Measured in October 2026, as the review's fixes landed, on the release build on an idle 20-core x64 machine, in a 200×50 foot window, from the key to the end of the frame, as medians, with `.review/tools/bench.py`:
 
-| case | figure |
-| --- | --- |
-| typing in a 1,400-line C file | 2.5 ms a key; 0.9 ms with no grammar |
-| typing in a 34,000-line C file (1 MB) | 9 ms a key, mostly tree-sitter's incremental parse |
-| typing in a git-tracked 10,000-line C file | 8.5 ms a key, the same as untracked, since the marks wait 150 ms |
-| 100 MB file, 1.79 million lines | loads in 0.2 s; moving, typing and paging 1 ms, Enter 2.5 ms, undo 7 ms |
-| indenting every line of it | 0.3 s, undone in 0.11 s, adding 210 MB |
-| find on it, after the pattern stops matching | 1 ms a key (a full search is 0.1 s) |
-| regex search of it matching nothing | 1.1 s for `\d{3}x`, 2.9 s for `\w+@` |
-| 17 MB single line | 17 ms a key without wrap, End 19 ms; 75 ms with wrap after an edit |
-| 3 MB Markdown file | opens in 1.1 s using 320 MB; typing 0.9 ms a key |
-| 100,000 files | to the picker in 75 ms using 60 MB; filtering 3 ms a key |
-| 1,000 cursors / 10,000 cursors | an edit takes 4–22 ms / 0.2 s |
-| diff of a 15 MB file with its commit | 25 ms with one change, 85 ms with 330 |
-| reading a file from a pack | 3 ms for a source file, 40 ms for a 4–17 MB `parser.c` (before inflate's lookup table) |
-| 12 MP JPEG | 0.5 s, peaking at 85 MB |
-| 3000×2000 16-bit PNG / 12 MP noise PNG | 0.5 s / 1.2 s, the latter peaking at 210 MB |
-| indexing the symbols of `src/` | 0.5 s, resolving all 3,872 calls |
-| binary / default packages | 0.8 MB / 8.1 MB |
+| case                                         | figure                                                                                 |
+| -------------------------------------------- | -------------------------------------------------------------------------------------- |
+| typing in a 1,400-line C file                | 2.5 ms a key; 0.9 ms with no grammar                                                   |
+| typing in a 34,000-line C file (1 MB)        | 9 ms a key, mostly tree-sitter's incremental parse                                     |
+| typing in a git-tracked 10,000-line C file   | 8.5 ms a key, the same as untracked, since the marks wait 150 ms                       |
+| 100 MB file, 1.79 million lines              | loads in 0.2 s; moving, typing and paging 1 ms, Enter 2.5 ms, undo 7 ms                |
+| indenting every line of it                   | 0.3 s, undone in 0.11 s, adding 210 MB                                                 |
+| find on it, after the pattern stops matching | 1 ms a key (a full search is 0.1 s)                                                    |
+| regex search of it matching nothing          | 1.1 s for `\d{3}x`, 2.9 s for `\w+@`                                                   |
+| 17 MB single line                            | 17 ms a key without wrap, End 19 ms; 75 ms with wrap after an edit                     |
+| 3 MB Markdown file                           | opens in 1.1 s using 320 MB; typing 0.9 ms a key                                       |
+| 100,000 files                                | to the picker in 75 ms using 60 MB; filtering 3 ms a key                               |
+| 1,000 cursors / 10,000 cursors               | an edit takes 4–22 ms / 0.2 s                                                          |
+| diff of a 15 MB file with its commit         | 25 ms with one change, 85 ms with 330                                                  |
+| reading a file from a pack                   | 3 ms for a source file, 40 ms for a 4–17 MB `parser.c` (before inflate's lookup table) |
+| 12 MP JPEG                                   | 0.5 s, peaking at 85 MB                                                                |
+| 3000×2000 16-bit PNG / 12 MP noise PNG       | 0.5 s / 1.2 s, the latter peaking at 210 MB                                            |
+| indexing the symbols of `src/`               | 0.5 s, resolving all 3,872 calls                                                       |
+| binary / default packages                    | 0.8 MB / 8.1 MB                                                                        |
 
 Diagnostics on every visible row and a running clangd add nothing measurable to a keystroke.
 
@@ -654,22 +654,22 @@ Reading all fourteen `language` files at startup takes well under a millisecond.
 
 The vendored versions:
 
-| Component | Source | Version | ABI |
-| --- | --- | --- | --- |
-| tree-sitter runtime | github.com/tree-sitter/tree-sitter | v0.27.1 | 13 to 15 |
-| C | github.com/tree-sitter/tree-sitter-c | v0.24.2 | 15 |
-| HTML | github.com/tree-sitter/tree-sitter-html | v0.23.2 | 14 |
-| CSS | github.com/tree-sitter/tree-sitter-css | v0.25.0 | 15 |
-| JSON | github.com/tree-sitter/tree-sitter-json | v0.24.8 | 14 |
-| JavaScript | github.com/tree-sitter/tree-sitter-javascript | v0.25.0 | 15 |
-| Markdown (block and inline) | github.com/tree-sitter-grammars/tree-sitter-markdown | v0.5.3 | 15 |
-| Bash | github.com/tree-sitter/tree-sitter-bash | v0.25.1 | 15 |
-| Go | github.com/tree-sitter/tree-sitter-go | v0.25.0 | 15 |
-| PHP (the `php` grammar, which embeds HTML) | github.com/tree-sitter/tree-sitter-php | v0.25.1 | 15 |
-| SQL | github.com/DerekStride/tree-sitter-sql, from the npm package `@derekstride/tree-sitter-sql` | v0.3.11 | 14 |
-| XML (without DTD) | github.com/tree-sitter-grammars/tree-sitter-xml | v0.7.0 | 14 |
-| YAML (core schema) | github.com/tree-sitter-grammars/tree-sitter-yaml | v0.7.2 | 14 |
-| Zig | github.com/tree-sitter-grammars/tree-sitter-zig | v1.1.2 | 14 |
+| Component                                  | Source                                                                                      | Version | ABI      |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------- | ------- | -------- |
+| tree-sitter runtime                        | github.com/tree-sitter/tree-sitter                                                          | v0.27.1 | 13 to 15 |
+| C                                          | github.com/tree-sitter/tree-sitter-c                                                        | v0.24.2 | 15       |
+| HTML                                       | github.com/tree-sitter/tree-sitter-html                                                     | v0.23.2 | 14       |
+| CSS                                        | github.com/tree-sitter/tree-sitter-css                                                      | v0.25.0 | 15       |
+| JSON                                       | github.com/tree-sitter/tree-sitter-json                                                     | v0.24.8 | 14       |
+| JavaScript                                 | github.com/tree-sitter/tree-sitter-javascript                                               | v0.25.0 | 15       |
+| Markdown (block and inline)                | github.com/tree-sitter-grammars/tree-sitter-markdown                                        | v0.5.3  | 15       |
+| Bash                                       | github.com/tree-sitter/tree-sitter-bash                                                     | v0.25.1 | 15       |
+| Go                                         | github.com/tree-sitter/tree-sitter-go                                                       | v0.25.0 | 15       |
+| PHP (the `php` grammar, which embeds HTML) | github.com/tree-sitter/tree-sitter-php                                                      | v0.25.1 | 15       |
+| SQL                                        | github.com/DerekStride/tree-sitter-sql, from the npm package `@derekstride/tree-sitter-sql` | v0.3.11 | 14       |
+| XML (without DTD)                          | github.com/tree-sitter-grammars/tree-sitter-xml                                             | v0.7.0  | 14       |
+| YAML (core schema)                         | github.com/tree-sitter-grammars/tree-sitter-yaml                                            | v0.7.2  | 14       |
+| Zig                                        | github.com/tree-sitter-grammars/tree-sitter-zig                                             | v1.1.2  | 14       |
 
 Two scanners are patched, the one exception to leaving vendored code as upstream wrote it.
 Their `serialize` functions wrote past tree-sitter's 1024-byte state buffer: Markdown's copied every open block (4 bytes each) with no bound, and YAML's loop allowed 2 bytes past the end.

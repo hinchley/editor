@@ -14,26 +14,26 @@ Ctrl-H lists every key and runs the one picked, Alt-H practises them, and Ctrl-Q
 
 ## The keys used most
 
-| Key | Action |
-| --- | --- |
-| Ctrl-S / Ctrl-Shift-S | save the buffer / save every buffer |
-| Ctrl-Q | quit, offering to save |
-| Ctrl-Z / Ctrl-Y | undo / redo |
-| Ctrl-C / Ctrl-X / Ctrl-V | copy / cut / paste (the line, with no selection) |
-| Ctrl-F | search as you type |
-| Alt-N / Alt-P | next / previous match |
-| Ctrl-R | search and replace |
-| Ctrl-Shift-F | search every loaded file |
-| Ctrl-P | pick a buffer |
-| Ctrl-O | open a file or folder |
-| Ctrl-E | select the word, then add a cursor at its next occurrence |
-| Ctrl-/ | comment or uncomment the lines |
-| Ctrl-D / Ctrl-K | duplicate / delete the lines |
-| Alt-[ / Alt-] | back / forward through jumps |
-| Alt-D | go to the definition of the name at the cursor |
-| Ctrl-L | go to a line |
-| Esc | one cursor, then no selection, then no highlights |
-| Ctrl-H | every key, filterable |
+| Key                      | Action                                                    |
+| ------------------------ | --------------------------------------------------------- |
+| Ctrl-S / Ctrl-Shift-S    | save the buffer / save every buffer                       |
+| Ctrl-Q                   | quit, offering to save                                    |
+| Ctrl-Z / Ctrl-Y          | undo / redo                                               |
+| Ctrl-C / Ctrl-X / Ctrl-V | copy / cut / paste (the line, with no selection)          |
+| Ctrl-F                   | search as you type                                        |
+| Alt-N / Alt-P            | next / previous match                                     |
+| Ctrl-R                   | search and replace                                        |
+| Ctrl-Shift-F             | search every loaded file                                  |
+| Ctrl-P                   | pick a buffer                                             |
+| Ctrl-O                   | open a file or folder                                     |
+| Ctrl-E                   | select the word, then add a cursor at its next occurrence |
+| Ctrl-/                   | comment or uncomment the lines                            |
+| Ctrl-D / Ctrl-K          | duplicate / delete the lines                              |
+| Alt-[ / Alt-]            | back / forward through jumps                              |
+| Alt-D                    | go to the definition of the name at the cursor            |
+| Ctrl-L                   | go to a line                                              |
+| Esc                      | one cursor, then no selection, then no highlights         |
+| Ctrl-H                   | every key, filterable                                     |
 
 ## Build
 
@@ -219,19 +219,19 @@ Patterns are literal unless regular expressions are on.
 `^` at the start and `$` at the end tie them to a line's ends, and `\t`, `\r`, `\\`, `\^` and `\$` stand for those characters; `\n` is a line break in a replacement, but a match never crosses lines.
 Regular expressions find the leftmost match, preferring alternatives and repetitions as Perl does, and a match is never empty:
 
-| Syntax | Matches |
-| --- | --- |
-| `.` | any character (one code point) |
-| `[abc]` `[a-z]` `[^...]` | one character from the set, or not in it; `\d`, `\w` and `\s` work inside |
-| `\d` `\w` `\s` | a digit `0`-`9`; a word character (letter, digit, `_` or any non-ASCII character); a blank |
-| `\D` `\W` `\S` | anything else |
-| `^` `$` | the start and end of the line |
-| `\b` `\B` | a word boundary, and anywhere else |
-| `*` `+` `?` | 0 or more, 1 or more, 0 or 1 (as many as possible; add `?` for as few as possible) |
-| `{m}` `{m,}` `{,n}` `{m,n}` | m, at least m, at most n, m to n times (at most 1000; `?` after makes it lazy) |
-| `(...)` `(?:...)` | a group, captured for the replacement, or not |
-| `a\|b` | either |
-| `\t` `\r` `\n` `\f` `\v` | control characters; `\` before any punctuation matches it literally |
+| Syntax                      | Matches                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------ |
+| `.`                         | any character (one code point)                                                             |
+| `[abc]` `[a-z]` `[^...]`    | one character from the set, or not in it; `\d`, `\w` and `\s` work inside                  |
+| `\d` `\w` `\s`              | a digit `0`-`9`; a word character (letter, digit, `_` or any non-ASCII character); a blank |
+| `\D` `\W` `\S`              | anything else                                                                              |
+| `^` `$`                     | the start and end of the line                                                              |
+| `\b` `\B`                   | a word boundary, and anywhere else                                                         |
+| `*` `+` `?`                 | 0 or more, 1 or more, 0 or 1 (as many as possible; add `?` for as few as possible)         |
+| `{m}` `{m,}` `{,n}` `{m,n}` | m, at least m, at most n, m to n times (at most 1000; `?` after makes it lazy)             |
+| `(...)` `(?:...)`           | a group, captured for the replacement, or not                                              |
+| `a\|b`                      | either                                                                                     |
+| `\t` `\r` `\n` `\f` `\v`    | control characters; `\` before any punctuation matches it literally                        |
 
 Without case matching, sets match either case too.
 There are no backreferences, lookarounds, POSIX classes, Unicode properties or `\x` and `\u` escapes.
@@ -530,23 +530,23 @@ The tables below are generated from the same table in `src/keymap.c` by `tools/b
 Settings are compile-time constants in `src/settings.h`: change one and rebuild.
 Those marked with a key only set how the editor starts, and the key changes them for the session.
 
-| Setting | Default | Key |
-| --- | --- | --- |
-| `tabWidth` | 2 columns | |
-| `expandTabDefault` | indent with spaces | Alt-T |
-| `softWrapDefault` | off | Alt-W |
-| `lineNumbersDefault` | on | Alt-L |
-| `showWhitespaceDefault` | on | Alt-. |
-| `rulerDefault`, `rulerColumnDefault` | off, column 100 | Alt-\, Alt-Shift-\ |
-| `trimTrailingWhitespace` | off (trim on save) | |
-| `languageServersDefault` | on | Alt-V |
-| `scrollOffset` | 4 rows and columns | |
-| `wheelRows` | 3 | |
-| `cursorStyle`, `cursorBlink` | a blinking line | |
-| `maxFileSize` | 100 MB | |
-| `maxFileCount` | 100,000 files | |
-| `maxHighlightSize`, `maxDiffSize`, `maxServerFileSize` | 16 MB | |
-| `recoverDelay` | 2 s | |
+| Setting                                                | Default            | Key                |
+| ------------------------------------------------------ | ------------------ | ------------------ |
+| `tabWidth`                                             | 2 columns          |                    |
+| `expandTabDefault`                                     | indent with spaces | Alt-T              |
+| `softWrapDefault`                                      | off                | Alt-W              |
+| `lineNumbersDefault`                                   | on                 | Alt-L              |
+| `showWhitespaceDefault`                                | on                 | Alt-.              |
+| `rulerDefault`, `rulerColumnDefault`                   | off, column 100    | Alt-\, Alt-Shift-\ |
+| `trimTrailingWhitespace`                               | off (trim on save) |                    |
+| `languageServersDefault`                               | on                 | Alt-V              |
+| `scrollOffset`                                         | 4 rows and columns |                    |
+| `wheelRows`                                            | 3                  |                    |
+| `cursorStyle`, `cursorBlink`                           | a blinking line    |                    |
+| `maxFileSize`                                          | 100 MB             |                    |
+| `maxFileCount`                                         | 100,000 files      |                    |
+| `maxHighlightSize`, `maxDiffSize`, `maxServerFileSize` | 16 MB              |                    |
+| `recoverDelay`                                         | 2 s                |                    |
 
 The rest of the file holds the other limits and timings, each with a comment.
 
