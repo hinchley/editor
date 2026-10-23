@@ -201,7 +201,8 @@ Finish([[maybe_unused]] void *context, ScanResult result)
 
   if (!hitCount && !stopped) {
     const char *source = StrBufText(&pattern.source);
-    StrBufAppendFormat(message, "no match for %s in %lu files", source, fileCount);
+    const char *format = "no match for %s in %lu file%s";
+    StrBufAppendFormat(message, format, source, fileCount, StrBufPlural(fileCount));
     if (skipped) StrBufAppendFormat(message, " (%lu skipped)", skipped);
     return;
   }
