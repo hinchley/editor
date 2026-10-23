@@ -51,6 +51,20 @@ IndentLength(const StrBuf *line)
   return length;
 }
 
+// the bytes at the start of a line that one level of dedenting removes: a tab, or the
+// spaces back to the previous tab stop.
+static u64
+DedentLength(const StrBuf *line)
+{
+  if (line->length && line->data[0] == '\t') return 1;
+
+  u64 leading = 0;
+  while (leading < line->length && line->data[leading] == ' ') leading++;
+
+  u64 removed = leading % (u64)tabWidth ? leading % (u64)tabWidth : (u64)tabWidth;
+  return removed < leading ? removed : leading;
+}
+
 // enough spaces for any indentation step, which is at most one tab stop.
 static constexpr char spaces[] = "                ";
 static_assert((u64)tabWidth < sizeof(spaces));
@@ -170,18 +184,39 @@ SurroundAt(const EditContext *edit, u32 index, char opener, char closer)
   cursor->head = forward ? end : start;
 }
 
+// removes a level of indentation from the line of cursor index, before a closing bracket
+// is typed there, when the line holds only blanks and the cursor is at its end.
+static void
+DedentBeforeCloser(const EditContext *edit, u32 index)
+{
+  const Cursor *cursor = &edit->view->cursors.cursors[index];
+  if (CursorHasSelection(cursor)) return;
+
+  Buffer *buffer = edit->view->buffer;
+  Position head = cursor->head;
+  const StrBuf *line = BufferLine(buffer, head.line);
+  if (!head.byte || head.byte != line->length || IndentLength(line) != line->length) return;
+
+  // the cursor is after the removed blanks, so it moves back with the text.
+  Range removed = {{head.line, 0}, {head.line, DedentLength(line)}};
+  BufferReplace(buffer, removed, "", 0);
+}
+
 void
 EditInsert(const EditContext *edit, const char *text, u64 length)
 {
   CursorSet *set = &edit->view->cursors;
   char closer = SurroundCloser(text, length);
   bool surround = closer && CursorSetHasSelection(set);
+  bool closing = length == 1 && text[0] && strchr(")]}", text[0]);
 
   // a bracket or quote typed over a selection wraps it, as a step of its own.
   Begin(edit, surround ? UndoKindOther : UndoKindTyping);
 
   for (u32 index = 0; index < set->count; index++) {
     Cursor *cursor = &set->cursors[index];
+    if (closing) DedentBeforeCloser(edit, index);
+
     if (surround && CursorHasSelection(cursor)) SurroundAt(edit, index, text[0], closer);
     else ReplaceAt(edit, index, CursorRange(cursor), text, length);
   }
@@ -470,14 +505,7 @@ IndentLine(const LineTask *task, const StrBuf *line)
 static LineEdit
 DedentLine([[maybe_unused]] const LineTask *task, const StrBuf *line)
 {
-  if (line->length && line->data[0] == '\t') return (LineEdit){.removed = 1};
-
-  u64 leading = 0;
-  while (leading < line->length && line->data[leading] == ' ') leading++;
-
-  // back to the previous tab stop.
-  u64 removed = leading % (u64)tabWidth ? leading % (u64)tabWidth : (u64)tabWidth;
-  return (LineEdit){.removed = removed < leading ? removed : leading};
+  return (LineEdit){.removed = DedentLength(line)};
 }
 
 void
