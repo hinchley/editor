@@ -455,6 +455,7 @@ NameEntry(const Workspace *workspace, WorkspaceEntry *entry)
   const StrBuf *path = EntryPath(entry);
   StrBufClear(&entry->name);
   entry->generation = workspace->generation;
+  entry->inFolder = false;
 
   if (!path->length) {
     StrBufClear(&entry->real);
@@ -480,6 +481,7 @@ NameEntry(const Workspace *workspace, WorkspaceEntry *entry)
   }
 
   if (holder) {
+    entry->inFolder = true;
     StrBufAppend(&entry->name, holder->name.data, holder->name.length);
     u64 inside = holder->real.length;
     StrBufAppend(&entry->name, real->data + inside, real->length - inside);
@@ -546,14 +548,16 @@ WorkspaceModifiedCount(const Workspace *workspace)
 }
 
 u64
-WorkspaceNextOpen(const Workspace *workspace, i32 step)
+WorkspaceNext(const Workspace *workspace, i32 step)
 {
   u64 count = workspace->count;
   u64 index = workspace->current;
 
   for (u64 tried = 1; tried < count; tried++) {
     index = step > 0 ? (index + 1) % count : (index + count - 1) % count;
-    if (workspace->entries[index].document) return index;
+    const WorkspaceEntry *entry = &workspace->entries[index];
+    if (entry->document) return index;
+    if (!entry->refusal && !Named(workspace, index)->inFolder) return index;
   }
 
   return workspaceNone;

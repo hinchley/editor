@@ -52,6 +52,9 @@ typedef struct WorkspaceEntry {
   StrBuf name;
   StrBuf real;
   u64 generation;
+
+  // the file is inside an open folder, worked out with its name.
+  bool inFolder;
 } WorkspaceEntry;
 
 // an open folder, resolved and without a trailing slash (empty for "/"), and the name its
@@ -218,10 +221,11 @@ WorkspaceModified(const Workspace *workspace, u64 index);
 u64
 WorkspaceModifiedCount(const Workspace *workspace);
 
-// the next open entry after the current one (or before it when step is negative),
-// wrapping around, or workspaceNone when no other entry is open.
+// the next entry after the current one (or before it when step is negative), wrapping
+// around, that is open or was loaded on its own rather than with a folder (and not
+// refused), or workspaceNone when there is no other.
 u64
-WorkspaceNextOpen(const Workspace *workspace, i32 step);
+WorkspaceNext(const Workspace *workspace, i32 step);
 
 // the most recently used entry other than the current one, or workspaceNone.
 u64

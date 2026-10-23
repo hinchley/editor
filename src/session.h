@@ -57,7 +57,8 @@ SessionLoadNew(void);
 void
 SessionCloseFolder(void);
 
-// switches to the next (step 1) or previous (step -1) open buffer in load order.
+// switches to the next (step 1) or previous (step -1) buffer in load order that is open or
+// was loaded on its own, opening it.
 void
 SessionCycle(i32 step);
 
