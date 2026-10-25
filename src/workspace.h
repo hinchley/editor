@@ -1,0 +1,257 @@
+#pragma once
+
+// the buffer list: every loaded file and unnamed buffer, which of them are open, which one
+// is current, and when each was last used.
+// an entry is loaded when it is in the list and open once its document has been read,
+// which happens the first time it is used.
+// documents are allocated one by one, so they never move while the list grows.
+// entries are only ever appended, and removing one keeps the order of the rest, so an
+// entry's index can change but its serial never does.
+// anything outside the workspace that remembers an entry keeps its serial, which simply
+// stops matching once the entry is removed or a folder replaces every entry.
+// the window shows one view, or two side by side when split.
+// each side uses its own slot of every document's views, and the focused view's entry is
+// the current one.
+#include "document.h"
+#include "file.h"
+#include "loader.h"
+#include "strbuf.h"
+#include "types.h"
+#include "view.h"
+
+// why an entry is never opened, found the first time it was tried.
+enum WorkspaceRefusal {
+  WorkspaceRefusalNone,
+  WorkspaceRefusalTooLarge,
+  WorkspaceRefusalBinary
+};
+
+typedef struct WorkspaceEntry {
+  // the display path until the entry is opened; after that its document holds it.
+  StrBuf path;
+
+  // the file the path led to when loaded, or zero for a new or unnamed buffer.
+  FileId id;
+
+  // nullptr until the entry is opened.
+  Document *document;
+  enum WorkspaceRefusal refusal;
+
+  // tells unnamed buffers apart (from 1), or 0 for a named one.
+  u32 unnamed;
+
+  // when the entry was last made current, or 0 when it never was.
+  u64 used;
+
+  // unique for the whole session, and increasing along the list.
+  u64 serial;
+
+  // the name shown for the entry and its path with its folder resolved (empty when that
+  // does not resolve), worked out when the open folders were those of generation, and
+  // again once they change or WorkspaceRenamed clears it (a rename or save as).
+  StrBuf name;
+  StrBuf real;
+  u64 generation;
+
+  // the file is inside an open folder, worked out with its name.
+  bool inFolder;
+} WorkspaceEntry;
+
+// an open folder, resolved and without a trailing slash (empty for "/"), and the name its
+// files are shown under: its last component, or as many as tell it from the other open
+// folders.
+typedef struct WorkspaceFolder {
+  StrBuf real;
+  StrBuf name;
+} WorkspaceFolder;
+
+typedef struct Workspace {
+  WorkspaceEntry *entries;
+  u64 count;
+  u64 capacity;
+
+  // the entry being edited, always open once the workspace has any entry.
+  u64 current;
+  u64 openCount;
+
+  // the slot of the focused view.
+  u32 slot;
+
+  // while split: the entry the other view shows, and the slot of the view on the left.
+  bool split;
+  u64 other;
+  u32 left;
+
+  // the display toggles every document is opened with, and the tick each use of an entry
+  // stamps on it, so the most recently used entry has the highest.
+  const DisplayOptions *options;
+  u64 clock;
+  u32 unnamedCount;
+
+  // the last serial given out, kept when every entry is freed.
+  u64 serials;
+
+  // the open folders, which entry names are worked out from, and how many times they
+  // were set.
+  WorkspaceFolder *folders;
+  u64 folderCount;
+  u64 generation;
+} Workspace;
+
+static constexpr u64 workspaceNone = UINT64_MAX;
+
+void
+WorkspaceInit(Workspace *workspace, const DisplayOptions *options);
+
+// frees every entry and document and leaves an empty workspace.
+// serials go on from where they were, so none is ever given out twice.
+void
+WorkspaceFree(Workspace *workspace);
+
+// adds every file of a list, in order, taking their paths and leaving the list empty.
+// the list is assumed to hold nothing already loaded, as when the workspace is empty.
+void
+WorkspaceAddList(Workspace *workspace, LoaderList *list);
+
+// the entry already loaded for the same file, found by its file id (as the entry last
+// loaded or saved it) or by the same path, or workspaceNone.
+u64
+WorkspaceFind(const Workspace *workspace, const LoaderFile *file);
+
+// adds one file, taking its path, and returns its index.
+u64
+WorkspaceAdd(Workspace *workspace, LoaderFile *file);
+
+// the index of file's entry, adding it when it is not loaded and there is room for it;
+// workspaceNone, after saying so in message, when there is not.
+u64
+WorkspaceLoad(Workspace *workspace, LoaderFile *file, StrBuf *message);
+
+// the index of the entry of the file at path, loading it as ctrl+o does; workspaceNone,
+// after saying why in message, when it cannot be (a folder, or no room).
+u64
+WorkspaceLoadPath(Workspace *workspace, const char *path, StrBuf *message);
+
+// adds an unnamed buffer and returns its index.
+u64
+WorkspaceAddUnnamed(Workspace *workspace);
+
+// the index of the entry with serial, or workspaceNone when it was removed.
+u64
+WorkspaceEntryOf(const Workspace *workspace, u64 serial);
+
+// removes an entry, freeing its document.
+// when the current entry is removed, the most recently used one becomes current, or else
+// a new unnamed buffer, so an entry never read is not opened; when the other side of a
+// split showed it, that side shows its most recently used entry instead.
+// problems opening the replacement are appended to message.
+void
+WorkspaceRemove(Workspace *workspace, u64 index, StrBuf *message);
+
+// removes the entries with serials, given in list order, as WorkspaceRemove does but in
+// one pass; serials that match no entry are skipped.
+void
+WorkspaceRemoveSome(Workspace *workspace, const u64 *serials, u64 count, StrBuf *message);
+
+// records that an open entry's document now names another file, as after a rename or a
+// save as, or none again.
+void
+WorkspaceRenamed(Workspace *workspace, u64 index);
+
+// opens an entry if it is not open yet.
+// returns false, appending the reason to message, when it cannot be opened.
+bool
+WorkspaceOpen(Workspace *workspace, u64 index, StrBuf *message);
+
+// opens an entry and makes it current, shown in the focused view.
+// switching to an entry that was already open checks its file as WorkspaceReloadChanged
+// does.
+// returns false, leaving the current entry alone, when it cannot be opened.
+bool
+WorkspaceSwitch(Workspace *workspace, u64 index, StrBuf *message);
+
+// reloads every open entry whose file changed on disk since it was loaded or saved and that
+// has no unsaved changes, which loses its undo history, and notes in message what was
+// reloaded and which entries with unsaved changes have changed files.
+void
+WorkspaceReloadChanged(Workspace *workspace, StrBuf *message);
+
+// splits the window, showing an entry in a new view on the right that takes focus.
+// returns false, leaving the window alone, when the entry cannot be opened.
+bool
+WorkspaceSplit(Workspace *workspace, u64 index, StrBuf *message);
+
+// moves focus to the other view of the split.
+void
+WorkspaceFocusOther(Workspace *workspace);
+
+// closes the focused view of the split, leaving the other one.
+void
+WorkspaceCloseView(Workspace *workspace);
+
+// the view the unfocused side of the split shows.
+View *
+WorkspaceOtherView(const Workspace *workspace);
+
+// the current entry's document.
+Document *
+WorkspaceDocument(const Workspace *workspace);
+
+// where a question about the current entry was asked: its serial, its text's revision and
+// its primary cursor's head, so an answer that comes later can tell whether it still
+// applies.
+typedef struct WorkspaceSpot {
+  u64 serial;
+  u64 revision;
+  Position head;
+} WorkspaceSpot;
+
+WorkspaceSpot
+WorkspaceSpotNow(const Workspace *workspace);
+
+// true when the current entry is still spot's and its text unchanged, and, when cursor
+// is set, its primary cursor's head has not moved.
+bool
+WorkspaceSpotSame(const Workspace *workspace, WorkspaceSpot spot, bool cursor);
+
+// an entry's path, empty for an unnamed buffer.
+const StrBuf *
+WorkspacePath(const Workspace *workspace, u64 index);
+
+// sets the open folders (paths as given), so a file inside one is named by the folder's
+// name and its path inside it; a folder that does not resolve is left out.
+void
+WorkspaceSetFolders(Workspace *workspace, char *const *paths, u64 count);
+
+// appends an entry's display name: for a file inside an open folder, the folder's name
+// and the path inside it (the deepest folder when they nest), and for any other file its
+// path resolved, with "~" for the home folder; "[unnamed N]" for an unnamed buffer.
+// a file whose folder does not resolve is shown by its path.
+void
+WorkspaceName(const Workspace *workspace, u64 index, StrBuf *name);
+
+// the display name WorkspaceName appends, valid until the entry or the open folders change.
+const StrBuf *
+WorkspaceShownName(const Workspace *workspace, u64 index);
+
+// an entry's path with its folder resolved (the file itself is not, so a link inside a
+// folder stays there), or empty when that does not resolve or it has no path.
+const StrBuf *
+WorkspaceRealPath(const Workspace *workspace, u64 index);
+
+// true when an entry is open and its text differs from its file.
+bool
+WorkspaceModified(const Workspace *workspace, u64 index);
+
+u64
+WorkspaceModifiedCount(const Workspace *workspace);
+
+// the next entry after the current one (or before it when step is negative), wrapping
+// around, that is open or was loaded on its own rather than with a folder (and not
+// refused), or workspaceNone when there is no other.
+u64
+WorkspaceNext(const Workspace *workspace, i32 step);
+
+// the most recently used entry other than the current one, or workspaceNone.
+u64
+WorkspacePreviousUsed(const Workspace *workspace);

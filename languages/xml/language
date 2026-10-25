@@ -1,0 +1,4 @@
+name = XML
+extensions = xml xsd xsl svg
+comment = <!--
+comment-end = -->

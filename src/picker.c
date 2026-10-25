@@ -1,0 +1,485 @@
+#include "picker.h"
+
+#include <string.h>
+
+#include "layout.h"
+#include "memory.h"
+#include "prompt.h"
+#include "screen.h"
+#include "settings.h"
+#include "strbuf.h"
+#include "theme.h"
+#include "utf8.h"
+
+static constexpr u64 noNote = UINT64_MAX;
+static constexpr u64 noMark = UINT64_MAX;
+
+// the line between the list and its preview.
+static constexpr char separatorSymbol[] = "\u2502";
+
+// the cells the marker column takes: the mark and a space.
+static constexpr i32 markWidth = 2;
+
+// an item's strings live in the shared buffers below, by offset.
+typedef struct Item {
+  u64 text;
+  u64 length;
+
+  // the text case folded, for filtering.
+  u64 folded;
+  u64 foldedLength;
+
+  u64 note;
+  u64 id;
+
+  // the item's mark in texts, or noMark.
+  u64 mark;
+} Item;
+
+static StrBuf texts;
+static StrBuf foldedTexts;
+static Item *items;
+static u64 itemCount;
+static u64 itemCapacity;
+
+// whether any item is marked, which gives the list a marker column.
+static bool marking;
+
+// the items that pass the filter, as indexes into items, in list order.
+static u64 *matches;
+static u64 matchCount;
+
+static bool active;
+static StrBuf title;
+static StrBuf label;
+static PickerDone onDone;
+static void *doneContext;
+
+// the preview beside the list (or nullptr), and the widest item text in columns.
+static PickerPreview preview;
+static void *previewContext;
+static u64 widest;
+
+// takes modified keys before the filter does (or nullptr).
+static PickerKeyHandler keyHandler;
+static void *keyContext;
+
+// the filter and selection of a suspended list.
+static StrBuf suspendedFilter;
+static u64 suspendedSelected;
+static u64 suspendedTop;
+
+// the selected match, the first match shown, and how many rows the list had last drawn.
+static u64 selected;
+static u64 top;
+static u64 pageRows = 1;
+
+// the rows and columns of the list as last drawn, for the mouse; none until it is drawn.
+static i32 drawnRows;
+static i32 drawnWidth;
+
+// appends text with every code point case folded.
+static void
+Fold(const char *text, u64 length, StrBuf *output)
+{
+  u64 at = 0;
+
+  while (at < length) {
+    u8 byte = (u8)text[at];
+
+    if (byte < 0x80) {
+      StrBufAppendByte(output, (char)(byte >= 'A' && byte <= 'Z' ? byte | 0x20 : byte));
+      at++;
+      continue;
+    }
+
+    u32 codepoint;
+    at += Utf8Decode(text + at, length - at, &codepoint);
+    char encoded[4];
+    StrBufAppend(output, encoded, Utf8Encode(Utf8Fold(codepoint), encoded));
+  }
+}
+
+void
+PickerAppendLine(StrBuf *out, const char *text, u64 length)
+{
+  while (length && (*text == ' ' || *text == '\t')) {
+    text++;
+    length--;
+  }
+
+  if (length && text[length - 1] == '\r') length--;
+
+  if (length > pickerLineLength) {
+    length = pickerLineLength;
+    while (length && ((u8)text[length] & 0xC0) == 0x80) length--;
+  }
+
+  for (u64 index = 0; index < length; index++) {
+    StrBufAppendByte(out, text[index] == '\t' ? ' ' : text[index]);
+  }
+}
+
+void
+PickerBegin(void)
+{
+  // reserved so an item's text always points into memory, even when every text is empty.
+  StrBufReserve(&texts, 64);
+  StrBufReserve(&foldedTexts, 64);
+  StrBufClear(&texts);
+  StrBufClear(&foldedTexts);
+  itemCount = 0;
+  marking = false;
+}
+
+void
+PickerAdd(const char *text, u64 length, const char *note, u64 id)
+{
+  if (itemCount == itemCapacity) {
+    itemCapacity = itemCapacity ? itemCapacity * 2 : 256;
+    items = MemoryResize(items, itemCapacity, sizeof(Item));
+    matches = MemoryResize(matches, itemCapacity, sizeof(u64));
+  }
+
+  Item *item = &items[itemCount++];
+  *item =
+    (Item){.text = texts.length, .length = length, .note = noNote, .id = id, .mark = noMark};
+  StrBufAppend(&texts, text, length);
+
+  item->folded = foldedTexts.length;
+  Fold(text, length, &foldedTexts);
+  item->foldedLength = foldedTexts.length - item->folded;
+
+  if (note) {
+    item->note = texts.length;
+    StrBufAppend(&texts, note, strlen(note) + 1);
+  }
+}
+
+void
+PickerMark(const char *mark)
+{
+  items[itemCount - 1].mark = texts.length;
+  StrBufAppend(&texts, mark, strlen(mark) + 1);
+  marking = true;
+}
+
+static bool
+Contains(const char *text, u64 length, const char *part, u64 partLength)
+{
+  if (partLength > length) return false;
+  if (!partLength) return true;
+
+  for (u64 at = 0; at + partLength <= length; at++) {
+    const char *first = memchr(text + at, part[0], length - partLength + 1 - at);
+    if (!first) return false;
+
+    at = (u64)(first - text);
+    if (memcmp(first, part, partLength) == 0) return true;
+  }
+
+  return false;
+}
+
+static bool
+Passes(const Item *item, const char *filter, u64 length, bool start, bool end)
+{
+  const char *text = foldedTexts.data + item->folded;
+  u64 textLength = item->foldedLength;
+  if (!start && !end) return Contains(text, textLength, filter, length);
+  if (length > textLength) return false;
+  if (start && end) return length == textLength && memcmp(text, filter, length) == 0;
+  if (start) return memcmp(text, filter, length) == 0;
+  return memcmp(text + textLength - length, filter, length) == 0;
+}
+
+static void
+Filter([[maybe_unused]] void *context, const char *filter, u64 length)
+{
+  StrBuf folded = {};
+  Fold(filter, length, &folded);
+
+  // the anchors are the only special characters, and are not matched themselves.
+  const char *part = folded.data ? folded.data : "";
+  u64 partLength = folded.length;
+  bool start = partLength && part[0] == '^';
+  bool end = partLength > (u64)start && part[partLength - 1] == '$';
+  part += start;
+  partLength -= (u64)start + (u64)end;
+
+  matchCount = 0;
+
+  for (u64 index = 0; index < itemCount; index++) {
+    if (Passes(&items[index], part, partLength, start, end)) matches[matchCount++] = index;
+  }
+
+  selected = 0;
+  top = 0;
+  StrBufFree(&folded);
+}
+
+static void
+Answered([[maybe_unused]] void *context, const char *answer, [[maybe_unused]] u64 length)
+{
+  bool picked = answer && matchCount;
+  u64 id = picked ? items[matches[selected]].id : 0;
+  active = false;
+  onDone(doneContext, picked, id);
+}
+
+void
+PickerOpen(const char *newTitle, const char *newLabel, PickerDone done, void *context)
+{
+  StrBufClear(&title);
+  StrBufAppendString(&title, newTitle);
+  StrBufClear(&label);
+  StrBufAppendString(&label, newLabel);
+  onDone = done;
+  doneContext = context;
+  preview = nullptr;
+  keyHandler = nullptr;
+  drawnRows = 0;
+  active = true;
+  Filter(nullptr, "", 0);
+
+  PromptAsk(newLabel, "", Answered, nullptr);
+  PromptHandle(Filter, nullptr);
+}
+
+void
+PickerSelect(u64 position)
+{
+  if (position < matchCount) selected = position;
+}
+
+void
+PickerShowPreview(PickerPreview newPreview, void *context)
+{
+  preview = newPreview;
+  previewContext = context;
+  widest = 0;
+
+  for (u64 index = 0; index < itemCount; index++) {
+    const char *text = texts.data + items[index].text;
+    u64 length = items[index].length;
+    u64 width = LayoutColumn(text, length, length);
+    if (width > widest) widest = width;
+  }
+}
+
+void
+PickerHandleKeys(PickerKeyHandler handler, void *context)
+{
+  keyHandler = handler;
+  keyContext = context;
+}
+
+u64
+PickerShownCount(void)
+{
+  return matchCount;
+}
+
+u64
+PickerShownId(u64 position)
+{
+  return items[matches[position]].id;
+}
+
+void
+PickerClose(void)
+{
+  if (active) PromptCancel();
+}
+
+void
+PickerSuspend(void)
+{
+  const StrBuf *filter = PromptText();
+  StrBufClear(&suspendedFilter);
+  StrBufAppend(&suspendedFilter, filter->data ? filter->data : "", filter->length);
+  suspendedSelected = selected;
+  suspendedTop = top;
+  active = false;
+}
+
+void
+PickerResume(void)
+{
+  active = true;
+  PromptAsk(label.data, "", Answered, nullptr);
+  PromptHandle(Filter, nullptr);
+  const char *filter = suspendedFilter.data ? suspendedFilter.data : "";
+  PromptSetText(filter, suspendedFilter.length);
+  selected = suspendedSelected;
+  top = suspendedTop;
+}
+
+bool
+PickerActive(void)
+{
+  return active;
+}
+
+static void
+Select(i64 step)
+{
+  if (!matchCount) return;
+
+  i64 target = (i64)selected + step;
+  if (target < 0) target = 0;
+  if (target >= (i64)matchCount) target = (i64)matchCount - 1;
+  selected = (u64)target;
+}
+
+void
+PickerClick(i32 row, i32 column)
+{
+  if (row < 0 || row >= drawnRows || column >= drawnWidth) return;
+
+  u64 index = top + (u64)row;
+  if (index >= matchCount) return;
+
+  if (index == selected) PromptKey((Key){KeyEnter, 0});
+  else selected = index;
+}
+
+void
+PickerWheel(i32 row, i32 column, i64 count)
+{
+  if (row < 0 || row >= drawnRows) return;
+
+  if (column < drawnWidth) {
+    Select(count);
+    return;
+  }
+
+  if (!keyHandler) return;
+
+  Key key = {count < 0 ? KeyUp : KeyDown, KeyModifierShift};
+  u64 rows = count < 0 ? (u64)-count : (u64)count;
+  for (u64 index = 0; index < rows; index++) keyHandler(keyContext, key);
+}
+
+void
+PickerKey(Key key)
+{
+  i64 page = (i64)pageRows;
+  i64 all = (i64)matchCount;
+
+  if (key.modifiers) {
+    if (keyHandler && keyHandler(keyContext, key)) return;
+    PromptKey(key);
+    return;
+  }
+
+  switch (key.code) {
+    case KeyUp:
+      Select(-1);
+      break;
+    case KeyDown:
+      Select(1);
+      break;
+    case KeyPageUp:
+      Select(-page);
+      break;
+    case KeyPageDown:
+      Select(page);
+      break;
+    case KeyHome:
+      Select(-all);
+      break;
+    case KeyEnd:
+      Select(all);
+      break;
+
+    // enter with nothing listed has nothing to pick, so the picker stays open.
+    case KeyEnter:
+      if (matchCount) PromptKey(key);
+      break;
+    default:
+      PromptKey(key);
+      break;
+  }
+}
+
+static void
+DrawItem(const Item *item, i32 row, i32 width, bool isSelected, bool notes)
+{
+  Style style = isSelected ? ThemeStyle(ThemeSelection) : styleDefault;
+  // the faint gutter colour is unreadable on the selection, so the selected row takes the
+  // dim status bar's lighter grey.
+  Style faint = ThemeStyle(ThemeGutter);
+  if (isSelected) faint.foreground = ThemeStyle(ThemeStatusDim).foreground;
+  faint.background = style.background;
+  ScreenFill(row, 0, width, style);
+
+  const char *note = item->note == noNote || !notes ? nullptr : texts.data + item->note;
+  i32 noteWidth = note ? (i32)LayoutColumn(note, strlen(note), strlen(note)) + 1 : 0;
+
+  // a space either side, the marker column before the text and the note after it.
+  i32 column = 1;
+
+  if (marking) {
+    if (item->mark != noMark) ScreenPutString(row, column, texts.data + item->mark, faint);
+    column += markWidth;
+  }
+
+  StrBuf shown = {};
+  i32 textWidth = width - 1 - column - noteWidth;
+  LayoutShorten(texts.data + item->text, item->length, textWidth, &shown);
+  column = ScreenPutText(row, column, shown.data, shown.length, style);
+  if (note) ScreenPutString(row, column + 1, note, faint);
+  StrBufFree(&shown);
+}
+
+void
+PickerDraw(i32 width, i32 height)
+{
+  // the bar above the message bar names the list and counts the matches.
+  i32 listRows = height - 2;
+  pageRows = listRows > 1 ? (u64)listRows : 1;
+  if (selected < top) top = selected;
+  if (selected >= top + pageRows) top = selected - pageRows + 1;
+
+  // with a preview the list is as wide as its widest item, but takes at most half.
+  bool previewing = preview && width >= minSplitWidth;
+  i32 listWidth = width;
+
+  if (previewing) {
+    i32 half = (width - 1) / 2;
+    u64 wanted = widest + 2 + (marking ? markWidth : 0);
+    listWidth = wanted < (u64)half ? (i32)wanted : half;
+  }
+
+  drawnRows = listRows;
+  drawnWidth = listWidth;
+
+  for (i32 row = 0; row < listRows; row++) {
+    u64 index = top + (u64)row;
+    ScreenFill(row, 0, width, styleDefault);
+    if (index >= matchCount) continue;
+
+    DrawItem(&items[matches[index]], row, listWidth, index == selected, !previewing);
+  }
+
+  if (previewing) {
+    Style separator = ThemeStyle(ThemeGutter);
+
+    for (i32 row = 0; row < listRows; row++) {
+      ScreenPutCluster(row, listWidth, separatorSymbol, strlen(separatorSymbol), 1, separator);
+    }
+
+    i32 column = listWidth + 1;
+    u64 id = matchCount ? items[matches[selected]].id : 0;
+    if (matchCount) preview(previewContext, id, column, width - column, listRows);
+  }
+
+  Style bar = ThemeStyle(ThemeStatus);
+  StrBuf count = {};
+  StrBufAppendFormat(&count, "%lu/%lu ", matchCount, itemCount);
+  ScreenFill(listRows, 0, width, bar);
+  ScreenPutText(listRows, 1, title.data, title.length, bar);
+  ScreenPutText(listRows, width - (i32)count.length, count.data, count.length, bar);
+  StrBufFree(&count);
+}

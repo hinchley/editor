@@ -1,0 +1,6 @@
+name = Bash
+extensions = sh bash
+files = .bashrc .bash_profile .profile PKGBUILD
+interpreters = sh bash
+inject = bash shell
+comment = #

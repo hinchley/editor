@@ -1,0 +1,5 @@
+name = Markdown
+extensions = md markdown
+comment = <!--
+comment-end = -->
+prose = yes

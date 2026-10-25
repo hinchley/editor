@@ -1,0 +1,4 @@
+name = Go
+extensions = go
+comment = //
+first-pattern-wins = yes
